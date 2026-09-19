@@ -1,0 +1,50 @@
+// Android build: the native code is the same CMake project as desktop.
+// Requirements (see platforms/android/README.md):
+//   - SDL3 source checkout: -PSDL3_SOURCE_DIR=/path/to/SDL (provides SDLActivity Java sources)
+//   - code generated on a desktop host into <repo>/generated (the recompiler is a host tool)
+plugins {
+    id 'com.android.application'
+}
+
+def sdl3Dir = project.findProperty('SDL3_SOURCE_DIR') ?: System.getenv('SDL3_SOURCE_DIR')
+def repoDir = file('../../..').canonicalPath
+
+android {
+    namespace 'org.chaotixrecompiled'
+    compileSdk 34
+    ndkVersion '26.3.11579264'
+
+    defaultConfig {
+        applicationId 'org.chaotixrecompiled'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '0.1.0'
+        ndk { abiFilters 'arm64-v8a' }
+        externalNativeBuild {
+            cmake {
+                arguments "-DCHAOTIX_SDL3_SOURCE_DIR=${sdl3Dir}",
+                          "-DCHAOTIX_GENERATED_DIR=${repoDir}/generated",
+                          "-DCHAOTIX_BUILD_TOOLS=OFF",
+                          "-DCHAOTIX_BUILD_TESTS=OFF",
+                          "-DCMAKE_BUILD_TYPE=Release"
+                targets 'chaotix'
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path "${repoDir}/CMakeLists.txt"
+            version '3.22.1+'
+        }
+    }
+    sourceSets {
+        main {
+            // SDL3's Java glue (org.libsdl.app.SDLActivity etc.)
+            java.srcDirs += ["${sdl3Dir}/android-project/app/src/main/java"]
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false }
+    }
+}

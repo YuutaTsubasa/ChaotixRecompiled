@@ -1,0 +1,314 @@
+// Headless runner: executes the game deterministically without a window.
+// Used for automated validation (screenshots, state hashes, coverage traces).
+//
+//   chaotix_headless --rom <file> --frames N [--shot F1,F2,...] [--out dir]
+//                    [--press FRAME:BUTTON[+BUTTON]:DURATION ...] [--state-every N]
+//                    [--interp]   (force interpreter even if generated code exists)
+#include "cpu/m68k/m68k_interp.h"
+#include "cpu/m68k/m68k_ops.h"
+#include "cpu/sh2/sh2_interp.h"
+#include "cpu/sh2/sh2_ops.h"
+#include "game/recomp_dispatch.h"
+#include "renderer/image_io.h"
+#include "runtime/log.h"
+#include "runtime/system.h"
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
+
+using namespace chaotix;
+
+namespace {
+
+struct Press { uint64_t frame; uint16_t buttons; uint64_t duration; };
+
+std::vector<std::string> split(const std::string& s, char sep) {
+    std::vector<std::string> out;
+    size_t start = 0;
+    for (;;) {
+        size_t p = s.find(sep, start);
+        out.push_back(s.substr(start, p == std::string::npos ? std::string::npos : p - start));
+        if (p == std::string::npos) break;
+        start = p + 1;
+    }
+    return out;
+}
+
+// Instruction-level tracing executors (interpreter semantics + printing).
+FILE* g_trace = nullptr;
+int g_trace_cpu = -1;  // 0 = 68K, 1 = MSH2, 2 = SSH2
+bool g_trace_on = false;
+uint64_t g_trace_lines = 0, g_trace_max = 2000000;
+
+void trace_sh2_block(sh2::State* c) {
+    if (!g_trace_on || g_trace_cpu != 1 + c->id || g_trace_lines > g_trace_max) { sh2::interp_block(c); return; }
+    for (;;) {
+        uint32_t pc = c->pc;
+        sh2::Insn in = sh2::decode(pc, uint16_t(sh2::rd16(c, pc)));
+        std::fprintf(g_trace, "S%d %08X %-28s r0=%08X r1=%08X r2=%08X r3=%08X r4=%08X r5=%08X r6=%08X r7=%08X r8=%08X r14=%08X r15=%08X sr=%03X\n",
+                     c->id, pc, sh2::disassemble(in).c_str(), c->r[0], c->r[1], c->r[2], c->r[3], c->r[4], c->r[5], c->r[6], c->r[7],
+                     c->r[8], c->r[14], c->r[15], c->sr);
+        ++g_trace_lines;
+        c->cycles -= in.cycles;
+        if (in.flags & sh2::IF_BRANCH) {
+            if (in.flags & sh2::IF_DELAYED) {
+                sh2::Insn slot = sh2::decode(pc + 2, uint16_t(sh2::rd16(c, pc + 2)));
+                std::fprintf(g_trace, "S%d %08X   (slot) %s\n", c->id, pc + 2, sh2::disassemble(slot).c_str());
+            }
+            sh2::exec_branch(c, in);
+            return;
+        }
+        c->pc = pc + 2;
+        sh2::exec_simple(c, in);
+        if (sh2::ends_block(in)) return;
+    }
+}
+
+void trace_m68k_block(m68k::State* c) {
+    if (!g_trace_on || g_trace_cpu != 0 || g_trace_lines > g_trace_max) { m68k::interp_block(c); return; }
+    for (;;) {
+        m68k::Insn in;
+        m68k::decode(c->pc, m68k::fetch_bus, c, in);
+        std::fprintf(g_trace, "M %06X %-34s d0=%08X d1=%08X d2=%08X d3=%08X d4=%08X a0=%08X a1=%08X a2=%08X a6=%08X sp=%08X ccr=%02X\n",
+                     c->pc, m68k::disassemble(in).c_str(), c->d[0], c->d[1], c->d[2], c->d[3], c->d[4], c->a[0], c->a[1], c->a[2],
+                     c->a[6], c->a[7], m68k::get_ccr(c));
+        ++g_trace_lines;
+        c->pc = c->pc + in.len;
+        c->cycles -= in.cycles;
+        m68k::execute(c, in);
+        if (m68k::ends_block(in)) break;
+    }
+}
+
+// Compares two machines; returns an empty string if identical.
+std::string compare_machines(const Machine& a, const Machine& b) {
+    char buf[256];
+    auto mem = [&](const char* name, const void* x, const void* y, size_t n) -> std::string {
+        const uint8_t* p = static_cast<const uint8_t*>(x);
+        const uint8_t* q = static_cast<const uint8_t*>(y);
+        for (size_t i = 0; i < n; ++i)
+            if (p[i] != q[i]) {
+                std::snprintf(buf, sizeof buf, "%s differs at +0x%zX: %02X vs %02X", name, i, p[i], q[i]);
+                return buf;
+            }
+        return "";
+    };
+    const auto& ma = a.m68k;
+    const auto& mb = b.m68k;
+    for (int i = 0; i < 8; ++i) {
+        if (ma.d[i] != mb.d[i]) { std::snprintf(buf, sizeof buf, "68K d%d %08X vs %08X", i, ma.d[i], mb.d[i]); return buf; }
+        if (ma.a[i] != mb.a[i]) { std::snprintf(buf, sizeof buf, "68K a%d %08X vs %08X", i, ma.a[i], mb.a[i]); return buf; }
+    }
+    if (ma.pc != mb.pc || m68k::get_sr(&ma) != m68k::get_sr(&mb) || ma.other_sp != mb.other_sp) {
+        std::snprintf(buf, sizeof buf, "68K pc/sr %06X/%04X vs %06X/%04X", ma.pc, m68k::get_sr(&ma), mb.pc, m68k::get_sr(&mb));
+        return buf;
+    }
+    if (a.m68k_clock != b.m68k_clock) { std::snprintf(buf, sizeof buf, "68K clock %llu vs %llu", (unsigned long long)a.m68k_clock, (unsigned long long)b.m68k_clock); return buf; }
+    for (int c = 0; c < 2; ++c) {
+        const auto& sa = a.sh2[c];
+        const auto& sb = b.sh2[c];
+        for (int i = 0; i < 16; ++i)
+            if (sa.r[i] != sb.r[i]) { std::snprintf(buf, sizeof buf, "SH2%d r%d %08X vs %08X", c, i, sa.r[i], sb.r[i]); return buf; }
+        if (sa.pc != sb.pc || sa.sr != sb.sr || sa.pr != sb.pr || sa.gbr != sb.gbr || sa.vbr != sb.vbr || sa.mach != sb.mach || sa.macl != sb.macl) {
+            std::snprintf(buf, sizeof buf, "SH2%d pc/sr/pr %08X/%03X/%08X vs %08X/%03X/%08X", c, sa.pc, sa.sr, sa.pr, sb.pc, sb.sr, sb.pr);
+            return buf;
+        }
+        if (a.sh2_clock[c] != b.sh2_clock[c]) { std::snprintf(buf, sizeof buf, "SH2%d clock %llu vs %llu", c, (unsigned long long)a.sh2_clock[c], (unsigned long long)b.sh2_clock[c]); return buf; }
+        std::string r = mem(c ? "SSH2 cache RAM" : "MSH2 cache RAM", a.onchip[c].cache_data, b.onchip[c].cache_data, sizeof a.onchip[c].cache_data);
+        if (!r.empty()) return r;
+    }
+    std::string r;
+    if (!(r = mem("68K work RAM", a.wram, b.wram, sizeof a.wram)).empty()) return r;
+    if (!(r = mem("SDRAM", a.sdram, b.sdram, sizeof a.sdram)).empty()) return r;
+    if (!(r = mem("Z80 RAM", a.zram, b.zram, sizeof a.zram)).empty()) return r;
+    if (!(r = mem("VRAM", a.vdp.vram, b.vdp.vram, sizeof a.vdp.vram)).empty()) return r;
+    if (!(r = mem("CRAM", a.vdp.cram, b.vdp.cram, sizeof a.vdp.cram)).empty()) return r;
+    if (!(r = mem("VSRAM", a.vdp.vsram, b.vdp.vsram, sizeof a.vdp.vsram)).empty()) return r;
+    if (!(r = mem("VDP regs", a.vdp.reg, b.vdp.reg, sizeof a.vdp.reg)).empty()) return r;
+    if (!(r = mem("32X FB0", a.mars.fb[0], b.mars.fb[0], sizeof a.mars.fb[0])).empty()) return r;
+    if (!(r = mem("32X FB1", a.mars.fb[1], b.mars.fb[1], sizeof a.mars.fb[1])).empty()) return r;
+    if (!(r = mem("32X palette", a.mars.pal, b.mars.pal, sizeof a.mars.pal)).empty()) return r;
+    if (!(r = mem("32X comm", a.mars.comm, b.mars.comm, sizeof a.mars.comm)).empty()) return r;
+    if (!(r = mem("output image", a.framebuffer, b.framebuffer, sizeof a.framebuffer)).empty()) return r;
+    return "";
+}
+
+void dump_state(const Machine& m) {
+    std::printf("frame %llu | 68K pc=%06X sr=%04X sp=%08X | MSH2 pc=%08X sr=%03X | SSH2 pc=%08X sr=%03X | FS=%d mode=%X\n",
+                (unsigned long long)m.frame_count, m.m68k.pc, m68k::get_sr(&m.m68k), m.m68k.a[7],
+                m.sh2[0].pc, m.sh2[0].sr, m.sh2[1].pc, m.sh2[1].sr, m.mars.fb_display, m.mars.bitmap_mode);
+    std::printf("  comm: %04X %04X %04X %04X %04X %04X %04X %04X\n", m.mars.comm[0], m.mars.comm[1], m.mars.comm[2],
+                m.mars.comm[3], m.mars.comm[4], m.mars.comm[5], m.mars.comm[6], m.mars.comm[7]);
+}
+
+} // namespace
+
+int main(int argc, char** argv) {
+    std::string rom_path, out_dir = ".";
+    uint64_t frames = 600;
+    std::set<uint64_t> shots;
+    std::map<uint64_t, uint64_t> expect_hash;  // frame -> expected image hash
+    int hash_failures = 0;
+    std::vector<Press> presses;
+    uint64_t state_every = 0;
+    bool force_interp = false;
+    bool lockstep = false;
+    std::string wav_path;
+    std::string coverage_path;
+    int break_cpu = -1;
+    uint64_t trace_from = 0, trace_to = 0;
+    uint32_t break_pc = 0;
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
+        if (a == "--rom") rom_path = next();
+        else if (a == "--frames") frames = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--out") out_dir = next();
+        else if (a == "--shot") { for (auto& s : split(next(), ',')) shots.insert(std::strtoull(s.c_str(), nullptr, 10)); }
+        else if (a == "--press") {
+            auto parts = split(next(), ':');
+            if (parts.size() < 2) { std::fprintf(stderr, "bad --press\n"); return 2; }
+            Press p{std::strtoull(parts[0].c_str(), nullptr, 10), 0, parts.size() > 2 ? std::strtoull(parts[2].c_str(), nullptr, 10) : 4};
+            for (auto& b : split(parts[1], '+')) p.buttons |= pad_button_from_name(b.c_str());
+            presses.push_back(p);
+        }
+        else if (a == "--state-every") state_every = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--interp") force_interp = true;
+        else if (a == "--lockstep") lockstep = true;
+        else if (a == "--wav") wav_path = next();
+        else if (a == "--expect-hash") {
+            auto parts = split(next(), ':');
+            if (parts.size() == 2) expect_hash[std::strtoull(parts[0].c_str(), nullptr, 10)] = std::strtoull(parts[1].c_str(), nullptr, 16);
+        }
+        else if (a == "--coverage") coverage_path = next();
+        else if (a == "-v") log_set_level(LogLevel::Debug);
+        else if (a == "--trace") {
+            // --trace CPU:FROM_FRAME:TO_FRAME:FILE
+            auto parts = split(next(), ':');
+            g_trace_cpu = std::atoi(parts[0].c_str());
+            trace_from = std::strtoull(parts[1].c_str(), nullptr, 10);
+            trace_to = std::strtoull(parts[2].c_str(), nullptr, 10);
+            g_trace = std::fopen(parts.size() > 3 ? parts[3].c_str() : "trace.txt", "w");
+        }
+        else if (a == "--break") {
+            auto parts = split(next(), ':');
+            break_cpu = std::atoi(parts[0].c_str());
+            break_pc = uint32_t(std::strtoul(parts[1].c_str(), nullptr, 16));
+        }
+        else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 2; }
+    }
+    if (rom_path.empty()) { std::fprintf(stderr, "usage: chaotix_headless --rom <file> [--frames N] ...\n"); return 2; }
+
+    auto m = std::make_unique<Machine>();
+    std::string err;
+    if (!m->load_rom(rom_path, &err)) { std::fprintf(stderr, "error: %s\n", err.c_str()); return 1; }
+    m->reset();
+    m->audio_enabled = !wav_path.empty();
+    std::vector<int16_t> wav;
+    RecompStatus rs = install_recompiled_code(*m, !force_interp);
+    std::printf("execution: %s\n", rs.description.c_str());
+    // Lockstep validation: an interpreter-only reference machine runs next to
+    // the recompiled one and full state is compared after every frame.
+    std::unique_ptr<Machine> ref;
+    if (lockstep) {
+        ref = std::make_unique<Machine>();
+        ref->load_rom(rom_path, &err);
+        ref->reset();
+        if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
+    }
+    uint64_t lockstep_ok_frames = 0;
+    CoverageRecorder cov;
+    if (!coverage_path.empty()) cov.attach(*m);
+    // Block-level history ring for --break (per CPU).
+    static uint32_t hist[3][64];
+    static unsigned hpos[3];
+    bool broke = false;
+    if (break_cpu >= 0) {
+        Machine* mp = m.get();
+        m->on_block = [&, mp](int cpu, uint32_t pc) {
+            hist[cpu][hpos[cpu]++ & 63] = pc;
+            if (!broke && cpu == break_cpu && pc == break_pc) {
+                broke = true;
+                std::printf("BREAK cpu %d pc %08X at frame %llu line %d\n", cpu, pc, (unsigned long long)mp->frame_count, mp->line);
+                for (int c = 0; c < 3; ++c) {
+                    std::printf("  cpu %d history:", c);
+                    for (unsigned k = 0; k < 64; ++k) std::printf(" %X", hist[c][(hpos[c] + k) & 63]);
+                    std::printf("\n");
+                }
+                const auto& r = mp->m68k;
+                std::printf("  68K d: %08X %08X %08X %08X %08X %08X %08X %08X\n", r.d[0], r.d[1], r.d[2], r.d[3], r.d[4], r.d[5], r.d[6], r.d[7]);
+                std::printf("  68K a: %08X %08X %08X %08X %08X %08X %08X %08X\n", r.a[0], r.a[1], r.a[2], r.a[3], r.a[4], r.a[5], r.a[6], r.a[7]);
+                std::printf("  68K stack:");
+                for (int k = 0; k < 8; ++k) std::printf(" %04X", mp->m68k_read16(r.a[7] + 2 * k));
+                std::printf("\n");
+                for (int c = 0; c < 2; ++c) {
+                    const auto& s = mp->sh2[c];
+                    std::printf("  SH2%d r:", c);
+                    for (int k = 0; k < 16; ++k) std::printf(" %08X", s.r[k]);
+                    std::printf(" pr=%08X vbr=%08X sr=%03X irq=%d/%d mask=%02X pend=%02X\n", s.pr, s.vbr, s.sr, s.irq_level,
+                                s.irq_vector, mp->mars.sh_int_mask[c], mp->mars.irq_pending[c]);
+                }
+            }
+        };
+    }
+
+    if (g_trace) {
+        m->exec.m68k_block = trace_m68k_block;
+        m->exec.sh2_block = trace_sh2_block;
+    }
+    auto t0 = std::chrono::steady_clock::now();
+    for (uint64_t f = 0; f < frames; ++f) {
+        uint16_t btn = 0;
+        for (const auto& p : presses)
+            if (f >= p.frame && f < p.frame + p.duration) btn |= p.buttons;
+        m->input.pad[0] = btn;
+        if (ref) ref->input.pad[0] = btn;
+        g_trace_on = g_trace && f >= trace_from && f < trace_to;
+        m->run_frame();
+        if (m->audio_enabled) { wav.insert(wav.end(), m->audio_out.begin(), m->audio_out.end()); m->audio_out.clear(); }
+        if (ref) {
+            ref->run_frame();
+            std::string diff = compare_machines(*ref, *m);
+            if (!diff.empty()) {
+                std::printf("LOCKSTEP DIVERGENCE at frame %llu (reference vs recompiled): %s\n", (unsigned long long)m->frame_count, diff.c_str());
+                dump_state(*ref);
+                dump_state(*m);
+                return 3;
+            }
+            ++lockstep_ok_frames;
+        }
+        if (shots.count(m->frame_count)) {
+            char name[512];
+            std::snprintf(name, sizeof name, "%s/frame_%05llu.png", out_dir.c_str(), (unsigned long long)m->frame_count);
+            write_png(name, m->framebuffer, m->fb_width, m->fb_height, kScreenWidth);
+            std::printf("wrote %s hash=%016llx\n", name,
+                        (unsigned long long)image_hash(m->framebuffer, m->fb_width, m->fb_height, kScreenWidth));
+        }
+        if (expect_hash.count(m->frame_count)) {
+            uint64_t h = image_hash(m->framebuffer, m->fb_width, m->fb_height, kScreenWidth);
+            bool ok = h == expect_hash[m->frame_count];
+            std::printf("frame %llu image hash %016llx %s\n", (unsigned long long)m->frame_count, (unsigned long long)h,
+                        ok ? "matches golden" : "DOES NOT MATCH golden");
+            if (!ok) ++hash_failures;
+        }
+        if (state_every && m->frame_count % state_every == 0) dump_state(*m);
+    }
+    double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("ran %llu frames in %.2fs (%.1f fps)\n", (unsigned long long)frames, secs, frames / secs);
+    print_recomp_stats(*m);
+    if (!wav_path.empty()) {
+        if (write_wav(wav_path, wav, int(kAudioRate + 0.5))) std::printf("audio written to %s (%zu samples)\n", wav_path.c_str(), wav.size() / 2);
+    }
+    if (ref) std::printf("lockstep: %llu frames bit-identical between interpreter and recompiled execution\n", (unsigned long long)lockstep_ok_frames);
+    if (!coverage_path.empty()) {
+        if (cov.save(coverage_path)) std::printf("coverage written to %s (%zu entries)\n", coverage_path.c_str(), cov.size());
+    }
+    dump_state(*m);
+    return hash_failures ? 4 : 0;
+}

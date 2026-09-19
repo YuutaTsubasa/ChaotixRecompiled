@@ -1,0 +1,102 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CHAOTIX_ROM": "$env{CHAOTIX_ROM}"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows x64 — Visual Studio 2022",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-arm64-msvc",
+      "displayName": "Windows ARM64 — Visual Studio 2022",
+      "inherits": "base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "ARM64",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "windows-ninja",
+      "displayName": "Windows — Ninja (MinGW/Clang)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "linux",
+      "displayName": "Linux x64/ARM64 — Ninja",
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "macos-universal",
+      "displayName": "macOS Intel + Apple Silicon — Ninja",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_OSX_ARCHITECTURES": "x86_64;arm64", "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "macos-xcode",
+      "displayName": "macOS — Xcode",
+      "inherits": "base",
+      "generator": "Xcode",
+      "cacheVariables": { "CMAKE_OSX_ARCHITECTURES": "x86_64;arm64", "CMAKE_OSX_DEPLOYMENT_TARGET": "11.0" },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "ios",
+      "displayName": "iOS / iPadOS ARM64 — Xcode (needs pre-generated code and SDL3 source)",
+      "inherits": "base",
+      "generator": "Xcode",
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "14.0",
+        "CHAOTIX_SDL3_SOURCE_DIR": "$env{SDL3_SOURCE_DIR}",
+        "CHAOTIX_BUILD_TOOLS": "OFF",
+        "CHAOTIX_BUILD_TESTS": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Android ARM64 (NDK) — native library only; use platforms/android for the APK",
+      "inherits": "base",
+      "generator": "Ninja",
+      "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
+      "cacheVariables": {
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-26",
+        "CHAOTIX_SDL3_SOURCE_DIR": "$env{SDL3_SOURCE_DIR}",
+        "CHAOTIX_BUILD_TOOLS": "OFF",
+        "CHAOTIX_BUILD_TESTS": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-msvc", "configurePreset": "windows-msvc", "configuration": "Release" },
+    { "name": "windows-ninja", "configurePreset": "windows-ninja" },
+    { "name": "linux", "configurePreset": "linux" },
+    { "name": "macos-universal", "configurePreset": "macos-universal" },
+    { "name": "android-arm64", "configurePreset": "android-arm64" }
+  ],
+  "testPresets": [
+    { "name": "windows-ninja", "configurePreset": "windows-ninja", "output": { "outputOnFailure": true } },
+    { "name": "linux", "configurePreset": "linux", "output": { "outputOnFailure": true } },
+    { "name": "macos-universal", "configurePreset": "macos-universal", "output": { "outputOnFailure": true } }
+  ]
+}

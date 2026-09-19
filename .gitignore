@@ -1,0 +1,30 @@
+# Commercial game data must never be committed.
+__ROM__/
+rom/
+*.32x
+*.32X
+*.bin
+*.gen
+*.smd
+
+# Code generated from the user's ROM (derived from copyrighted data)
+generated/*
+!generated/README.md
+
+# Build outputs
+build*/
+out/
+analysis_out/
+
+# Runtime output
+*.png
+*.ppm
+*.wav
+*.trace
+*.srm
+saves/
+
+# IDE
+.vs/
+.vscode/
+.idea/
