@@ -23,4 +23,12 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2600 ${_script}
                 --expect-hash 1700:${CHAOTIX_GOLDEN_TITLE} --expect-hash 2600:${CHAOTIX_GOLDEN_LEVEL})
     set_tests_properties(lockstep_boot_to_level golden_frames PROPERTIES TIMEOUT 600)
+
+    # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
+    if(CHAOTIX_LONG_TESTS)
+    add_test(NAME lockstep_attract_long COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --lockstep)
+    add_test(NAME render_attract_long
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/attract_every50.txt)
+    set_tests_properties(lockstep_attract_long render_attract_long PROPERTIES LABELS long TIMEOUT 1800)
+    endif()
 endif()

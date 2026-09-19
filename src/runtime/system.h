@@ -93,10 +93,14 @@ struct Mars {
     uint8_t fb[2][0x20000];
 };
 
+// Optional wall-clock profile of the frame loop (enabled via Machine::profile).
+enum ProfSection { PROF_M68K, PROF_Z80, PROF_MSH2, PROF_SSH2, PROF_VIDEO, PROF_AUDIO, PROF_COUNT };
+
 struct FrameStats {
     uint64_t frame = 0;
     uint64_t m68k_cycles = 0, msh2_cycles = 0, ssh2_cycles = 0;
     uint64_t recomp_blocks = 0, interp_blocks = 0;
+    uint64_t prof_ns[PROF_COUNT] = {};
 };
 
 // Executes code for a CPU. The default executors interpret; the recompiled
@@ -173,6 +177,7 @@ public:
 
     CpuExecutors exec;
     FrameStats stats;
+    bool profile = false;
 
     // Self-modification tracking for RAM-resident recompiled SH-2 code.
     // Ranges are byte offsets into SDRAM / the cache data array.

@@ -146,6 +146,83 @@ void Program::add_coverage(const std::vector<CoverageEntry>& cov) {
     }
 }
 
+bool Program::plausible_m68k_code(uint32_t addr, int bank) const {
+    // A code-pointer candidate must be even and decode as a few valid
+    // instructions (data rarely does).
+    if (addr & 1) return false;
+    uint32_t a = addr;
+    for (int i = 0; i < 4; ++i) {
+        m68k::Insn in;
+        if (!decode_m68k(a, bank, in) || in.op == m68k::Op::INVALID || in.op == m68k::Op::ILLEGAL ||
+            in.op == m68k::Op::LINE_A || in.op == m68k::Op::LINE_F)
+            return false;
+        if (m68k::ends_block(in)) return true;
+        a += in.len;
+    }
+    return true;
+}
+
+// Statically recoverable targets of one 68K instruction:
+//  * branch tables:  jmp/jsr tbl(pc,Dn) into consecutive BRA.W / JMP abs entries
+//  * offset tables:  move.w tbl(pc,Dx),Dy ; jmp/jsr tbl(pc,Dy)
+//  * code pointers held as immediates / absolute addresses (object handlers)
+std::vector<uint32_t> Program::m68k_static_targets(uint32_t addr, int bank, const uint32_t* prev_addr) {
+    std::vector<uint32_t> out;
+    m68k::Insn in;
+    if (!decode_m68k(addr, bank, in)) return out;
+    const bool indirect_cf = (in.op == m68k::Op::JMP || in.op == m68k::Op::JSR) && in.src.mode == m68k::EA_PCINDEX;
+    if (indirect_cf) {
+        const uint32_t base = in.src.value;
+        bool offset_table = false;
+        if (prev_addr) {
+            m68k::Insn p;
+            if (decode_m68k(*prev_addr, bank, p) && p.op == m68k::Op::MOVE && p.size == 2 && p.src.mode == m68k::EA_PCINDEX &&
+                p.src.value == base && p.dst.mode == m68k::EA_DREG && in.src.xreg == p.dst.reg) {
+                offset_table = true;
+                uint32_t lowest = 0xFFFFFFFF;
+                for (uint32_t k = 0; k < 256; ++k) {
+                    uint32_t ea = base + 2 * k;
+                    if (ea >= lowest) break;
+                    uint16_t w = 0;
+                    if (!fetch16(ea, bank, w)) break;
+                    uint32_t t = base + uint32_t(int32_t(int16_t(w)));
+                    if (space_of(t, bank) < 0 || !plausible_m68k_code(t, bank)) break;
+                    if (t > base && t < lowest) lowest = t;
+                    out.push_back(t);
+                }
+                if (!out.empty()) ++stats.offset_tables;
+            }
+        }
+        if (!offset_table) {
+            // Branch table: entries are instructions themselves.
+            m68k::Insn e;
+            uint32_t len = 0;
+            for (uint32_t k = 0; k < 256; ++k) {
+                uint32_t ea = base + k * (len ? len : 0);
+                if (!decode_m68k(ea, bank, e)) break;
+                bool ok = (e.op == m68k::Op::BRA && e.size == 2) || (e.op == m68k::Op::JMP && !(e.flags & m68k::IF_INDIRECT));
+                if (!ok || (len && e.len != len)) break;
+                if (!len) len = e.len;
+                out.push_back(ea);
+            }
+            if (!out.empty()) ++stats.branch_tables;
+        }
+        return out;
+    }
+    // Code pointers in immediates / absolute operands (MOVE.L #x / LEA x / PEA x).
+    auto candidate = [&](uint32_t v) {
+        v &= 0xFFFFFF;
+        if (v < 0x880000 || v >= 0x900000) return;  // unbanked ROM code window only
+        if (space_of(v, -1) < 0 || !plausible_m68k_code(v, -1)) return;
+        out.push_back(v);
+        ++stats.code_pointers;
+    };
+    if ((in.op == m68k::Op::MOVE || in.op == m68k::Op::MOVEA) && in.size == 4 && in.src.mode == m68k::EA_IMM) candidate(in.src.value);
+    if ((in.op == m68k::Op::LEA || in.op == m68k::Op::PEA) && (in.src.mode == m68k::EA_ABSL || in.src.mode == m68k::EA_PCDISP))
+        candidate(in.src.value);
+    return out;
+}
+
 void Program::explore() {
     std::deque<uint64_t> work(leaders.begin(), leaders.end());
     std::set<uint64_t> walked;
@@ -161,6 +238,8 @@ void Program::explore() {
         // A leader inside an already decoded straight-line run only splits
         // that run; it does not need to be walked again.
         if (insns.count(k)) continue;
+        uint32_t prev = 0;
+        bool have_prev = false;
         for (;;) {
             uint64_t ck = key_of(addr, bank);
             if (insns.count(ck)) { leaders.insert(ck); break; }  // joined a known path
@@ -175,6 +254,16 @@ void Program::explore() {
                 leaders.insert(tk);
                 work.push_back(tk);
             };
+            if (cpu_ == Cpu::M68K && heuristics) {
+                for (uint32_t t : m68k_static_targets(addr, bank, have_prev ? &prev : nullptr)) {
+                    int tb = space_of(t, bank) >= 0 ? bank : -1;
+                    if (space_of(t, tb) < 0) continue;
+                    entries.insert(key_of(t, tb));
+                    push(t);
+                }
+            }
+            prev = addr;
+            have_prev = true;
             if (info.call) {
                 if (info.has_target) {
                     int tb = space_of(info.target, bank) >= 0 ? bank : -1;

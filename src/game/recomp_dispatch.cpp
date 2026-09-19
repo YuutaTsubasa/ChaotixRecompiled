@@ -25,8 +25,12 @@ struct DispatchStats {
     uint64_t m68k_native = 0, m68k_interp = 0;
     uint64_t sh2_native[2] = {}, sh2_interp[2] = {};
     uint64_t sh2_validations = 0, sh2_invalid = 0;
+    uint64_t m68k_trampolines = 0;
 };
 DispatchStats g_stats;
+// Interpreter fallback histogram (entry PCs), used to direct coverage and
+// static-analysis work. Keys: cpu << 32 | pc.
+std::unordered_map<uint64_t, uint64_t> g_fallback;
 Machine* g_m = nullptr;
 bool g_installed = false;
 
@@ -91,14 +95,40 @@ inline Sh2FnState* lookup_sh2(const sh2::State* c) {
     return sh2_validate(s, c->id) ? &s : nullptr;
 }
 
+// The game patches `JMP abs.l` trampolines into work RAM at runtime (e.g. the
+// V-int vector target and per-level routine hooks). Executing one here with
+// the interpreter's exact semantics (12 cycles, then a block boundary) keeps
+// native execution going instead of unwinding to the interpreter.
+// Returns false if the block boundary check says to stop.
+inline bool follow_ram_trampolines(m68k::State* c) {
+    for (int guard = 0; guard < 4; ++guard) {
+        if ((c->pc & 0xFFFFFF) < 0xE00000 || (c->pc & 1)) return true;
+        if (m68k::rd16(c, c->pc) != 0x4EF9) return true;
+        c->cycles -= 12;
+        c->pc = m68k::rd32(c, c->pc + 2);
+        ++g_stats.m68k_trampolines;
+        if (!recomp::m68k_ok(c)) return false;
+    }
+    return true;
+}
+
 void m68k_exec(m68k::State* c) {
     recomp::M68kFn fn = lookup_m68k(c);
+    if (!fn && (c->pc & 0xFFFFFF) >= 0xE00000) {
+        const uint32_t pc0 = c->pc;
+        if (!follow_ram_trampolines(c)) return;
+        if (c->pc != pc0) {
+            fn = lookup_m68k(c);
+            if (!fn) return;  // a trampoline ran (one block); the caller's loop continues
+        }
+    }
     if (fn) {
         ++g_stats.m68k_native;
         recomp::g_depth = 0;
         fn(c);
     } else {
         ++g_stats.m68k_interp;
+        ++g_fallback[c->pc];
         m68k::interp_block(c);
     }
 }
@@ -111,6 +141,7 @@ void sh2_exec(sh2::State* c) {
         s->fn(c);
     } else {
         ++g_stats.sh2_interp[c->id];
+        ++g_fallback[(uint64_t(1 + c->id) << 32) | c->pc];
         sh2::interp_block(c);
     }
 }
@@ -126,6 +157,10 @@ namespace recomp {
 int m68k_call_dynamic(m68k::State* c) {
 #if CHAOTIX_HAVE_GENERATED
     M68kFn fn = chaotix::lookup_m68k(c);
+    if (!fn && (c->pc & 0xFFFFFF) >= 0xE00000) {
+        if (!chaotix::follow_ram_trampolines(c)) return 0;
+        fn = chaotix::lookup_m68k(c);
+    }
     if (!fn || g_depth >= kMaxDepth) return 1;
     ++g_depth;
     int r = fn(c);
@@ -159,6 +194,7 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
     RecompStatus st;
     g_m = &m;
     g_stats = DispatchStats{};
+    g_fallback.clear();
 #if CHAOTIX_HAVE_GENERATED
     if (!enable) {
         st.description = "reference interpreters (recompiled code disabled by request)";
@@ -230,6 +266,15 @@ void print_recomp_stats(const Machine& m) {
                 pct(g_stats.m68k_native, g_stats.m68k_interp), pct(g_stats.sh2_native[0], g_stats.sh2_interp[0]),
                 pct(g_stats.sh2_native[1], g_stats.sh2_interp[1]), (unsigned long long)g_stats.sh2_validations,
                 (unsigned long long)g_stats.sh2_invalid);
+    if (!g_fallback.empty()) {
+        std::vector<std::pair<uint64_t, uint64_t>> v(g_fallback.begin(), g_fallback.end());
+        std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::printf("interpreter fallback (%zu distinct entry PCs), top:", v.size());
+        for (size_t i = 0; i < v.size() && i < 16; ++i)
+            std::printf(" %s%08X:%llu", (v[i].first >> 32) ? ((v[i].first >> 32) == 1 ? "M:" : "S:") : "",
+                        uint32_t(v[i].first), (unsigned long long)v[i].second);
+        std::printf("\n");
+    }
 }
 
 void CoverageRecorder::attach(Machine& m) {

@@ -1,5 +1,6 @@
 option(CHAOTIX_BUILD_FRONTEND "Build the SDL3 frontend" ON)
 option(CHAOTIX_BUILD_TESTS "Build unit / validation tests" ON)
+option(CHAOTIX_LONG_TESTS "Register long-running validation tests (minutes)" OFF)
 option(CHAOTIX_BUILD_TOOLS "Build host tools (rom_analyzer, recompiler)" ON)
 set(CHAOTIX_ROM "" CACHE FILEPATH "Path to the user's Knuckles' Chaotix ROM (never committed)")
 set(CHAOTIX_SDL3_SOURCE_DIR "" CACHE PATH "Build SDL3 from this source tree instead of find_package (mobile)")

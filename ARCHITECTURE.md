@@ -24,8 +24,8 @@
 | Android / iOS / macOS / Linux 建置 | ⏳ `CMakePresets.json`、Android Gradle 專案、iOS Info.plist 已建立；**尚未在這些平台實際建置** | 見 §9 |
 
 實測數據（Windows x64、MinGW GCC 15、Release）：
-- 重編譯後執行：約 **1 ms / frame**（原始需求 16.7 ms），SDL 前端鎖定 59.92 Hz。
-- 分派統計：68K 區塊 **99.7%** 由原生產生碼執行，SH-2 **100%**；剩餘 0.3% 是遊戲在執行期寫進 RAM 的跳板（例如 `0xFFFFC030` 的 V-int stub），交給參考直譯器。
+- 重編譯後執行：約 **0.83–0.92 ms / frame**（原機一幀 16.7 ms），SDL 前端鎖定 59.92 Hz。
+- 分派統計（未用於 coverage 的 held-out 輸入）：68K 區塊 **99.7–100%** 由原生產生碼執行，SH-2 **100%**（見 `docs/MILESTONES.md` Milestone 3）。
 - Lockstep：重編譯版本與直譯器版本在 3200 幀（開機→標題→選單→關卡→跑、跳、吃環）中每一幀的 **所有 CPU 暫存器、cycle 計數、全部 RAM、VRAM/CRAM/VSRAM、32X frame buffer、輸出影像** 完全相同。
 
 ---
@@ -94,7 +94,9 @@ MCLK = 53.693175 MHz；1 條掃描線 = 3420 MCLK；1 幀 = 262 線；幀率 59.
 
 | 障礙 | 本作中的證據 | 對策 |
 |---|---|---|
-| 間接跳躍 / jump table | SH-2 指令迴圈 `jmp @r2`；68K `jsr (a0)` 物件迴圈 | recursive descent + **trace-guided**（coverage 檔提供動態入口）；不在表中者由直譯器 fallback，永不出錯只會變慢 |
+| 間接跳躍 / jump table | SH-2 指令迴圈 `jmp @r2`；68K `jsr tbl(pc,d0.w)` 物件分派（bra table）、物件 handler 指標 | recursive descent + 靜態 jump table / offset table / code pointer 恢復 + **trace-guided**（coverage 檔提供動態入口）；仍未知者由直譯器 fallback，永不出錯只會變慢 |
+| 執行期產生的跳板 | `0xFFFFE1A4: jmp ($8F5380).l`（每關改寫目標） | dispatcher 以直譯器相同語意執行 `JMP abs.l` 後接回原生碼 |
+| 等待迴圈（效能） | Slave `dt r0; bf` 延遲、Master 輪詢 COMM0 | 產生碼中對無狀態自迴圈做精確 fast-forward（同一時間片內外部狀態不變）；lockstep 證明等價 |
 | 在 RAM 執行的程式 | SH-2 image 在 SDRAM；Slave 在 cache RAM；68K 在 `0xFF0200`、`0xFFFFC0xx` 跳板 | 以「code space」描述 runtime 位址 ↔ ROM bytes；RAM code 產生**驗證範圍**，runtime 比對 RAM 與 ROM，被改寫就改用直譯器 |
 | Self-modifying / 覆寫 | 可能載入 overlay | 寫入含程式碼的 SDRAM page / cache 範圍會遞增 **code epoch**，下次進入時重新驗證 |
 | Bank switching | `0x900000` 視窗 | 以 `(pc, bank)` 當 key 產生程式碼；dispatcher 依目前 bank 查表 |

@@ -49,6 +49,19 @@ inline bool sh2_ok(const sh2::State* c) {
     return c->cycles > 0 && !c->sleeping && !(c->irq_level > ((c->sr >> 4) & 15));
 }
 
+// True if an SH-2 load from `a` is side-effect free and cannot change while
+// this CPU's time slice runs (other CPUs, interrupts and timers only act
+// between slices): ROM, frame buffer, SDRAM, cache RAM and the COMM ports.
+// Used to fast-forward idempotent polling loops exactly.
+inline bool sh2_pure_load(uint32_t a) {
+    const uint32_t area = a >> 29;
+    if (area == 6) return true;
+    if (area > 1) return false;
+    const uint32_t p = a & 0x1FFFFFFF;
+    if (p >= 0x02000000 && p < 0x08000000) return true;
+    return p >= 0x4020 && p < 0x4030;
+}
+
 // Look up generated code for c->pc and call it as a subroutine. Returns the
 // callee's result, or 1 if there is no (valid) generated code (the caller
 // then unwinds to the dispatcher).

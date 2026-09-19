@@ -57,11 +57,31 @@ headless `--wav`。Lockstep 仍然 bit-exact（Z80 在兩邊一起執行）。
 6. SDL 音訊輸出（`SDL_AudioStream`），**以模擬時間為準**產生 sample，不讓音效驅動 simulation 速度。
 7. 驗證：YM/PSG 暫存器寫入序列的 golden 波形 hash；lockstep 維持 bit-exact（Z80 加入兩邊）。
 
-## Milestone 3 — 覆蓋率與效能
+## Milestone 3 — 覆蓋率與效能 ✅
 
-- 更多遊玩 session 的 coverage（各 zone、特殊關卡、Boss、結局），讓原生比例趨近 100%。
-- busy-wait 偵測（comm/FS 輪詢）快轉；CCR/T 旗標活性分析。
-- 以 lockstep 保證最佳化不改變行為。
+**覆蓋率**
+- `tools/coverage/record_sessions.py`：8 個可重現的 session（開機→關卡、attract 30000 幀、Scenario 隨機遊玩、Training act 1–4、Options），以參考直譯器記錄到 `coverage/*.cov`（只含位址）。
+- headless 新增 `--fuzz SEED:FROM:TO`（確定性隨機輸入）與 `--script FILE`。
+- 靜態目標恢復（analyzer）：`jmp/jsr tbl(pc,Dn)` 的 **branch table**（140 個）、`move.w tbl(pc,Dx),Dy` + `jmp tbl(pc,Dy)` 的 **offset table**（12 個）、立即值/LEA 中的 **code pointer**（207 個）。錯判只會多產生不會被執行的程式碼。
+- dispatcher：RAM 中由遊戲在執行期寫入的 `JMP abs.l` 跳板（例如 `0xFFFFE1A4`、V-int `0xFFFFC030`）以與直譯器相同的語意（12 cycles + block 邊界）直接執行後接回原生碼。
+- dispatcher 統計新增 interpreter fallback 熱點清單。
+
+**Held-out 驗證**（未用於 coverage 的輸入）
+
+| Session | 68K 原生比例（前 → 後） | SH-2 |
+|---|---|---|
+| Training act 3, seed 99 | 99.9% → **100.0%**（9.6M 區塊中 1,032 次 fallback） | 100% |
+| Scenario, seed 1234 | 96.6% → **99.7%** | 100% |
+| Attract 36000 幀 | 99.3% → **100.0%**（4 次 fallback） | 100% |
+
+**效能**（`--profile` 子系統計時；只做可被驗證為完全等價的最佳化）
+- Renderer：MD plane 以「同一 tile row 的像素 run」處理、每行預先轉換 64 色 → video 0.675 → 0.312 ms/frame；**1,080 張參考畫面 hash 全部相同**。
+- SH-2 idle-loop fast-forward（只在產生碼中）：`dt Rn; bf self` 延遲迴圈以封閉公式跳過；無 loop-carried state 且只讀取 ROM/SDRAM/cache/FB/COMM 的輪詢迴圈，在第一次迭代後一次扣掉剩餘時間片的 cycles（28 個迴圈）。依據：同一時間片內其他 CPU、中斷、計時器都不會改變狀態。直譯器仍逐次執行，**lockstep 36,000 + 12,000 + 9,000 幀 bit-identical**。
+- 結果：held-out session 約 **1,090–1,210 fps（0.83–0.92 ms/frame）**，本 milestone 開始時約 780–900 fps。
+
+**新測試**：`-DCHAOTIX_LONG_TESTS=ON` → `ctest -L long`：`lockstep_attract_long`（36,000 幀 lockstep）、`render_attract_long`（720 張 golden hash）。
+
+待做：68K 輪詢迴圈同樣的 fast-forward、旗標活性分析、更多遊戲區域（其他 zone 需要可解鎖的存檔或更長的遊玩腳本）。
 
 ## Milestone 4 — 真正寬螢幕（需逆向）
 

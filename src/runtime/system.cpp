@@ -3,12 +3,23 @@
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/sh2/sh2_interp.h"
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <new>
 
 namespace chaotix {
 
 namespace {
+
+// Scoped wall-clock timer that only measures when profiling is enabled.
+struct ProfScope {
+    uint64_t* slot;
+    std::chrono::steady_clock::time_point t0;
+    ProfScope(bool on, uint64_t* s) : slot(on ? s : nullptr) { if (slot) t0 = std::chrono::steady_clock::now(); }
+    ~ProfScope() {
+        if (slot) *slot += uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count());
+    }
+};
 
 void m68k_irq_ack(void* user, int level) {
     Machine* m = static_cast<Machine*>(user);
@@ -205,6 +216,7 @@ void Machine::boot_hle_start_sh2() {
 void Machine::run_slice(uint64_t end_mclk) {
     // 68000
     {
+        ProfScope ps(profile, &stats.prof_ns[PROF_M68K]);
         uint64_t target = end_mclk / 7;
         if (target > m68k_clock) {
             int32_t budget = int32_t(target - m68k_clock);
@@ -224,6 +236,7 @@ void Machine::run_slice(uint64_t end_mclk) {
     }
     // Z80 (sound CPU), unless held in reset or its bus is taken by the 68K
     {
+        ProfScope ps(profile, &stats.prof_ns[PROF_Z80]);
         uint64_t target = end_mclk / 15;
         if (target > z80_clock) {
             int32_t budget = int32_t(target - z80_clock);
@@ -236,6 +249,7 @@ void Machine::run_slice(uint64_t end_mclk) {
     for (int c = 0; c < 2; ++c) {
         if (!boot_hle_done || !(mars.adapter_ctrl & 2)) { sh2_clock[c] = sh_target; continue; }
         if (sh_target <= sh2_clock[c]) continue;
+        ProfScope ps(profile, &stats.prof_ns[c ? PROF_SSH2 : PROF_MSH2]);
         sh2::State& s = sh2[c];
         int32_t budget = int32_t(sh_target - sh2_clock[c]);
         s.cycles = budget;
@@ -254,6 +268,7 @@ void Machine::run_slice(uint64_t end_mclk) {
     }
     uint64_t start = mclk;
     mclk = end_mclk;
+    ProfScope ps(profile, &stats.prof_ns[PROF_AUDIO]);
     if (boot_hle_done) pwm_advance(uint32_t((end_mclk * 3 / 7) - (start * 3 / 7)));
     audio_advance(end_mclk);
 }
@@ -312,6 +327,7 @@ void Machine::start_line() {
 }
 
 void Machine::end_line() {
+    ProfScope ps(profile, &stats.prof_ns[PROF_VIDEO]);
     if (line < kActiveLines) {
         uint32_t md[Vdp::kMaxWidth];
         uint8_t bg[Vdp::kMaxWidth];

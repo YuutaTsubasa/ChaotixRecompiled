@@ -240,19 +240,39 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int width, 
     if (!planeA) hs_addr += 2;
     int hscroll = ((v.vram[hs_addr & 0xFFFF] << 8) | v.vram[(hs_addr + 1) & 0xFFFF]) & 0x3FF;
     const bool col_vs = (v.reg[11] & 4) != 0;
-    for (int x = 0; x < width; ++x) {
-        if (planeA && x >= win_x0 && x < win_x1) continue;
+    // Process runs of pixels that share one tile row: a run ends at a tile
+    // edge, the window edge, or a 16-pixel column (per-column V-scroll).
+    int x = 0;
+    while (x < width) {
+        if (planeA && x >= win_x0 && x < win_x1) { x = win_x1; continue; }
         int vs = col_vs ? v.vsram[(((x >> 4) * 2) + (planeA ? 0 : 1)) % 40] : v.vsram[planeA ? 0 : 1];
         int py = (line + vs) & (ph * 8 - 1);
         int px = (x - hscroll) & (pw * 8 - 1);
+        int lim = width;
+        if (planeA && x < win_x0 && win_x0 < lim) lim = win_x0;
+        if (col_vs && ((x | 15) + 1) < lim) lim = (x | 15) + 1;
+        int run = 8 - (px & 7);
+        if (run > lim - x) run = lim - x;
         uint32_t ea = nt + uint32_t(((py >> 3) * pw + (px >> 3)) * 2);
         uint16_t e = uint16_t((v.vram[ea & 0xFFFF] << 8) | v.vram[(ea + 1) & 0xFFFF]);
-        int tx = px & 7, ty = py & 7;
-        if (e & 0x0800) tx = 7 - tx;
+        int ty = py & 7;
         if (e & 0x1000) ty = 7 - ty;
-        uint8_t c = tile_pixel(v.vram, e, tx, ty);
-        out[x].color = c ? uint8_t(((e >> 9) & 0x30) | c) : 0;
-        out[x].prio = (e >> 15) & 1;
+        uint32_t row = ((uint32_t(e) & 0x7FF) << 5) + uint32_t(ty) * 4;
+        uint8_t pix[8];
+        for (int k = 0; k < 4; ++k) {
+            uint8_t b = v.vram[(row + uint32_t(k)) & 0xFFFF];
+            pix[k * 2] = b >> 4;
+            pix[k * 2 + 1] = b & 15;
+        }
+        const uint8_t pal = uint8_t((e >> 9) & 0x30), prio = uint8_t((e >> 15) & 1);
+        const bool hflip = (e & 0x0800) != 0;
+        for (int i = 0; i < run; ++i) {
+            int tx = (px & 7) + i;
+            uint8_t c = pix[hflip ? 7 - tx : tx];
+            out[x + i].color = c ? uint8_t(pal | c) : 0;
+            out[x + i].prio = prio;
+        }
+        x += run;
     }
 }
 
@@ -356,6 +376,8 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
     }
 
     const bool shi = (reg[12] & 0x08) != 0;
+    uint32_t palrgb[64];
+    for (int i = 0; i < 64; ++i) palrgb[i] = cram_to_rgb(cram[i]);
     for (int x = 0; x < width; ++x) {
         uint8_t c = 0;
         bool isbg = false;
@@ -367,7 +389,7 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
         else if (a[x].color) c = a[x].color;
         else if (b[x].color) c = b[x].color;
         else { c = bgidx; isbg = true; }
-        uint32_t rgb = cram_to_rgb(cram[c]);
+        uint32_t rgb = palrgb[c];
         if (shi) {
             bool shadow = !(a[x].prio || b[x].prio);
             if (s[x].color == 0x3E || s[x].color == 0x3F) {
@@ -378,7 +400,7 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
                 else if (a[x].color) u = a[x].color;
                 else if (b[x].color) u = b[x].color;
                 else { u = bgidx; }
-                rgb = cram_to_rgb(cram[u]);
+                rgb = palrgb[u];
                 if (s[x].color == 0x3E) {
                     // highlight operator: shadowed -> normal, normal -> highlighted
                     if (!shadow) rgb = 0xFF000000u | (((rgb & 0xFEFEFE) >> 1) + 0x808080);

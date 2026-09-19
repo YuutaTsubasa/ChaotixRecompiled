@@ -79,7 +79,11 @@ cd build && ctest --output-on-failure
 
 Unit tests always run; with `CHAOTIX_ROM` set, integration tests compare the
 recompiled build against the reference interpreter frame by frame and check
-golden frame hashes.
+golden frame hashes. `-DCHAOTIX_LONG_TESTS=ON` adds `ctest -L long`
+(36,000-frame lockstep and 720 golden render hashes, a few minutes).
+
+Coverage traces for the recompiler are recorded with
+`python tools/coverage/record_sessions.py --rom <rom>` (writes `coverage/*.cov`).
 
 ## Legal
 

@@ -28,7 +28,7 @@ struct EmitResult {
     std::vector<std::string> decls;          // function declarations
     std::vector<TableEntry> table;
     std::vector<std::array<uint32_t, 3>> ranges;  // SH-2 validation ranges
-    size_t functions = 0, instructions = 0, folded_literals = 0;
+    size_t functions = 0, instructions = 0, folded_literals = 0, fast_loops = 0;
 };
 
 // Name of the generated function for an analysis function entry.

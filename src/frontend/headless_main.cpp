@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <map>
 #include <memory>
 #include <set>
@@ -156,9 +157,10 @@ int main(int argc, char** argv) {
     std::map<uint64_t, uint64_t> expect_hash;  // frame -> expected image hash
     int hash_failures = 0;
     std::vector<Press> presses;
-    uint64_t state_every = 0;
+    uint64_t state_every = 0, hash_every = 0;
     bool force_interp = false;
     bool lockstep = false;
+    bool profile = false;
     std::string wav_path;
     std::string coverage_path;
     int break_cpu = -1;
@@ -178,9 +180,50 @@ int main(int argc, char** argv) {
             for (auto& b : split(parts[1], '+')) p.buttons |= pad_button_from_name(b.c_str());
             presses.push_back(p);
         }
+        else if (a == "--script") {
+            // Lines: FRAME BUTTON[+BUTTON] [DURATION]   ('#' starts a comment)
+            FILE* sf = std::fopen(next().c_str(), "r");
+            if (!sf) { std::fprintf(stderr, "cannot open script\n"); return 2; }
+            char line[256];
+            while (std::fgets(line, sizeof line, sf)) {
+                char btns[128] = {};
+                unsigned long long fr = 0, dur = 4;
+                if (line[0] == '#' || std::sscanf(line, "%llu %127s %llu", &fr, btns, &dur) < 2) continue;
+                Press p{fr, 0, dur};
+                for (auto& b : split(btns, '+')) p.buttons |= pad_button_from_name(b.c_str());
+                presses.push_back(p);
+            }
+            std::fclose(sf);
+        }
+        else if (a == "--fuzz") {
+            // SEED:FROM:TO — deterministic pseudo-random play (no Start/Mode),
+            // biased towards moving right, used to widen code coverage.
+            auto parts = split(next(), ':');
+            uint32_t seed = uint32_t(std::strtoul(parts[0].c_str(), nullptr, 10));
+            uint64_t from = std::strtoull(parts[1].c_str(), nullptr, 10), to = std::strtoull(parts[2].c_str(), nullptr, 10);
+            auto rnd = [&]() { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
+            static const uint16_t dirs[] = {PAD_RIGHT, PAD_RIGHT, PAD_RIGHT, PAD_LEFT, PAD_DOWN, PAD_UP, 0, PAD_RIGHT | PAD_DOWN};
+            static const uint16_t acts[] = {PAD_A, PAD_B, PAD_C, PAD_C, 0, 0, PAD_X, PAD_Y, PAD_Z};
+            for (uint64_t f = from; f < to;) {
+                uint64_t len = 20 + rnd() % 90;
+                presses.push_back({f, dirs[rnd() % 8], len});
+                for (uint64_t k = f; k < f + len; k += 10 + rnd() % 30) presses.push_back({k, acts[rnd() % 9], 1 + rnd() % 25});
+                f += len;
+            }
+        }
         else if (a == "--state-every") state_every = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--hash-every") hash_every = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--expect-hashes") {
+            // File of "hash FRAME HASH" lines (as printed by --hash-every).
+            FILE* hf = std::fopen(next().c_str(), "r");
+            if (!hf) { std::fprintf(stderr, "cannot open hash file\n"); return 2; }
+            unsigned long long fr, h;
+            while (std::fscanf(hf, " hash %llu %llx", &fr, &h) == 2) expect_hash[fr] = h;
+            std::fclose(hf);
+        }
         else if (a == "--interp") force_interp = true;
         else if (a == "--lockstep") lockstep = true;
+        else if (a == "--profile") profile = true;
         else if (a == "--wav") wav_path = next();
         else if (a == "--expect-hash") {
             auto parts = split(next(), ':');
@@ -210,6 +253,7 @@ int main(int argc, char** argv) {
     if (!m->load_rom(rom_path, &err)) { std::fprintf(stderr, "error: %s\n", err.c_str()); return 1; }
     m->reset();
     m->audio_enabled = !wav_path.empty();
+    m->profile = profile;
     std::vector<int16_t> wav;
     RecompStatus rs = install_recompiled_code(*m, !force_interp);
     std::printf("execution: %s\n", rs.description.c_str());
@@ -297,11 +341,23 @@ int main(int argc, char** argv) {
                         ok ? "matches golden" : "DOES NOT MATCH golden");
             if (!ok) ++hash_failures;
         }
+        if (hash_every && m->frame_count % hash_every == 0)
+            std::printf("hash %llu %016llx\n", (unsigned long long)m->frame_count,
+                        (unsigned long long)image_hash(m->framebuffer, m->fb_width, m->fb_height, kScreenWidth));
         if (state_every && m->frame_count % state_every == 0) dump_state(*m);
     }
     double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("ran %llu frames in %.2fs (%.1f fps)\n", (unsigned long long)frames, secs, frames / secs);
     print_recomp_stats(*m);
+    if (profile) {
+
+        static const char* names[PROF_COUNT] = {"68K", "Z80", "MSH2", "SSH2", "video", "audio/pwm"};
+        double total = secs * 1e9;
+        std::printf("profile (ms/frame):");
+        for (int i = 0; i < PROF_COUNT; ++i)
+            std::printf(" %s %.3f (%.0f%%)", names[i], m->stats.prof_ns[i] / 1e6 / double(frames), 100.0 * m->stats.prof_ns[i] / total);
+        std::printf(" | total %.3f\n", total / 1e6 / double(frames));
+    }
     if (!wav_path.empty()) {
         if (write_wav(wav_path, wav, int(kAudioRate + 0.5))) std::printf("audio written to %s (%zu samples)\n", wav_path.c_str(), wav.size() / 2);
     }

@@ -27,11 +27,13 @@ int main(int argc, char** argv) {
     std::string rom_path, out_dir;
     std::vector<std::string> cov_paths;
     EmitOptions opt;
+    bool heuristics = true;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--rom" && i + 1 < argc) rom_path = argv[++i];
         else if (a == "--coverage" && i + 1 < argc) cov_paths.push_back(argv[++i]);
         else if (a == "--out" && i + 1 < argc) out_dir = argv[++i];
+        else if (a == "--no-heuristics") heuristics = false;
         else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 2; }
     }
     if (rom_path.empty() || out_dir.empty()) {
@@ -62,6 +64,7 @@ int main(int argc, char** argv) {
     Program pm(rom, Cpu::M68K), ps(rom, Cpu::SH2);
     for (Program* p : {&pm, &ps}) {
         p->add_default_spaces();
+        p->heuristics = heuristics;
         p->add_coverage(cov);
         p->analyze();
     }
@@ -109,6 +112,10 @@ int main(int argc, char** argv) {
                   rom.sha1.c_str(), rm.functions, rm.instructions, rm.table.size(), rs.functions, rs.instructions, rs.table.size(),
                   rs.folded_literals, rs.ranges.size(), cov.size());
     man = buf;
+    std::snprintf(buf, sizeof buf, "m68k_static_recovery branch_tables %zu offset_tables %zu code_pointers %zu\n",
+                  pm.stats.branch_tables, pm.stats.offset_tables, pm.stats.code_pointers);
+    man += buf;
+    man += "sh2_fast_forward_loops " + std::to_string(rs.fast_loops) + std::string(1, 10);
     write_file(out_dir + "/manifest.txt", man);
     std::printf("%s", man.c_str());
     for (const auto& w : ps.warnings) std::printf("warning (sh2): %s\n", w.c_str());

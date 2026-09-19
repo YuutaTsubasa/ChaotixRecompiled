@@ -86,6 +86,10 @@ public:
     std::set<uint64_t> leaders;          // all block starts
     std::vector<std::string> warnings;
 
+    // Static target recovery heuristics (jump tables, code pointers).
+    bool heuristics = true;
+    struct Stats { size_t branch_tables = 0, offset_tables = 0, code_pointers = 0; } stats;
+
     // Setup
     void add_default_spaces();
     void add_coverage(const std::vector<CoverageEntry>& cov);
@@ -103,6 +107,8 @@ public:
 
 private:
     InsnInfo describe(uint32_t addr, int bank) const;
+    bool plausible_m68k_code(uint32_t addr, int bank) const;
+    std::vector<uint32_t> m68k_static_targets(uint32_t addr, int bank, const uint32_t* prev_addr);
     void explore();
     void form_blocks();
     void form_functions();
