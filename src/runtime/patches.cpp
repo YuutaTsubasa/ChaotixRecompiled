@@ -98,11 +98,13 @@ int camera_x(const Machine& m) { return int(int16_t((m.wram[kPlaneAStruct] << 8)
 int camera_y(const Machine& m) { return int(int16_t((m.wram[(kPlaneAStruct + 0x10) & 0xFFFF] << 8) | m.wram[(kPlaneAStruct + 0x11) & 0xFFFF])); }
 
 MarginCut margin_cut(const Machine& m, int extra) {
-    auto rd = [&](uint32_t a) { return int(int16_t((m.wram[a & 0xFFFF] << 8) | m.wram[(a + 1) & 0xFFFF])); };
-    const int cam = camera_x(m), right_bound = rd(kPlaneAStruct + 8), left_bound = rd(kPlaneAStruct + 0xA);
+    // Only the part of the left margin left of the level's origin is blacked
+    // out: there is no layout there, so the ring holds unrelated tiles. The
+    // camera clamp keeps the margins inside the level's camera range while it
+    // can; where a room is narrower than the view the margins show the tiles
+    // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
-    c.left = std::clamp(left_bound - (cam - extra), 0, extra);
-    c.right = std::clamp((cam + 320 + extra) - (right_bound + 320), 0, extra);
+    c.left = std::clamp(extra - camera_x(m), 0, extra);
     return c;
 }
 

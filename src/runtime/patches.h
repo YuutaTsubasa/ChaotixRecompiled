@@ -130,10 +130,9 @@ bool wide_scene_active(const Machine& m);
 int camera_x(const Machine& m);
 int camera_y(const Machine& m);
 
-// Margin columns (per side) that fall outside the level's camera range: the
-// game does not maintain tiles or objects there, so the renderer blacks them
-// out. Non-zero only where a room is narrower than the widened view or right
-// after the camera bounds change.
+// Margin columns on the left that fall left of the level's origin, where no
+// layout exists. Non-zero only where a room is narrower than the widened view
+// (the camera clamp keeps the margins inside the level otherwise).
 struct MarginCut { int left = 0, right = 0; };
 MarginCut margin_cut(const Machine& m, int extra);
 
