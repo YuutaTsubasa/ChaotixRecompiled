@@ -55,7 +55,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         return;
     }
     const int w = m->plane_shift;
-    if (!w) return;
+    if (!w || m->vdp.reg[16] != kLevelPlaneSize) return;
     switch (pc) {
     case kFillSplitX: {
         // Same transform as the plane.x the current fill was given.
@@ -114,7 +114,8 @@ void begin_frame(Machine& m) {
     // plane_shift is latched when a level loads: turning widescreen on in the
     // middle of a level shows bars until the next load. The bottom rows need
     // no patch, so they only wait for a level scene.
-    m.wide_active = (e > 0 || eb > 0) && (e == 0 || m.plane_shift > 0) && wide_scene_active(m);
+    m.wide_active = (e > 0 || eb > 0) && (e == 0 || m.plane_shift > 0) &&
+                    m.vdp.reg[16] == kLevelPlaneSize && wide_scene_active(m);
     if (m.wide_active) {
         // The blitters write 16-bit words at clip-aligned addresses: an odd
         // bound makes the SH-2 raise an address error (it crashed at E = 53).

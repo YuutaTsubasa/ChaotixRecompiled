@@ -121,6 +121,11 @@ constexpr int kMaxWideExtraBottom = 16;
 // so the "camera crossed a block" test and the column drawn stay in step.
 constexpr int plane_shift_for(int extra) { return extra > 0 ? 96 : 0; }
 
+// The patches assume the level engine's plane geometry: 64 columns x 32 rows
+// (reg 16 = 0x01), the 512 x 256 px ring described above. Scenes that set up
+// a different plane (menus and transitions use 64x64) are left alone.
+constexpr uint8_t kLevelPlaneSize = 0x01;
+
 // A frame counts as a level scene when the level engine's per-frame plane
 // update ran in the last 8 frames (it skips a few while a level loads). Other
 // scenes (title, menus, special stages) stay 4:3 with black side bars.
