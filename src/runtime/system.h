@@ -27,7 +27,7 @@ constexpr int kActiveLines = 224;
 constexpr int kSlicesPerLine = 4;
 constexpr int kNativeWidth = 320;
 constexpr int kScreenWidth = Vdp::kMaxWidth;  // framebuffer stride (native + widescreen margins)
-constexpr int kScreenHeight = 240;  // buffer height; 224 lines are active
+constexpr int kScreenHeight = 224 + 16;  // active lines + widescreen rows (patches::kMaxWideExtraBottom)
 constexpr int kMclkPerAudioSample = 1008;  // YM2612 native rate: MCLK / 7 / 144
 constexpr double kAudioRate = 53693175.0 / kMclkPerAudioSample;
 
@@ -142,12 +142,14 @@ public:
     // Output
     uint32_t framebuffer[kScreenWidth * kScreenHeight];  // XRGB8888, stride kScreenWidth
     int fb_width = 320, fb_height = 224;
-    int fb_extra = 0;  // widescreen columns on each side included in fb_width
+    int fb_extra = 0;    // widescreen columns on each side included in fb_width
+    int fb_extra_bottom = 0;  // widescreen rows below, included in fb_height
     // Widescreen: extra columns rendered on each side of the native image
     // (0 = original 4:3). Non-zero values also enable the level-engine patch
     // (runtime/patches.h), which changes which tiles the game streams into
     // VRAM, so machines compared in lockstep must use the same value.
     int wide_extra = 0;
+    int wide_extra_bottom = 0;  // extra rows below the screen (see patches.h)
     int plane_shift = 0;               // W latched by the plane streaming patch
     uint64_t level_seen_frame = ~0ull; // last frame the level engine ran (patches.cpp)
     bool wide_active = false;          // margins show game content this frame
@@ -247,6 +249,7 @@ private:
     // margins come from the frame buffer bytes around the line (packed pixel
     // mode; see patches.h), otherwise they are transparent.
     void render_line32x(int ln, uint32_t* out, int extra, bool wide_src);
+    void render_output_line(int src_line, int dst_row);
 
     // 32X register helpers
     uint32_t mars_read(int who, uint32_t off, int size);    // who: -1 = 68K, 0/1 = SH-2

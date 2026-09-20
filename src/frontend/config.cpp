@@ -87,7 +87,8 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Auto (match window) | 4:3 | 16:9 | 16:10 | 21:9 | W:H\n");
     if (viewport.aspect == AspectMode::Custom) std::fprintf(f, "AspectRatio = %.4f\n", viewport.custom_aspect);
     else std::fprintf(f, "AspectRatio = %s\n", aspect_name(viewport.aspect));
-    std::fprintf(f, "# true: levels render extra columns up to the aspect ratio (max ~1.87:1); false: original 4:3\n");
+    std::fprintf(f, "# true: levels render extra columns (or rows, for frames taller than 4:3) to fill\n");
+    std::fprintf(f, "# the aspect ratio, from 1.24:1 (320x240) to 2:1 (480x224); false: original 4:3\n");
     std::fprintf(f, "Widescreen = %s\n", widescreen ? "true" : "false");
     std::fprintf(f, "# Integer | Fit | Stretch\nScaling = %s\n", scale_name(viewport.scale));
     std::fprintf(f, "# Nearest | Linear\nFilter = %s\n", linear_filter ? "Linear" : "Nearest");

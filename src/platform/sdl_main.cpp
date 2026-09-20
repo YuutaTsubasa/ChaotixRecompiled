@@ -396,6 +396,8 @@ int main(int argc, char** argv) {
             SDL_GetRenderOutputSize(app.renderer, &ww, &wh);
             const double fa = aspect_value(app.cfg.viewport.aspect, app.cfg.viewport.custom_aspect, wh > 0 ? double(ww) / double(wh) : 0.0);
             app.m->wide_extra = app.cfg.widescreen ? widescreen_extra(fa, patches::kMaxWideExtra) : 0;
+            // A frame taller than 4:3 gets extra rows below instead.
+            app.m->wide_extra_bottom = app.cfg.widescreen ? widescreen_rows(fa, patches::kMaxWideExtraBottom) : 0;
         }
         int steps = 0;
         const int max_steps = app.fast_forward ? 8 : 3;
@@ -450,7 +452,8 @@ int main(int argc, char** argv) {
         SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
         SDL_RenderClear(app.renderer);
         SDL_UpdateTexture(app.texture, nullptr, app.m->framebuffer, kScreenWidth * 4);
-        app.cfg.viewport.image_aspect = image_aspect_for_width(app.m->fb_width, app.m->fb_width - 2 * app.m->fb_extra);
+        app.cfg.viewport.image_aspect = image_aspect_for_size(app.m->fb_width, app.m->fb_width - 2 * app.m->fb_extra,
+                                                              app.m->fb_height, app.m->fb_height - app.m->fb_extra_bottom);
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
         SDL_FRect src{0, 0, float(app.m->fb_width), float(app.m->fb_height)};
         SDL_FRect dst{float(vp.image.x), float(vp.image.y), float(vp.image.w), float(vp.image.h)};
@@ -464,10 +467,10 @@ int main(int argc, char** argv) {
             app.timing.refresh_hz = dm ? unsigned(dm->refresh_rate + 0.5f) : 0;
             app.timing.fast_forward = app.fast_forward;
             char vline[200];
-            std::snprintf(vline, sizeof vline, "video: %dx%d out, image %.0fx%.0f, aspect %s, %s, %s, %s, wide %d%s", ow, oh, vp.image.w, vp.image.h,
+            std::snprintf(vline, sizeof vline, "video: %dx%d out, image %.0fx%.0f, aspect %s, %s, %s, %s, wide %d+%d%s", ow, oh, vp.image.w, vp.image.h,
                           aspect_name(app.cfg.viewport.aspect), scale_name(app.cfg.viewport.scale),
                           app.cfg.linear_filter ? "linear" : "nearest", window_mode_name(app.cfg.window_mode),
-                          app.m->fb_extra, app.m->wide_active ? " (active)" : "");
+                          app.m->fb_extra, app.m->fb_extra_bottom, app.m->wide_active ? " (active)" : "");
             auto lines = build_debug_overlay(*app.m, app.timing, app.overlay_page, vline, app.watches);
             float scale = std::max(1.0f, float(oh) / 540.0f);
             SDL_SetRenderScale(app.renderer, scale, scale);

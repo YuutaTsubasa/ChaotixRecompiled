@@ -7,7 +7,7 @@ timers) plus an SDL3 frontend make it a native program on each platform.
 
 Status: boots to the title screen, menus and save-select work, levels are
 playable, with sound (Z80 driver + YM2612 + PSG + PWM; first version) and true
-widescreen in levels (up to 448×224, e.g. 426×224 at 16:9: level tiles, objects
+widescreen in levels (up to 480×240, e.g. 426×224 at 16:9: level tiles, objects
 and sprites are drawn in the extra columns; other scenes stay 4:3). See
 [ARCHITECTURE.md](ARCHITECTURE.md) and [docs/MILESTONES.md](docs/MILESTONES.md).
 
@@ -58,7 +58,7 @@ next to the executable. Settings live in the user data directory
 | F1 / F5 | Debug overlay / overlay page |
 | F2 | Aspect ratio (Auto, 4:3, 16:9, 16:10, 21:9) |
 | F3 / F4 | Filter / scaling mode |
-| F6 | True widescreen on/off (applies from the next level load) |
+| F6 | True widescreen on/off (extra columns apply from the next level load) |
 | F11, Alt+Enter | Borderless fullscreen |
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
@@ -71,7 +71,7 @@ A/B/C, LB/North/RB = X/Y/Z. On touch devices virtual controls appear.
 - `rom_analyzer --rom <rom> [--coverage f.cov] --out dir` — verification and
   reports (code spaces, functions, xrefs, hardware register usage).
 - `chaotix_recomp --rom <rom> --coverage f.cov --out generated` — the recompiler.
-- `chaotix_headless --rom <rom> --frames N [--wide E] [--lockstep] [--compare-native] [--shot F] [--press F:btn:dur] [--coverage f] [--trace ...]`
+- `chaotix_headless --rom <rom> --frames N [--wide E] [--wide-bottom R] [--lockstep] [--compare-native] [--shot F] [--press F:btn:dur] [--coverage f] [--trace ...]`
   — deterministic headless execution and validation.
 
 ## Tests

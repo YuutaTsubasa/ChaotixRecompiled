@@ -79,5 +79,13 @@ TEST(viewport, widescreen_extra_from_aspect) {
     CHECK_EQ(widescreen_extra(64.0 / 27.0, 64), 64);   // 21:9 capped
     CHECK_EQ(widescreen_extra(1.0, 64), 0);            // narrower than 4:3
     // A widescreen image keeps native pixel shape: 426 of 320 columns is ~16:9.
-    CHECK(std::fabs(image_aspect_for_width(426, 320) - 16.0 / 9.0) < 0.005);
+    CHECK(std::fabs(image_aspect_for_size(426, 320, 224, 224) - 16.0 / 9.0) < 0.005);
+}
+
+TEST(viewport, extra_rows_for_tall_frames) {
+    CHECK_EQ(widescreen_rows(4.0 / 3.0, 16), 0);
+    CHECK_EQ(widescreen_rows(16.0 / 9.0, 16), 0);   // wider than 4:3: columns, not rows
+    CHECK_EQ(widescreen_rows(5.0 / 4.0, 16), 14);   // 238 lines
+    CHECK_EQ(widescreen_rows(1.0, 16), 16);         // capped
+    CHECK(std::fabs(image_aspect_for_size(320, 320, 240, 224) - (4.0 / 3.0) * 224.0 / 240.0) < 1e-9);
 }

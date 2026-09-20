@@ -162,7 +162,7 @@ int main(int argc, char** argv) {
     bool force_interp = false;
     bool lockstep = false;
     bool profile = false;
-    int wide = 0;
+    int wide = 0, wide_bottom = 0;
     // --compare-native: run a 4:3 machine alongside the widescreen one and
     // require the centre 320 px to be pixel-identical. Comparison stops when
     // the cameras legitimately differ (the widescreen camera clamp keeps the
@@ -233,6 +233,7 @@ int main(int argc, char** argv) {
         else if (a == "--lockstep") lockstep = true;
         else if (a == "--profile") profile = true;
         else if (a == "--wide") wide = std::atoi(next().c_str());
+        else if (a == "--wide-bottom") wide_bottom = std::atoi(next().c_str());
         else if (a == "--compare-native") compare_native = true;
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
@@ -266,6 +267,7 @@ int main(int argc, char** argv) {
     m->audio_enabled = !wav_path.empty();
     m->profile = profile;
     m->wide_extra = wide;
+    m->wide_extra_bottom = wide_bottom;
     std::vector<int16_t> wav;
     RecompStatus rs = install_recompiled_code(*m, !force_interp);
     std::printf("execution: %s\n", rs.description.c_str());
@@ -277,6 +279,7 @@ int main(int argc, char** argv) {
         ref->load_rom(rom_path, &err);
         ref->reset();
         ref->wide_extra = wide;
+        ref->wide_extra_bottom = wide_bottom;
         if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
     }
     // The 4:3 comparison machine runs on the interpreter: the recompiled
@@ -284,7 +287,7 @@ int main(int argc, char** argv) {
     // time may use it (same reason the lockstep reference is interpreted).
     std::unique_ptr<Machine> nat;
     bool centre_compare = false;
-    if (compare_native && wide > 0) {
+    if (compare_native && (wide > 0 || wide_bottom > 0)) {
         nat = std::make_unique<Machine>();
         nat->load_rom(rom_path, &err);
         nat->reset();

@@ -58,9 +58,13 @@ enum : uint32_t {
     // both bounds in by E so the margins never show past the level edges.
     kCamClampMax = 0x889A94,     // after d1 = right bound
     kCamClampMin = 0x889A9C,     // after d1 = left bound
+    // Camera Y ($FFDFEA) is clamped to [plane.$E, plane.$C]; only the bottom
+    // bound needs pulling in, because the extra rows are below the screen.
+    kCamClampBottom = 0x889AC0,  // after d1 = bottom bound
 };
 
-// Plane A struct in 68K work RAM: +0 camera X, +8 right bound, +A left bound.
+// Plane A struct in 68K work RAM: +0 camera X, +8 right bound, +A left bound,
+// +10 camera Y, +C bottom bound, +E top bound.
 constexpr uint32_t kPlaneAStruct = 0xC1DE;
 
 // Sorted: the interpreter binary-searches this list.
@@ -68,7 +72,7 @@ inline constexpr uint32_t kM68kHooks[] = {
     kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit,
     kFullRedrawA, kRowsA_X, kFullRedrawB, kRowsB_X, kPlaneUpdateA, kRowUpA_X, kRowDownA_X,
     kColLeftA_X, kColRightA_X, kPlaneUpdateB, kColLeftB_X, kColRightB_X, kRowUpB_X, kRowDownB_X,
-    kCamClampMax, kCamClampMin, kFillSplitX,
+    kCamClampMax, kCamClampMin, kCamClampBottom, kFillSplitX,
 };
 
 constexpr bool hooks_sorted() {
@@ -101,8 +105,16 @@ constexpr uint32_t kFbLineStride = 0x200;
 constexpr uint32_t kClipRectRom = 0x77800 + kClipRectSdram;
 
 // Widest margin (px per side) the patches support: leaves the plane ring
-// (below) at least 16 px of slack on each side.
-constexpr int kMaxWideExtra = 64;
+// (below) 16 px of slack on each side, one 16 px column step.
+constexpr int kMaxWideExtra = 80;
+// Extra rows below the screen. The plane ring is 256 px tall against 224
+// visible lines and holds [camera_y, camera_y + 256), so no patch is needed;
+// the last 16 px block is the one being refreshed as rows scroll past, which
+// leaves 16 usable rows (measured: 0 stale cells at 16, ~10% at 32).
+// Rows *above* the camera are not possible: the engine refreshes rows in
+// 16 px steps and overwrites the row that just left the top of the screen,
+// so a shift large enough to protect a top margin leaves nothing below.
+constexpr int kMaxWideExtraBottom = 16;
 // Plane ring shift: the 512 px ring then covers [cam - 96, cam + 416), which
 // leaves 96 - E px of slack on both sides (slack hides new 16 px columns
 // arriving a step late when the camera moves fast). W stays a multiple of 16

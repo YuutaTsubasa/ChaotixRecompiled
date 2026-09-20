@@ -6,6 +6,7 @@
 //   0xFD: 32X pixel is visible only where the MD pixel is the backdrop
 //   0x00: no 32X pixel (blank mode)
 #include "runtime/system.h"
+#include "runtime/patches.h"
 
 namespace chaotix {
 
@@ -30,7 +31,11 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src) {
     if (mode == 0 || !(mars.adapter_ctrl & 1)) return;
     const bool pri = (mars.bitmap_mode & 0x80) != 0;
     const uint8_t* fb = mars.fb[mars.fb_display];
-    uint32_t lineaddr = (uint32_t(fb[ln * 2]) << 8) | fb[ln * 2 + 1];
+    // Widescreen rows above/below the active area are not in the line table;
+    // the level frame buffer is a uniform grid, so extrapolate from the edge.
+    const int lt = ln < 0 ? 0 : (ln >= kActiveLines ? kActiveLines - 1 : ln);
+    uint32_t lineaddr = (uint32_t(fb[lt * 2]) << 8) | fb[lt * 2 + 1];
+    lineaddr += uint32_t(ln - lt) * (patches::kFbLineStride / 2);
     uint32_t base = (lineaddr * 2) & 0x1FFFF;
     switch (mode) {
     case 1: {  // packed pixel, 8 bpp

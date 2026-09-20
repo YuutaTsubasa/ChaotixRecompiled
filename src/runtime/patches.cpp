@@ -45,6 +45,15 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         set_low_word(c->d[1], uint32_t(pc == kCamClampMax ? hi : lo));
         return;
     }
+    if (pc == kCamClampBottom) {
+        // The extra rows are below the screen, so only the bottom bound moves.
+        const int e = std::clamp(m->wide_extra_bottom, 0, kMaxWideExtraBottom);
+        if (!e) return;
+        const int bottom = int16_t(m68k::rd16(c, c->a[1] + 0xC));
+        const int top = int16_t(m68k::rd16(c, c->a[1] + 0xE));
+        set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
+        return;
+    }
     const int w = m->plane_shift;
     if (!w) return;
     switch (pc) {
@@ -99,9 +108,11 @@ MarginCut margin_cut(const Machine& m, int extra) {
 
 void begin_frame(Machine& m) {
     const int e = std::clamp(m.wide_extra, 0, kMaxWideExtra);
-    // plane_shift is latched when a level loads: enabling widescreen in the
-    // middle of a level shows side bars until the next load.
-    m.wide_active = e > 0 && m.plane_shift > 0 && wide_scene_active(m);
+    const int eb = std::clamp(m.wide_extra_bottom, 0, kMaxWideExtraBottom);
+    // plane_shift is latched when a level loads: turning widescreen on in the
+    // middle of a level shows bars until the next load. The bottom rows need
+    // no patch, so they only wait for a level scene.
+    m.wide_active = (e > 0 || eb > 0) && (e == 0 || m.plane_shift > 0) && wide_scene_active(m);
     if (m.wide_active) {
         // The blitters write 16-bit words at clip-aligned addresses: an odd
         // bound makes the SH-2 raise an address error (it crashed at E = 53).

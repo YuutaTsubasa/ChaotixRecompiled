@@ -28,6 +28,12 @@ int widescreen_extra(double frame_aspect, int max_extra) {
     return std::clamp(e, 0, max_extra);
 }
 
+int widescreen_rows(double frame_aspect, int max_rows) {
+    if (frame_aspect <= 0.0) return 0;
+    const double lines = 224.0 * (4.0 / 3.0) / frame_aspect;
+    return std::clamp(int(std::floor(lines - 224.0 + 1e-9)), 0, max_rows);
+}
+
 ViewportResult compute_viewport(const ViewportConfig& cfg, int out_w, int out_h, int sim_w, int sim_h) {
     ViewportResult r;
     if (out_w <= 0 || out_h <= 0 || sim_w <= 0 || sim_h <= 0) return r;

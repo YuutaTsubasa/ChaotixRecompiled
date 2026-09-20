@@ -234,10 +234,13 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
     if ((v.reg[16] & 3) == 3 && ph > 32) ph = 32;  // 128-wide limits height
     const uint32_t nt = planeA ? (uint32_t(v.reg[2] & 0x38) << 10) : (uint32_t(v.reg[4] & 0x07) << 13);
     const uint32_t hs_base = uint32_t(v.reg[13] & 0x3F) << 10;
+    // Widescreen extra rows above/below the active area reuse the nearest
+    // line's scroll value (the tables only cover the active lines).
+    const int hs_line = line < 0 ? 0 : (line >= v.height() ? v.height() - 1 : line);
     uint32_t hs_addr;
     switch (v.reg[11] & 3) {
-    case 2: hs_addr = hs_base + uint32_t(line & ~7) * 4; break;
-    case 3: hs_addr = hs_base + uint32_t(line) * 4; break;
+    case 2: hs_addr = hs_base + uint32_t(hs_line & ~7) * 4; break;
+    case 3: hs_addr = hs_base + uint32_t(hs_line) * 4; break;
     default: hs_addr = hs_base; break;
     }
     if (!planeA) hs_addr += 2;
@@ -317,7 +320,7 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
 
     // Window region for this line.
     int win_x0 = 0, win_x1 = 0;
-    {
+    if (line >= 0 && line < height()) {
         int wvp = (reg[18] & 0x1F) * 8;
         bool down = (reg[18] & 0x80) != 0;
         bool vwin = down ? (line >= wvp) : (line < wvp);

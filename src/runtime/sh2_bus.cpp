@@ -83,7 +83,10 @@ void Machine::fb_write_wide(uint8_t* fb, uint32_t off, uint32_t v, int size) {
         uint8_t b = uint8_t(v >> (8 * (size - 1 - i)));
         if (!b) continue;
         uint32_t o = (off + uint32_t(i)) & 0x1FFFF;
-        if (((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) >= uint32_t(kNativeWidth)) shadow[o] = b;
+        const int32_t rel = int32_t(o) - int32_t(patches::kFbLineBase);
+        const int fline = rel >= 0 ? rel / int32_t(patches::kFbLineStride) : -1;
+        const bool off_line = fline < 0 || fline >= kActiveLines;
+        if (off_line || (uint32_t(rel) & (patches::kFbLineStride - 1)) >= uint32_t(kNativeWidth)) shadow[o] = b;
         else fb[o] = b;
     }
 }
@@ -92,11 +95,25 @@ void Machine::fb_write_wide(uint8_t* fb, uint32_t off, uint32_t v, int size) {
 // (called when the game's auto fill clears that line).
 void Machine::fb_margin_clear_line(uint32_t line_off, uint16_t fill) {
     uint8_t* shadow = fb_margin[mars.fb_display ^ 1];
-    for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x) {
-        if (x == 0) x = kNativeWidth;
-        uint32_t o = (line_off + uint32_t(x)) & 0x1FFFF;
-        shadow[o] = uint8_t((o & 1) ? fill : fill >> 8);
-    }
+    auto clear_margins = [&](uint32_t base) {
+        for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x) {
+            if (x == 0) x = kNativeWidth;
+            uint32_t o = (base + uint32_t(x)) & 0x1FFFF;
+            shadow[o] = uint8_t((o & 1) ? fill : fill >> 8);
+        }
+    };
+    auto clear_full = [&](uint32_t base) {
+        for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x) {
+            uint32_t o = (base + uint32_t(x)) & 0x1FFFF;
+            shadow[o] = uint8_t((o & 1) ? fill : fill >> 8);
+        }
+    };
+    clear_margins(line_off);
+    // The game only clears the active lines; the widescreen rows below the
+    // last one live entirely in the shadow.
+    const int fline = int((line_off - patches::kFbLineBase) / patches::kFbLineStride);
+    if (fline == kActiveLines - 1)
+        for (int k = 1; k <= patches::kMaxWideExtraBottom; ++k) clear_full(line_off + uint32_t(k) * patches::kFbLineStride);
 }
 
 // ---------------------------------------------------------------------------

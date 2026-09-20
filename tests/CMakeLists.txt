@@ -33,7 +33,8 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     # widescreen machine run side by side and the centre 320 px must match
     # pixel for pixel (this caught 8 ring columns never being filled).
     add_test(NAME widescreen_centre_matches_4_3
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4000 --wide 53 --compare-native --min-centre-frames 1000)
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4000 --wide 53 --wide-bottom 16
+                --compare-native --min-centre-frames 1000)
     add_test(NAME golden_frames_16_9
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 ${_script}
                 --expect-hash 2800:${CHAOTIX_GOLDEN_169_A} --expect-hash 3200:${CHAOTIX_GOLDEN_169_B})

@@ -328,33 +328,49 @@ void Machine::start_line() {
     update_sh2_irq(1);
 }
 
+// Renders one scanline of the emulated display into output row dst_row.
+// src_line may be outside the active area: widescreen adds rows above and
+// below, which the VDP renderer produces from the same plane data.
+void Machine::render_output_line(int src_line, int dst_row) {
+    const int extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    const int n = vdp.width() + 2 * extra;
+    uint32_t md[Vdp::kMaxWidth];
+    uint8_t bg[Vdp::kMaxWidth];
+    vdp.render_line(src_line, md, bg, extra);
+    uint32_t* row = framebuffer + dst_row * kScreenWidth;
+    render_line32x(src_line, row, extra, wide_active);
+    // Merge: render_line32x marks 32X pixels that should be shown with
+    // alpha 0xFE; 0xFD means "only where the MD pixel is the backdrop".
+    for (int x = 0; x < n; ++x) {
+        uint32_t p = row[x];
+        bool show32x = (p >> 24) == 0xFE;
+        bool mdbg = bg[x] != 0;
+        if (show32x || ((p >> 24) == 0xFD && mdbg)) row[x] = 0xFF000000u | (p & 0xFFFFFF);
+        else row[x] = md[x];
+    }
+    if (extra) {
+        // Scenes without widescreen support: black side bars. In a level,
+        // black out margin columns outside the level's camera range.
+        patches::MarginCut cut{extra, extra};
+        if (wide_active) cut = patches::margin_cut(*this, extra);
+        for (int x = 0; x < cut.left; ++x) row[x] = 0xFF000000u;
+        for (int x = 0; x < cut.right; ++x) row[n - 1 - x] = 0xFF000000u;
+    }
+}
+
 void Machine::end_line() {
     ProfScope ps(profile, &stats.prof_ns[PROF_VIDEO]);
-    if (line < kActiveLines) {
-        const int extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
-        const int n = vdp.width() + 2 * extra;
-        uint32_t md[Vdp::kMaxWidth];
-        uint8_t bg[Vdp::kMaxWidth];
-        vdp.render_line(line, md, bg, extra);
-        uint32_t* row = framebuffer + line * kScreenWidth;
-        render_line32x(line, row, extra, wide_active);
-        // Merge: render_line32x marks 32X pixels that should be shown with
-        // alpha 0xFE; 0xFD means "only where the MD pixel is the backdrop".
-        for (int x = 0; x < n; ++x) {
-            uint32_t p = row[x];
-            bool show32x = (p >> 24) == 0xFE;
-            bool mdbg = bg[x] != 0;
-            if (show32x || ((p >> 24) == 0xFD && mdbg)) row[x] = 0xFF000000u | (p & 0xFFFFFF);
-            else row[x] = md[x];
-        }
-        if (extra) {
-            // Scenes without widescreen support: black side bars. In a level,
-            // black out margin columns outside the level's camera range.
-            patches::MarginCut cut{extra, extra};
-            if (wide_active) cut = patches::margin_cut(*this, extra);
-            for (int x = 0; x < cut.left; ++x) row[x] = 0xFF000000u;
-            for (int x = 0; x < cut.right; ++x) row[n - 1 - x] = 0xFF000000u;
-        }
+    if (line >= kActiveLines) return;
+    render_output_line(line, line);
+    if (line != kActiveLines - 1) return;
+    // Widescreen rows below the active area, rendered with the state at the
+    // bottom of the frame.
+    const int eb = std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom);
+    const int n = vdp.width() + 2 * std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    for (int k = 0; k < eb; ++k) {
+        if (wide_active) { render_output_line(kActiveLines + k, kActiveLines + k); continue; }
+        uint32_t* row = framebuffer + (kActiveLines + k) * kScreenWidth;
+        for (int x = 0; x < n; ++x) row[x] = 0xFF000000u;
     }
 }
 
@@ -369,8 +385,9 @@ void Machine::run_frame() {
     }
     line = 0;
     fb_extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    fb_extra_bottom = std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom);
     fb_width = vdp.width() + 2 * fb_extra;
-    fb_height = kActiveLines;
+    fb_height = kActiveLines + fb_extra_bottom;
     ++frame_count;
     stats.frame = frame_count;
 }
