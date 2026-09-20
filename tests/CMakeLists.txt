@@ -22,13 +22,29 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     add_test(NAME golden_frames
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2600 ${_script}
                 --expect-hash 1700:${CHAOTIX_GOLDEN_TITLE} --expect-hash 2600:${CHAOTIX_GOLDEN_LEVEL})
-    set_tests_properties(lockstep_boot_to_level golden_frames PROPERTIES TIMEOUT 600)
+    # True widescreen: the level patches run identically in the interpreter and
+    # the recompiled code (lockstep), and the widened frames are stable.
+    add_test(NAME lockstep_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 --lockstep ${_script})
+    add_test(NAME golden_frames_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2800 --wide 64 ${_script}
+                --expect-hash 1700:${CHAOTIX_GOLDEN_WIDE_TITLE} --expect-hash 2800:${CHAOTIX_GOLDEN_WIDE_LEVEL})
+    # The widescreen patches must not change the 4:3 image: a 4:3 machine and a
+    # widescreen machine run side by side and the centre 320 px must match
+    # pixel for pixel (this caught 8 ring columns never being filled).
+    add_test(NAME widescreen_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4000 --wide 53 --compare-native --min-centre-frames 1000)
+    add_test(NAME golden_frames_16_9
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 ${_script}
+                --expect-hash 2800:${CHAOTIX_GOLDEN_169_A} --expect-hash 3200:${CHAOTIX_GOLDEN_169_B})
+    set_tests_properties(lockstep_boot_to_level golden_frames lockstep_widescreen golden_frames_widescreen golden_frames_16_9 widescreen_centre_matches_4_3 PROPERTIES TIMEOUT 900)
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)
     add_test(NAME lockstep_attract_long COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --lockstep)
+    add_test(NAME lockstep_attract_widescreen_long COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --wide 53 --lockstep)
     add_test(NAME render_attract_long
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/attract_every50.txt)
-    set_tests_properties(lockstep_attract_long render_attract_long PROPERTIES LABELS long TIMEOUT 1800)
+    set_tests_properties(lockstep_attract_long lockstep_attract_widescreen_long render_attract_long PROPERTIES LABELS long TIMEOUT 1800)
     endif()
 endif()

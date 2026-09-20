@@ -1,6 +1,7 @@
 #include "system.h"
 #include "log.h"
 #include "cpu/m68k/m68k_interp.h"
+#include "runtime/patches.h"
 #include "cpu/sh2/sh2_interp.h"
 #include <algorithm>
 #include <chrono>
@@ -114,6 +115,7 @@ void Machine::reset() {
     m68k.irq_ack = m68k_irq_ack;
     m68k.irq_user = this;
     remap_m68k();
+    patches::install(*this);
     m68k::reset(&m68k);
     for (int c = 0; c < 2; ++c) {
         sh2[c] = sh2::State{};
@@ -329,24 +331,35 @@ void Machine::start_line() {
 void Machine::end_line() {
     ProfScope ps(profile, &stats.prof_ns[PROF_VIDEO]);
     if (line < kActiveLines) {
+        const int extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+        const int n = vdp.width() + 2 * extra;
         uint32_t md[Vdp::kMaxWidth];
         uint8_t bg[Vdp::kMaxWidth];
-        vdp.render_line(line, md, bg);
+        vdp.render_line(line, md, bg, extra);
         uint32_t* row = framebuffer + line * kScreenWidth;
-        render_line32x(line, row);
+        render_line32x(line, row, extra, wide_active);
         // Merge: render_line32x marks 32X pixels that should be shown with
-        // alpha 0xFE; everything else takes the MD pixel.
-        for (int x = 0; x < kScreenWidth; ++x) {
+        // alpha 0xFE; 0xFD means "only where the MD pixel is the backdrop".
+        for (int x = 0; x < n; ++x) {
             uint32_t p = row[x];
             bool show32x = (p >> 24) == 0xFE;
             bool mdbg = bg[x] != 0;
             if (show32x || ((p >> 24) == 0xFD && mdbg)) row[x] = 0xFF000000u | (p & 0xFFFFFF);
             else row[x] = md[x];
         }
+        if (extra) {
+            // Scenes without widescreen support: black side bars. In a level,
+            // black out margin columns outside the level's camera range.
+            patches::MarginCut cut{extra, extra};
+            if (wide_active) cut = patches::margin_cut(*this, extra);
+            for (int x = 0; x < cut.left; ++x) row[x] = 0xFF000000u;
+            for (int x = 0; x < cut.right; ++x) row[n - 1 - x] = 0xFF000000u;
+        }
     }
 }
 
 void Machine::run_frame() {
+    patches::begin_frame(*this);
     for (line = 0; line < kLinesPerFrameNTSC; ++line) {
         line_start_mclk = mclk;
         start_line();
@@ -355,7 +368,8 @@ void Machine::run_frame() {
         end_line();
     }
     line = 0;
-    fb_width = vdp.width();
+    fb_extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    fb_width = vdp.width() + 2 * fb_extra;
     fb_height = kActiveLines;
     ++frame_count;
     stats.frame = frame_count;

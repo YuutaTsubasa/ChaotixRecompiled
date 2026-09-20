@@ -11,11 +11,19 @@ void reset(State* c) {
     auto ack = c->irq_ack;
     auto ackuser = c->irq_user;
     auto rh = c->reset_hook;
+    auto hk = c->hook;
+    auto hkuser = c->hook_user;
+    auto hkpcs = c->hook_pcs;
+    auto hkn = c->hook_count;
     *c = State{};
     c->bus = bus;
     c->irq_ack = ack;
     c->irq_user = ackuser;
     c->reset_hook = rh;
+    c->hook = hk;
+    c->hook_user = hkuser;
+    c->hook_pcs = hkpcs;
+    c->hook_count = hkn;
     c->s = 1;
     c->imask = 7;
     c->a[7] = rd32(c, 0);
@@ -107,8 +115,18 @@ void execute(State* c, const Insn& in) {
 
 uint16_t fetch_bus(void* user, uint32_t addr) { return uint16_t(rd16(static_cast<State*>(user), addr)); }
 
+static void maybe_hook(State* c) {
+    uint32_t lo = 0, hi = c->hook_count;
+    while (lo < hi) {
+        uint32_t mid = (lo + hi) / 2;
+        if (c->hook_pcs[mid] < c->pc) lo = mid + 1; else hi = mid;
+    }
+    if (lo < c->hook_count && c->hook_pcs[lo] == c->pc) c->hook(c, c->pc);
+}
+
 void interp_block(State* c) {
     for (;;) {
+        if (c->hook) maybe_hook(c);
         Insn in;
         decode(c->pc, fetch_bus, c, in);
         c->pc = c->pc + in.len;

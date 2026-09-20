@@ -20,7 +20,7 @@
 | 標題 → 選單 → 存檔選擇 → 進入關卡 → 操作 | ✅ **（本階段目標）** | `lockstep_boot_to_level` 測試 |
 | SDL3 前端（Windowed/Borderless/Fullscreen、HiDPI、integer/fit/stretch、aspect ratio、鍵盤/手把/觸控、debug overlay） | ✅（Windows 已實測） | `--autotest` 讀回實際輸出畫面 |
 | 音效（Z80 直譯器 + YM2612 FM + SN76489 PSG + PWM 混音 → SDL3 audio stream） | ✅ 第一版（音質未經聽感/逐 sample 驗證） | WAV 輸出 + 頻譜檢查（有音高與節奏結構） |
-| 真正 16:9 寬螢幕渲染 | ⏳ 基礎架構完成（simulation/render viewport 分離、pillarbox），遊戲層修改需逆向 | 見 §8 |
+| 真正寬螢幕（關卡中最多 448×224 ≈ 1.87:1，涵蓋 16:9 / 16:10；其他場景 4:3 加側邊黑條） | ✅ | `lockstep_widescreen`、`golden_frames_widescreen`、36,000 幀寬螢幕 lockstep；見 §8 |
 | Android / iOS / macOS / Linux 建置 | ⏳ `CMakePresets.json`、Android Gradle 專案、iOS Info.plist 已建立；**尚未在這些平台實際建置** | 見 §9 |
 
 實測數據（Windows x64、MinGW GCC 15、Release）：
@@ -202,40 +202,48 @@ ROM bytes ──decoder──▶ m68k::Insn / sh2::Insn        （每條指令�
 
 ## 8. Renderer abstraction 與真正的寬螢幕
 
-### 8.1 目前的抽象
+### 8.1 抽象
 
 ```
-Machine（simulation）                         Platform（SDL3）
- MD VDP 逐線 → RGB + backdrop 標記 ┐
- 32X VDP 逐線 → RGB + 優先權編碼   ├─ 合成 → framebuffer 320×224 XRGB8888
-                                   ┘              │
-                                        compute_viewport(config, 輸出大小)
-                                                  │  frame（設定的顯示比例） / image（遊戲影像位置）
+Machine（simulation）                                   Platform（SDL3）
+ MD VDP 逐線 [-E, 320+E) → RGB + backdrop 標記 ┐
+ 32X VDP 逐線（邊界來自 fb_margin 影子緩衝）    ├─ 合成 → framebuffer (320+2E)×224 XRGB8888
+                                               ┘              │
+                                        compute_viewport(config, 輸出大小, image_aspect)
+                                                              │
                                         SDL_Renderer（D3D11/12、Metal、Vulkan、GL/GLES）
 ```
 
-- **Simulation viewport**（320×224）與 **render viewport**（任意解析度）完全分離；輸出 1280×720、1920×1080、2560×1440、3840×2160 皆不影響遊戲時序。
-- `AspectRatio = Auto / 4:3 / 16:9 / 16:10 / 21:9 / W:H`（任意比例，含 32:9 ultrawide）。
-- `Scaling = Integer / Fit / Stretch`；`Filter = Nearest / Linear`；HiDPI 以 `SDL_WINDOW_HIGH_PIXEL_DENSITY` + `SDL_GetRenderOutputSize` 取實際像素。
-- 目前寬比例畫面是 **pillarbox 正確比例的 4:3 影像，不拉伸**（`Stretch` 為明確選項）。
+- **Simulation viewport**（原生 320×224，寬螢幕時每側多 E 欄）與 **render viewport**（任意解析度）完全分離；輸出解析度不影響遊戲時序。
+- `AspectRatio = Auto / 4:3 / 16:9 / 16:10 / 21:9 / W:H`；`Widescreen = true/false`（F6 切換，`--no-widescreen`）。
+  E = `widescreen_extra(顯示比例)` = ⌊(320·A/(4/3) − 320)/2⌋，上限 64：16:9 → 53（426 px）、16:10 → 32（384 px）、21:9 → 64（448 px，外側 pillarbox）。
+- 影像比例 `image_aspect = 4/3 · fb_width / 原生寬`（像素形狀不變，不拉伸）。`Stretch` 為明確選項。
+- E = 0 時所有路徑與原版完全相同（既有 golden hash 與 lockstep 測試不變）。
 
-### 8.2 真正 16:9 需要修改的遊戲層級行為（計畫）
+### 8.2 遊戲層修改（`src/runtime/patches.{h,cpp}`）
 
-16:9 於 224 線 ≈ 398 像素寬。需要：
+**機制**：patch 不改 ROM 位元組，而是「在特定 68K 指令之前執行的 host hook」。`m68k::State` 帶排序好的 hook 位址表；
+參考直譯器在每條指令前二分搜尋，recompiler 在相同位址的指令前輸出 `if (c->hook) c->hook(c, pc);`。
+兩邊在完全相同的點呼叫同一函式，因此寬螢幕模式下 **lockstep 仍然 bit-identical**。
+每幀開頭的 host 步驟（`patches::begin_frame`）只改 SDRAM 中的資料，對兩台機器同樣確定。
 
-| 層 | 需要的改變 | 可行性 / 狀態 |
+所有位址皆由本 ROM 的分析取得（證據如下）：
+
+| 層 | ROM 分析結果 | 修改 |
 |---|---|---|
-| MD VDP planes | renderer 輸出寬於 320 的掃描線；plane 本身 64 cells = 512 px，資料存在 | runtime 可做；但遊戲只串流可見欄 + 邊界，**需確認邊界欄數**（UNKNOWN） |
-| 32X frame buffer | SH-2 繪圖以 320 px 為行寬；128 KB FB 容量足夠 398×224（≈89 KB + line table） | 需修改 SH-2 繪圖 routine 的寬度/裁切常數（產生碼層級的 per-function patch） |
-| Camera bounds | 關卡左右邊界、鏡頭 clamp | 68K 常數/變數；需找出 camera 結構（UNKNOWN — requires ROM analysis） |
-| 物件生成/消滅 | 物件啟動視窗通常為 camera ± 常數 | 需加寬，否則邊緣物件突然出現（UNKNOWN） |
-| Culling | sprite 與 32X 物件的可見性判斷 | 需加寬（UNKNOWN） |
-| HUD | 固定於左上 | 可選擇貼齊安全區左緣或 4:3 區域 |
-| 選單 / 特殊關卡 / Boss / 過場 | 多依賴固定 320 寬 | **per-scene compatibility**：這些場景維持 4:3 pillarbox |
+| MD plane 串流（68K `0x9786–0x99B6`） | 每個 plane 以 512 px 環狀緩衝保存 **[cam_x, cam_x+512)**：往左捲時在 cam_x 畫新 16 px 欄，往右捲時在 prev_x+512 畫；列更新也從 cam_x 畫 512 px（`0x8F4E82` 列 / `0x8F4EAA` 欄；VBlank 時 `0x8F50F4` 寫入 VRAM）。量測：原版左邊界外 1 欄即失效、右邊有 192 px 餘裕。 | 在 12 個「d0 = plane.x」之後的點把 X 減去 W = 96（無遮罩版本夾在 ≥ 0），環狀緩衝變成 [cam−96, cam+416)，左右各留 96−E / 96−E px 餘裕。W 於整面重畫（`0x97AC`/`0x9810`）時鎖定。填圖程式另有一處（`0x8F4F22`）會**重新從結構讀 plane.x** 來算「這一列在 64 欄環狀緩衝裡的折返位置」，必須套用相同位移，否則每次整列重畫都會有 8 欄沒填到（畫面邊緣缺圖塊、垂直捲動時整列錯位）。驗證：同時跑 4:3 與寬螢幕兩台機器（相同輸入），關卡中**中央 320 px 逐像素完全相同**，直到鏡頭在關卡邊界依設計被夾住為止（E = 64 / 53 / 32 各約 1040 幀）。 |
+| 32X sprite / 多邊形繪製（主 SH-2，SDRAM `0x06001380` 等） | 裁切矩形是資料：SDRAM `0x06003834` = int16 left/right、int32 top/bottom（原值 0/320/0/223，來自 ROM `0x7B034` 的 SDRAM 映像）。FB 行距 512 bytes、顯示 320。部分 zone 把行尾 padding 當資料儲存區。繪製器以 16-bit word 寫入與裁切邊界對齊的位址。 | 關卡中把裁切改為 [−C, 320+C)，C = E 進位到 8 的倍數（奇數邊界會讓 SH-2 發生 address error 而當機，E = 53 時曾發生）。sprite 寫入走 overwrite image 區；落在原生欄外的位元組改寫到 host 端 `Machine::fb_margin` 影子（不碰遊戲資料），auto fill 清除某行時一併清除該行影子。compositor 從影子讀邊界。 |
+| 環（MD sprite，68K `0x1044`） | 環以 MD sprite 繪製；sprite 座標 X 只在 `0x70 ≤ x < 0x1D0`（畫面 −16…335）時才輸出。環物件本身在鏡頭前方 448–576 px 就已生成。 | 比較前把 d2 暫時 +E / −E、比較後還原，等效把範圍放寬為 [−16−E, 336+E)，輸出的 sprite 座標不變。 |
+| 32X 物件的畫面外旗標（68K `0x182E`） | 物件在鏡頭 −64…+384 px 外設定 off-screen 旗標。 | 已涵蓋 E ≤ 64，不需修改。 |
+| Camera clamp（68K `0x9A76`，所有 zone） | camera X（`$FFDFE8`）夾在 plane A 結構（`$FFC1DE`）的 [$A, $8]。 | 兩個界線各內縮 E（房間比畫面窄時置中），邊界不會顯示關卡外。 |
+| 場景判斷 | 關卡每幀呼叫 plane 更新 `0x984E`/`0x98C4`。 | 最近 8 幀內有執行 → 寬螢幕；否則（標題、選單、特殊關卡、過場）4:3 + 黑邊。 |
+| 關卡邊界 | plane A 結構（`$FFC1DE`）的 [$A, $8] 是鏡頭可到的範圍；範圍外的圖塊與物件遊戲不維護。 | `patches::margin_cut`：每條掃描線把落在該範圍外的邊界欄塗黑（房間比寬畫面窄、或鏡頭邊界剛變動時才會發生；attract 36,000 幀中 17 幀）。 |
+| HUD | 由 32X 繪於固定位置 | 保持在原生 4:3 區域內（未移動）。 |
 
-實作路線：`Machine` 提供「render width」參數（MD/32X 逐線 renderer 已以 `kMaxWidth` 抽象），generated code 提供 **patch hook 表**（依函式位址替換常數/呼叫），每個場景以 scene ID 決定寬度；gameplay 邏輯（碰撞、物理）不變。
-
----
+**限制 / 已知差異**
+- E 上限 64（plane 環狀緩衝兩側至少保留 16 px 餘裕）。21:9 以上會在外側 pillarbox。
+- 關卡進行中才開啟寬螢幕時，W 要到下次載入關卡才鎖定，在那之前顯示黑邊。
+- camera clamp 改變會影響依 camera 決定的物件啟動時機；寬螢幕模式下 attract demo 的重播結果與原版不同（E = 0 完全相同）。
 
 ## 9. 共用 build 架構
 

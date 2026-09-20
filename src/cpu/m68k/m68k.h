@@ -41,6 +41,13 @@ struct State {
     void* irq_user = nullptr;
     // Hook invoked on RESET instruction (external devices reset).
     void (*reset_hook)(void* user) = nullptr;
+    // Game patch hooks: `hook` runs before any instruction whose address is in
+    // the sorted list hook_pcs. The interpreter and generated code call it at
+    // the same points, so patched execution stays lockstep-comparable.
+    void (*hook)(State* c, uint32_t pc) = nullptr;
+    void* hook_user = nullptr;
+    const uint32_t* hook_pcs = nullptr;
+    uint32_t hook_count = 0;
 };
 
 // ---------------------------------------------------------------------------

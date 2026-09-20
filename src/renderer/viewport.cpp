@@ -20,6 +20,14 @@ double aspect_value(AspectMode m, double custom, double window_aspect) {
     }
 }
 
+int widescreen_extra(double frame_aspect, int max_extra) {
+    // Native pixels are 4:3 / 320 wide each, so a frame of aspect A holds
+    // 320 * A / (4/3) of them.
+    const double cols = 320.0 * frame_aspect / (4.0 / 3.0);
+    const int e = int(std::floor((cols - 320.0) / 2.0 + 1e-9));
+    return std::clamp(e, 0, max_extra);
+}
+
 ViewportResult compute_viewport(const ViewportConfig& cfg, int out_w, int out_h, int sim_w, int sim_h) {
     ViewportResult r;
     if (out_w <= 0 || out_h <= 0 || sim_w <= 0 || sim_h <= 0) return r;

@@ -71,3 +71,13 @@ TEST(input, touch_dpad_directions) {
     CHECK_EQ(t.hit(d.cx - d.r * 0.6f, d.cy - d.r * 0.6f), uint16_t(PAD_LEFT | PAD_UP));
     CHECK_EQ(t.hit(d.cx, d.cy), uint16_t(0));  // dead zone
 }
+
+TEST(viewport, widescreen_extra_from_aspect) {
+    CHECK_EQ(widescreen_extra(4.0 / 3.0, 64), 0);
+    CHECK_EQ(widescreen_extra(16.0 / 10.0, 64), 32);   // 384 columns
+    CHECK_EQ(widescreen_extra(16.0 / 9.0, 64), 53);    // 426 columns
+    CHECK_EQ(widescreen_extra(64.0 / 27.0, 64), 64);   // 21:9 capped
+    CHECK_EQ(widescreen_extra(1.0, 64), 0);            // narrower than 4:3
+    // A widescreen image keeps native pixel shape: 426 of 320 columns is ~16:9.
+    CHECK(std::fabs(image_aspect_for_width(426, 320) - 16.0 / 9.0) < 0.005);
+}

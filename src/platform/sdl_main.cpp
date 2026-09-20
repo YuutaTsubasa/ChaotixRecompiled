@@ -15,6 +15,7 @@
 #include "renderer/image_io.h"
 #include "renderer/viewport.h"
 #include "runtime/log.h"
+#include "runtime/patches.h"
 #include "runtime/save.h"
 #include "runtime/system.h"
 
@@ -194,6 +195,7 @@ void handle_key(App& app, const SDL_KeyboardEvent& k) {
                                : app.cfg.viewport.scale == ScaleMode::Integer ? ScaleMode::Stretch : ScaleMode::Fit;
         break;
     case SDLK_F5: app.overlay_page = (app.overlay_page + 1) % 4; break;
+    case SDLK_F6: app.cfg.widescreen = !app.cfg.widescreen; break;
     case SDLK_F11:
         app.cfg.window_mode = app.cfg.window_mode == WindowMode::Windowed ? WindowMode::Borderless : WindowMode::Windowed;
         apply_window_mode(app);
@@ -252,6 +254,7 @@ int main(int argc, char** argv) {
         else if (a == "--borderless") app.cfg.window_mode = WindowMode::Borderless;
         else if (a == "--windowed") app.cfg.window_mode = WindowMode::Windowed;
         else if (a == "--aspect" && i + 1 < argc) parse_aspect(argv[++i], app.cfg.viewport.aspect, app.cfg.viewport.custom_aspect);
+        else if (a == "--no-widescreen") app.cfg.widescreen = false;
         else if (a == "--touch") app.cfg.touch = TouchMode::On;
         else if (a == "--debug") app.cfg.debug_overlay = true;
         else if (a == "--autotest" && i + 1 < argc) app.autotest_frames = std::strtoull(argv[++i], nullptr, 10);
@@ -386,6 +389,14 @@ int main(int argc, char** argv) {
         accumulator += double(now - last);
         last = now;
         if (accumulator > frame_ticks * 8) accumulator = frame_ticks * 8;  // after a stall, don't spiral
+        {
+            // True widescreen margins follow the display aspect (levels only;
+            // see runtime/patches.h). Takes effect at the next level load.
+            int ww = 0, wh = 0;
+            SDL_GetRenderOutputSize(app.renderer, &ww, &wh);
+            const double fa = aspect_value(app.cfg.viewport.aspect, app.cfg.viewport.custom_aspect, wh > 0 ? double(ww) / double(wh) : 0.0);
+            app.m->wide_extra = app.cfg.widescreen ? widescreen_extra(fa, patches::kMaxWideExtra) : 0;
+        }
         int steps = 0;
         const int max_steps = app.fast_forward ? 8 : 3;
         uint64_t emu_t0 = SDL_GetPerformanceCounter();
@@ -439,6 +450,7 @@ int main(int argc, char** argv) {
         SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
         SDL_RenderClear(app.renderer);
         SDL_UpdateTexture(app.texture, nullptr, app.m->framebuffer, kScreenWidth * 4);
+        app.cfg.viewport.image_aspect = image_aspect_for_width(app.m->fb_width, app.m->fb_width - 2 * app.m->fb_extra);
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
         SDL_FRect src{0, 0, float(app.m->fb_width), float(app.m->fb_height)};
         SDL_FRect dst{float(vp.image.x), float(vp.image.y), float(vp.image.w), float(vp.image.h)};
@@ -451,10 +463,11 @@ int main(int argc, char** argv) {
             const SDL_DisplayMode* dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(app.window));
             app.timing.refresh_hz = dm ? unsigned(dm->refresh_rate + 0.5f) : 0;
             app.timing.fast_forward = app.fast_forward;
-            char vline[160];
-            std::snprintf(vline, sizeof vline, "video: %dx%d out, image %.0fx%.0f, aspect %s, %s, %s, %s", ow, oh, vp.image.w, vp.image.h,
+            char vline[200];
+            std::snprintf(vline, sizeof vline, "video: %dx%d out, image %.0fx%.0f, aspect %s, %s, %s, %s, wide %d%s", ow, oh, vp.image.w, vp.image.h,
                           aspect_name(app.cfg.viewport.aspect), scale_name(app.cfg.viewport.scale),
-                          app.cfg.linear_filter ? "linear" : "nearest", window_mode_name(app.cfg.window_mode));
+                          app.cfg.linear_filter ? "linear" : "nearest", window_mode_name(app.cfg.window_mode),
+                          app.m->fb_extra, app.m->wide_active ? " (active)" : "");
             auto lines = build_debug_overlay(*app.m, app.timing, app.overlay_page, vline, app.watches);
             float scale = std::max(1.0f, float(oh) / 540.0f);
             SDL_SetRenderScale(app.renderer, scale, scale);

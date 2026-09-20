@@ -64,7 +64,7 @@ std::vector<std::string> build_debug_overlay(const Machine& m, const FrameTiming
         break;
     default: break;
     }
-    out.push_back("F1 overlay  F2 aspect  F3 filter  F4 scaling  F5 page  F11 fullscreen  Tab fast-forward  F12 screenshot");
+    out.push_back("F1 overlay  F2 aspect  F3 filter  F4 scaling  F5 page  F6 widescreen  F11 fullscreen  Tab fast-forward  F12 screenshot");
     return out;
 }
 

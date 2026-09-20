@@ -1,5 +1,6 @@
 // SH-2 address space and the 32X system registers (shared with the 68K side).
 #include "system.h"
+#include "patches.h"
 #include "log.h"
 #include <cstring>
 
@@ -63,12 +64,38 @@ uint32_t Machine::fb_read(uint32_t off, int size) {
 
 void Machine::fb_write(uint32_t off, uint32_t v, int size, bool overwrite) {
     off &= 0x1FFFF;
+    if (on_fb_write) on_fb_write(on_fb_write_user, off, v, size, overwrite);
     uint8_t* fb = mars.fb[mars.fb_display ^ 1];
     if (!overwrite) { be_write(fb + off, v, size); return; }
+    if (wide_active) { fb_write_wide(fb, off, v, size); return; }
     // Overwrite image: zero bytes are transparent (not written).
     for (int i = 0; i < size; ++i) {
         uint8_t b = uint8_t(v >> (8 * (size - 1 - i)));
         if (b) fb[(off + uint32_t(i)) & 0x1FFFF] = b;
+    }
+}
+
+// Widescreen sprite writes (see patches.h): bytes outside the native columns
+// of a 512-byte frame buffer line go to the host-side margin shadow.
+void Machine::fb_write_wide(uint8_t* fb, uint32_t off, uint32_t v, int size) {
+    uint8_t* shadow = fb_margin[mars.fb_display ^ 1];
+    for (int i = 0; i < size; ++i) {
+        uint8_t b = uint8_t(v >> (8 * (size - 1 - i)));
+        if (!b) continue;
+        uint32_t o = (off + uint32_t(i)) & 0x1FFFF;
+        if (((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) >= uint32_t(kNativeWidth)) shadow[o] = b;
+        else fb[o] = b;
+    }
+}
+
+// Clears the margin shadow around the frame buffer line starting at line_off
+// (called when the game's auto fill clears that line).
+void Machine::fb_margin_clear_line(uint32_t line_off, uint16_t fill) {
+    uint8_t* shadow = fb_margin[mars.fb_display ^ 1];
+    for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x) {
+        if (x == 0) x = kNativeWidth;
+        uint32_t o = (line_off + uint32_t(x)) & 0x1FFFF;
+        shadow[o] = uint8_t((o & 1) ? fill : fill >> 8);
     }
 }
 
@@ -117,10 +144,13 @@ void Machine::vdp32x_write(uint32_t off, uint32_t v, int size) {
         // Auto fill: (len+1) words starting at fill_addr, wrapping inside 256 words.
         uint8_t* fb = mars.fb[mars.fb_display ^ 1];
         uint32_t addr = mars.fill_addr;
+        if (on_fb_fill) on_fb_fill(on_fb_write_user, addr, mars.fill_len + 1u, mars.fill_data);
         for (uint32_t i = 0; i <= mars.fill_len; ++i) {
             uint32_t o = (addr & 0xFFFF) * 2;
             fb[o] = uint8_t(mars.fill_data >> 8);
             fb[o + 1] = uint8_t(mars.fill_data);
+            if (wide_active && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0)
+                fb_margin_clear_line(o, mars.fill_data);
             addr = (addr & 0xFF00) | ((addr + 1) & 0xFF);
         }
         mars.fill_addr = uint16_t(addr);

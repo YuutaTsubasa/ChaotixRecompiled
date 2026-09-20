@@ -19,6 +19,7 @@ struct Config {
     WindowMode window_mode = WindowMode::Windowed;
     int window_scale = 3;
     bool vsync = true;
+    bool widescreen = true;  // true widescreen in levels (margins follow AspectRatio)
     // [Audio]
     bool audio = true;
     int volume = 80;  // percent

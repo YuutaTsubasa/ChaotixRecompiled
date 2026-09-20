@@ -21,12 +21,13 @@ inline uint32_t encode(uint16_t c, bool pri) {
 }
 } // namespace
 
-void Machine::render_line32x(int ln, uint32_t* out) {
+void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src) {
+    // Widescreen margins show no 32X pixels (the MD layer shows through)
+    // unless the scene draws into the frame buffer around each line.
+    for (int x = 0; x < kNativeWidth + 2 * extra; ++x) all[x] = 0;
+    uint32_t* out = all + extra;
     const int mode = mars.bitmap_mode & 3;
-    if (mode == 0 || !(mars.adapter_ctrl & 1)) {
-        for (int x = 0; x < kScreenWidth; ++x) out[x] = 0;
-        return;
-    }
+    if (mode == 0 || !(mars.adapter_ctrl & 1)) return;
     const bool pri = (mars.bitmap_mode & 0x80) != 0;
     const uint8_t* fb = mars.fb[mars.fb_display];
     uint32_t lineaddr = (uint32_t(fb[ln * 2]) << 8) | fb[ln * 2 + 1];
@@ -34,11 +35,17 @@ void Machine::render_line32x(int ln, uint32_t* out) {
     switch (mode) {
     case 1: {  // packed pixel, 8 bpp
         uint32_t p = base + (mars.screen_shift & 1);
-        for (int x = 0; x < kScreenWidth; ++x) out[x] = encode(mars.pal[fb[(p + uint32_t(x)) & 0x1FFFF]], pri);
+        if (wide_src) {
+            // Margins come from the host-side shadow (see Machine::fb_margin).
+            const uint8_t* sh = fb_margin[mars.fb_display];
+            for (int x = -extra; x < 0; ++x) all[x + extra] = encode(mars.pal[sh[(p + uint32_t(x)) & 0x1FFFF]], pri);
+            for (int x = kNativeWidth; x < kNativeWidth + extra; ++x) all[x + extra] = encode(mars.pal[sh[(p + uint32_t(x)) & 0x1FFFF]], pri);
+        }
+        for (int x = 0; x < kNativeWidth; ++x) out[x] = encode(mars.pal[fb[(p + uint32_t(x)) & 0x1FFFF]], pri);
         break;
     }
     case 2: {  // direct colour, 15 bpp
-        for (int x = 0; x < kScreenWidth; ++x) {
+        for (int x = 0; x < kNativeWidth; ++x) {
             uint32_t o = (base + uint32_t(x) * 2) & 0x1FFFF;
             out[x] = encode(uint16_t((fb[o] << 8) | fb[o + 1]), pri);
         }
@@ -47,12 +54,12 @@ void Machine::render_line32x(int ln, uint32_t* out) {
     case 3: {  // run length
         int x = 0;
         uint32_t o = base;
-        while (x < kScreenWidth) {
+        while (x < kNativeWidth) {
             uint32_t len = fb[o & 0x1FFFF] + 1u;
             uint16_t c = mars.pal[fb[(o + 1) & 0x1FFFF]];
             o += 2;
             uint32_t px = encode(c, pri);
-            for (uint32_t i = 0; i < len && x < kScreenWidth; ++i) out[x++] = px;
+            for (uint32_t i = 0; i < len && x < kNativeWidth; ++i) out[x++] = px;
         }
         break;
     }

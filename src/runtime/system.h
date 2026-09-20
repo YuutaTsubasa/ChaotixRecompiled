@@ -25,7 +25,8 @@ constexpr int kMclkPerLine = 3420;
 constexpr int kLinesPerFrameNTSC = 262;
 constexpr int kActiveLines = 224;
 constexpr int kSlicesPerLine = 4;
-constexpr int kScreenWidth = 320;
+constexpr int kNativeWidth = 320;
+constexpr int kScreenWidth = Vdp::kMaxWidth;  // framebuffer stride (native + widescreen margins)
 constexpr int kScreenHeight = 240;  // buffer height; 224 lines are active
 constexpr int kMclkPerAudioSample = 1008;  // YM2612 native rate: MCLK / 7 / 144
 constexpr double kAudioRate = 53693175.0 / kMclkPerAudioSample;
@@ -139,8 +140,30 @@ public:
     InputState input;
 
     // Output
-    uint32_t framebuffer[kScreenWidth * kScreenHeight];  // XRGB8888
+    uint32_t framebuffer[kScreenWidth * kScreenHeight];  // XRGB8888, stride kScreenWidth
     int fb_width = 320, fb_height = 224;
+    int fb_extra = 0;  // widescreen columns on each side included in fb_width
+    // Widescreen: extra columns rendered on each side of the native image
+    // (0 = original 4:3). Non-zero values also enable the level-engine patch
+    // (runtime/patches.h), which changes which tiles the game streams into
+    // VRAM, so machines compared in lockstep must use the same value.
+    int wide_extra = 0;
+    int plane_shift = 0;               // W latched by the plane streaming patch
+    uint64_t level_seen_frame = ~0ull; // last frame the level engine ran (patches.cpp)
+    bool wide_active = false;          // margins show game content this frame
+    bool clip_overridden = false;      // 32X clip rect widened by the patch
+    int cull_shift = 0;                // pending d2 offset inside the ring cull patch
+    bool plane_fill_clamped = true;    // last plane fill used the unmasked (clamped) form
+    // Host-side shadow of the 32X frame buffers for widescreen margins: while
+    // wide_active, sprite (overwrite image) writes outside native columns land
+    // here instead of in the line padding, which the game uses as storage.
+    // Render-only; never read by the emulated CPUs.
+    uint8_t fb_margin[2][0x20000];
+    // Tooling hooks: writes to the 32X draw buffer (offset, value, size,
+    // overwrite image) and auto fills (word address, word count, data).
+    void (*on_fb_write)(void* user, uint32_t off, uint32_t v, int size, bool overwrite) = nullptr;
+    void (*on_fb_fill)(void* user, uint32_t word_addr, uint32_t words, uint16_t data) = nullptr;
+    void* on_fb_write_user = nullptr;
 
     // Components
     Rom rom;
@@ -220,7 +243,10 @@ private:
     void start_line();
     void end_line();
     void boot_hle_start_sh2();
-    void render_line32x(int ln, uint32_t* out);
+    // Renders a 32X line of vdp.width() + 2 * extra pixels. With wide_src the
+    // margins come from the frame buffer bytes around the line (packed pixel
+    // mode; see patches.h), otherwise they are transparent.
+    void render_line32x(int ln, uint32_t* out, int extra, bool wide_src);
 
     // 32X register helpers
     uint32_t mars_read(int who, uint32_t off, int size);    // who: -1 = 68K, 0/1 = SH-2
@@ -232,6 +258,8 @@ private:
     void pwm_advance(uint32_t sh2_cycles);
     void fifo_push(uint16_t v);
     void fb_write(uint32_t off, uint32_t v, int size, bool overwrite);
+    void fb_write_wide(uint8_t* fb, uint32_t off, uint32_t v, int size);
+    void fb_margin_clear_line(uint32_t line_off, uint16_t fill);
     uint32_t fb_read(uint32_t off, int size);
     uint32_t pad_read(int port);
 

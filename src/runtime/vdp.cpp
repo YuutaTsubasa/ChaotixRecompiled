@@ -45,6 +45,7 @@ void Vdp::set_dma_length_zero() { reg[19] = 0; reg[20] = 0; }
 
 void Vdp::write_vram_word(uint32_t a, uint16_t v) {
     a &= 0xFFFF;
+    if (on_vram_write) on_vram_write(on_vram_write_user, a, v);
     vram[a] = uint8_t(v >> 8);
     vram[a ^ 1] = uint8_t(v);
 }
@@ -224,7 +225,9 @@ inline uint8_t tile_pixel(const uint8_t* vram, uint32_t tile, int px, int py) {
     return (px & 1) ? (b & 15) : (b >> 4);
 }
 
-void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int width, int win_x0, int win_x1) {
+// Renders screen columns [xs, xe) (native screen coordinates; xs may be
+// negative for widescreen) into out[x - xs].
+void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int xe, int win_x0, int win_x1) {
     static const int sizes[4] = {32, 64, 32, 128};
     const int pw = sizes[v.reg[16] & 3];
     int ph = sizes[(v.reg[16] >> 4) & 3];
@@ -242,13 +245,15 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int width, 
     const bool col_vs = (v.reg[11] & 4) != 0;
     // Process runs of pixels that share one tile row: a run ends at a tile
     // edge, the window edge, or a 16-pixel column (per-column V-scroll).
-    int x = 0;
-    while (x < width) {
+    int x = xs;
+    while (x < xe) {
         if (planeA && x >= win_x0 && x < win_x1) { x = win_x1; continue; }
-        int vs = col_vs ? v.vsram[(((x >> 4) * 2) + (planeA ? 0 : 1)) % 40] : v.vsram[planeA ? 0 : 1];
+        // Columns outside the native 20 V-scroll columns reuse the nearest one.
+        int col = x < 0 ? 0 : (x >> 4) > 19 ? 19 : (x >> 4);
+        int vs = col_vs ? v.vsram[col * 2 + (planeA ? 0 : 1)] : v.vsram[planeA ? 0 : 1];
         int py = (line + vs) & (ph * 8 - 1);
         int px = (x - hscroll) & (pw * 8 - 1);
-        int lim = width;
+        int lim = xe;
         if (planeA && x < win_x0 && win_x0 < lim) lim = win_x0;
         if (col_vs && ((x | 15) + 1) < lim) lim = (x | 15) + 1;
         int run = 8 - (px & 7);
@@ -269,14 +274,14 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int width, 
         for (int i = 0; i < run; ++i) {
             int tx = (px & 7) + i;
             uint8_t c = pix[hflip ? 7 - tx : tx];
-            out[x + i].color = c ? uint8_t(pal | c) : 0;
-            out[x + i].prio = prio;
+            out[x - xs + i].color = c ? uint8_t(pal | c) : 0;
+            out[x - xs + i].prio = prio;
         }
         x += run;
     }
 }
 
-void render_window(const Vdp& v, int line, LinePix* out, int x0, int x1) {
+void render_window(const Vdp& v, int line, LinePix* out, int xs, int x0, int x1) {
     const bool h40 = (v.reg[12] & 1) != 0;
     const uint32_t nt = h40 ? (uint32_t(v.reg[3] & 0x3C) << 10) : (uint32_t(v.reg[3] & 0x3E) << 10);
     const int pw = h40 ? 64 : 32;
@@ -288,19 +293,20 @@ void render_window(const Vdp& v, int line, LinePix* out, int x0, int x1) {
         if (e & 0x0800) tx = 7 - tx;
         if (e & 0x1000) yy = 7 - yy;
         uint8_t c = tile_pixel(v.vram, e, tx, yy);
-        out[x].color = c ? uint8_t(((e >> 9) & 0x30) | c) : 0;
-        out[x].prio = (e >> 15) & 1;
+        out[x - xs].color = c ? uint8_t(((e >> 9) & 0x30) | c) : 0;
+        out[x - xs].prio = (e >> 15) & 1;
     }
 }
 
 } // namespace
 
-void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
+void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     const int width = this->width();
+    const int xs = -extra, xe = width + extra, n = xe - xs;
     const uint8_t bgidx = reg[7] & 0x3F;
     const uint32_t bg = cram_to_rgb(cram[bgidx]);
     if (!display_enabled()) {
-        for (int x = 0; x < kMaxWidth; ++x) { out_rgb[x] = bg; out_bg[x] = 1; }
+        for (int x = 0; x < n; ++x) { out_rgb[x] = bg; out_bg[x] = 1; }
         return;
     }
 
@@ -324,9 +330,9 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
         }
     }
 
-    render_plane(*this, line, false, b, width, 0, 0);
-    render_plane(*this, line, true, a, width, win_x0, win_x1);
-    if (win_x1 > win_x0) render_window(*this, line, a, win_x0, win_x1);
+    render_plane(*this, line, false, b, xs, xe, 0, 0);
+    render_plane(*this, line, true, a, xs, xe, win_x0, win_x1);
+    if (win_x1 > win_x0) render_window(*this, line, a, xs, win_x0, win_x1);
 
     // Sprites
     {
@@ -334,7 +340,12 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
         const uint32_t sat = h40 ? (uint32_t(reg[5] & 0x7E) << 9) : (uint32_t(reg[5] & 0x7F) << 9);
         const int max_sprites = h40 ? 80 : 64;
         const int max_per_line = h40 ? 20 : 16;
-        const int max_pixels = h40 ? 320 : 256;
+        // The status flags (overflow/collision) always follow the native
+        // rules so the game observes exactly the same values in widescreen;
+        // only the drawing budget grows with the rendered width.
+        const int native_pixels = h40 ? 320 : 256;
+        const int max_pixels = native_pixels * n / width;
+        const int max_per_line_draw = max_per_line * n / width;
         int link = 0, count = 0, on_line = 0, pixels = 0;
         bool nonzero_x_seen = false, masked = false;
         uint8_t filled[kMaxWidth] = {};
@@ -348,25 +359,28 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
             int sxr = rw(6) & 0x1FF;
             int sx = sxr - 128;
             if (line >= sy && line < sy + vsz * 8) {
-                if (++on_line > max_per_line) { sprite_overflow = true; break; }
+                if (++on_line > max_per_line) sprite_overflow = true;
+                if (on_line > max_per_line_draw) break;
                 if (sxr == 0) { if (nonzero_x_seen) masked = true; }
                 else nonzero_x_seen = true;
                 int row = line - sy;
                 if (pat & 0x1000) row = vsz * 8 - 1 - row;
                 for (int cx = 0; cx < hs * 8; ++cx) {
-                    if (pixels >= max_pixels) { sprite_overflow = true; break; }
+                    if (pixels >= native_pixels) sprite_overflow = true;
+                    if (pixels >= max_pixels) break;
                     ++pixels;
                     if (masked) continue;
                     int x = sx + cx;
-                    if (x < 0 || x >= width) continue;
+                    if (x < xs || x >= xe) continue;
                     int col = (pat & 0x0800) ? (hs * 8 - 1 - cx) : cx;
                     uint32_t tile = (pat & 0x7FF) + uint32_t((col >> 3) * vsz + (row >> 3));
                     uint8_t c = tile_pixel(vram, tile, col & 7, row & 7);
                     if (!c) continue;
-                    if (filled[x]) { sprite_collision = true; continue; }
-                    filled[x] = 1;
-                    s[x].color = uint8_t(((pat >> 9) & 0x30) | c);
-                    s[x].prio = (pat >> 15) & 1;
+                    const int i = x - xs;
+                    if (filled[i]) { if (x >= 0 && x < width) sprite_collision = true; continue; }
+                    filled[i] = 1;
+                    s[i].color = uint8_t(((pat >> 9) & 0x30) | c);
+                    s[i].prio = (pat >> 15) & 1;
                 }
             }
             link = sz & 0x7F;
@@ -378,7 +392,7 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
     const bool shi = (reg[12] & 0x08) != 0;
     uint32_t palrgb[64];
     for (int i = 0; i < 64; ++i) palrgb[i] = cram_to_rgb(cram[i]);
-    for (int x = 0; x < width; ++x) {
+    for (int x = 0; x < n; ++x) {
         uint8_t c = 0;
         bool isbg = false;
         // priority: sprite hi > A hi > B hi > sprite lo > A lo > B lo > backdrop
@@ -416,7 +430,6 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg) {
         out_rgb[x] = rgb | 0xFF000000u;
         out_bg[x] = isbg ? 1 : 0;
     }
-    for (int x = width; x < kMaxWidth; ++x) { out_rgb[x] = bg; out_bg[x] = 1; }
 }
 
 } // namespace chaotix

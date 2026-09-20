@@ -14,7 +14,10 @@ struct VdpHost {
 
 class Vdp {
 public:
-    static constexpr int kMaxWidth = 320;
+    // Widest line the renderer produces: native 320 plus up to 128 extra
+    // columns on each side (widescreen).
+    static constexpr int kMaxExtra = 128;
+    static constexpr int kMaxWidth = 320 + 2 * kMaxExtra;
 
     uint8_t vram[0x10000];
     uint16_t cram[64];
@@ -40,6 +43,9 @@ public:
     bool sprite_collision = false;
 
     VdpHost host;
+    // Tooling hook: called for every VRAM word write (address, value).
+    void (*on_vram_write)(void* user, uint32_t addr, uint16_t v) = nullptr;
+    void* on_vram_write_user = nullptr;
     int dma_stall_cycles = 0;   // 68K cycles consumed by the last DMA (caller drains)
 
     void reset();
@@ -58,9 +64,11 @@ public:
 
     // Timing hooks called by the scheduler.
     void on_line_start(int line, int active_lines);
-    // Renders one line. out_rgb: 320 pixels (XRGB8888); out_bg: 1 if the pixel
-    // shows the backdrop colour (used for 32X priority).
-    void render_line(int line, uint32_t* out_rgb, uint8_t* out_bg);
+    // Renders one line covering native columns [-extra, width()+extra).
+    // out_rgb: XRGB8888; out_bg: 1 if the pixel shows the backdrop colour
+    // (used for 32X priority). Status flags set while rendering (sprite
+    // overflow/collision) follow native-width rules regardless of `extra`.
+    void render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra = 0);
 
     static uint32_t cram_to_rgb(uint16_t c);
 

@@ -11,6 +11,7 @@
 #include "game/recomp_dispatch.h"
 #include "renderer/image_io.h"
 #include "runtime/log.h"
+#include "runtime/patches.h"
 #include "runtime/system.h"
 #include <chrono>
 #include <cstdio>
@@ -161,6 +162,13 @@ int main(int argc, char** argv) {
     bool force_interp = false;
     bool lockstep = false;
     bool profile = false;
+    int wide = 0;
+    // --compare-native: run a 4:3 machine alongside the widescreen one and
+    // require the centre 320 px to be pixel-identical. Comparison stops when
+    // the cameras legitimately differ (the widescreen camera clamp keeps the
+    // margins inside the level near its edges).
+    bool compare_native = false;
+    uint64_t min_centre_frames = 0;  // fail if fewer frames could be compared
     std::string wav_path;
     std::string coverage_path;
     int break_cpu = -1;
@@ -224,6 +232,9 @@ int main(int argc, char** argv) {
         else if (a == "--interp") force_interp = true;
         else if (a == "--lockstep") lockstep = true;
         else if (a == "--profile") profile = true;
+        else if (a == "--wide") wide = std::atoi(next().c_str());
+        else if (a == "--compare-native") compare_native = true;
+        else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
         else if (a == "--expect-hash") {
             auto parts = split(next(), ':');
@@ -254,6 +265,7 @@ int main(int argc, char** argv) {
     m->reset();
     m->audio_enabled = !wav_path.empty();
     m->profile = profile;
+    m->wide_extra = wide;
     std::vector<int16_t> wav;
     RecompStatus rs = install_recompiled_code(*m, !force_interp);
     std::printf("execution: %s\n", rs.description.c_str());
@@ -264,8 +276,21 @@ int main(int argc, char** argv) {
         ref = std::make_unique<Machine>();
         ref->load_rom(rom_path, &err);
         ref->reset();
+        ref->wide_extra = wide;
         if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
     }
+    // The 4:3 comparison machine runs on the interpreter: the recompiled
+    // code's SH-2 validation state is process-wide, so only one machine at a
+    // time may use it (same reason the lockstep reference is interpreted).
+    std::unique_ptr<Machine> nat;
+    bool centre_compare = false;
+    if (compare_native && wide > 0) {
+        nat = std::make_unique<Machine>();
+        nat->load_rom(rom_path, &err);
+        nat->reset();
+        centre_compare = true;
+    }
+    uint64_t centre_ok_frames = 0;
     uint64_t lockstep_ok_frames = 0;
     CoverageRecorder cov;
     if (!coverage_path.empty()) cov.attach(*m);
@@ -327,6 +352,27 @@ int main(int argc, char** argv) {
             }
             ++lockstep_ok_frames;
         }
+        if (nat && centre_compare) {
+            nat->input.pad[0] = btn;
+            nat->run_frame();
+            if (!m->wide_active) { /* not a widescreen scene */ }
+            else if (patches::camera_x(*nat) != patches::camera_x(*m) || patches::camera_y(*nat) != patches::camera_y(*m)) {
+                // The widescreen camera clamp keeps the margins inside the
+                // level near its edges, so the runs stop being comparable.
+                std::printf("centre check: cameras diverge at frame %llu (level edge); %llu frames verified\n",
+                            (unsigned long long)m->frame_count, (unsigned long long)centre_ok_frames);
+                centre_compare = false;
+            } else {
+                for (int y = 0; y < nat->fb_height; ++y)
+                    for (int x = 0; x < nat->fb_width; ++x)
+                        if (nat->framebuffer[y * kScreenWidth + x] != m->framebuffer[y * kScreenWidth + x + m->fb_extra]) {
+                            std::printf("CENTRE MISMATCH at frame %llu, native pixel (%d,%d): widescreen rendering changed the 4:3 image\n",
+                                        (unsigned long long)m->frame_count, x, y);
+                            return 4;
+                        }
+                ++centre_ok_frames;
+            }
+        }
         if (shots.count(m->frame_count)) {
             char name[512];
             std::snprintf(name, sizeof name, "%s/frame_%05llu.png", out_dir.c_str(), (unsigned long long)m->frame_count);
@@ -361,6 +407,12 @@ int main(int argc, char** argv) {
     if (!wav_path.empty()) {
         if (write_wav(wav_path, wav, int(kAudioRate + 0.5))) std::printf("audio written to %s (%zu samples)\n", wav_path.c_str(), wav.size() / 2);
     }
+    if (compare_native && centre_ok_frames < min_centre_frames) {
+        std::printf("centre check: only %llu frames compared, expected at least %llu\n",
+                    (unsigned long long)centre_ok_frames, (unsigned long long)min_centre_frames);
+        return 5;
+    }
+    if (compare_native) std::printf("centre check: %llu widescreen frames with a 4:3 identical centre\n", (unsigned long long)centre_ok_frames);
     if (ref) std::printf("lockstep: %llu frames bit-identical between interpreter and recompiled execution\n", (unsigned long long)lockstep_ok_frames);
     if (!coverage_path.empty()) {
         if (cov.save(coverage_path)) std::printf("coverage written to %s (%zu entries)\n", coverage_path.c_str(), cov.size());

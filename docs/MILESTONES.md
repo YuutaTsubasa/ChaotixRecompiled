@@ -83,12 +83,29 @@ headless `--wav`。Lockstep 仍然 bit-exact（Z80 在兩邊一起執行）。
 
 待做：68K 輪詢迴圈同樣的 fast-forward、旗標活性分析、更多遊戲區域（其他 zone 需要可解鎖的存檔或更長的遊玩腳本）。
 
-## Milestone 4 — 真正寬螢幕（需逆向）
+## Milestone 4 — 真正寬螢幕 ✅
 
-- 找出 camera 結構、物件啟動視窗、culling 常數、HUD 繪製（`rom_analyzer` xref 報表 + trace）。
-- renderer 支援可變寬度（MD 逐線、32X FB 行寬）。
-- generated code patch hook（依函式位址替換常數）；per-scene 寬度表（選單/特殊關卡維持 4:3）。
-- 驗證：寬螢幕模式下 gameplay 狀態（物件、碰撞、計時）與 4:3 模式一致。
+設計與 ROM 分析證據見 [`ARCHITECTURE.md` §8](../ARCHITECTURE.md)。
+
+- Renderer：MD 逐線輸出 [−E, 320+E)（planes、window、sprites；sprite overflow/collision 旗標仍依原生規則），32X 邊界由 host 影子緩衝提供；framebuffer 最寬 448 px。
+- Patch 機制：68K host hook（`m68k::State::hook`），直譯器與產生碼在相同指令前呼叫 → 寬螢幕 lockstep bit-identical。
+- 遊戲層：plane 串流環狀緩衝左移 80 px、32X 裁切矩形加寬（對齊 8）、環 sprite 可見範圍放寬、camera clamp 內縮、關卡場景判斷（其他場景 4:3 + 黑邊）。
+- 使用者回報修正（第三輪）：填圖折返位置（`0x8F4F22` 重新讀取 plane.x）未套用位移，導致每次整列重畫少 8 欄 → 邊緣缺圖塊、垂直捲動時錯位、第二關之後明顯錯誤。新增驗證方式：4:3 與寬螢幕雙機比對中央 320 px（關卡中逐像素相同）。
+- 使用者回報修正（第二輪）：環的 MD sprite 可見範圍、32X 裁切對齊 8、環狀緩衝偏移改為 96（左右餘裕平衡）、關卡鏡頭範圍外的邊界欄塗黑。
+- 使用者回報修正：16:9（E = 53）時 32X 裁切邊界為奇數 → SH-2 address error → 32X 畫面凍結（「畫面殘留」）；環要進入 4:3 範圍才出現。兩者皆已修正，並以 E = 1…64 全部各跑 5000 幀確認 SH-2 正常。
+- 前端：`Widescreen` 設定、F6、`--no-widescreen`；E 由顯示比例計算（16:9 → 426×224）；debug overlay 顯示 `wide E (active)`。
+- 驗證：
+  - E = 0：既有 5 項測試不變（包含 36,000 幀 lockstep 與 720 張 golden hash）。
+  - 新測試 `widescreen_centre_matches_4_3`（4:3 與寬螢幕雙機並行，中央 320 px 必須逐像素相同；headless `--compare-native`，比對到鏡頭在關卡邊界依設計分歧為止）。
+  - 新測試 `lockstep_widescreen`（E = 53，3200 幀）、`golden_frames_widescreen`（E = 64，標題 4:3 + 關卡）、`golden_frames_16_9`（E = 53，兩張關卡畫面；當機會讓畫面凍結而使 hash 不符）、`lockstep_attract_widescreen_long`（E = 53，36,000 幀，所有 attract demo zone）。
+  - 注意：lockstep 本身抓不到「兩邊一起當掉」，因此寬螢幕測試一定要搭配 golden hash。
+  - 邊界 nametable 內容與同一格在原生畫面中顯示時比對：E ≤ 80 時 > 99.5% 一致。
+  - 截圖檢查 attract 中所有 zone（Botanic Base、Techno Tower、Speed Slider、Amazing Arena、Marina Madness）。
+
+與原計畫的差異：物件啟動視窗與 culling 不需修改（32X 繪製器本身以裁切矩形判斷，物件在 ±64 px 內已存在）；
+camera clamp 改變會影響依 camera 決定的物件啟動時機，因此「寬螢幕與 4:3 gameplay 完全一致」只在離關卡邊界 64 px 以上時成立。
+
+待做：HUD 貼齊寬畫面左緣（選項）、特殊關卡 / Boss 房間的個別處理、>64 欄（需處理 plane 環狀緩衝的餘裕）。
 
 ## Milestone 5 — 全平台建置（設定已建立，待各平台實機驗證）
 

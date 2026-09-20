@@ -35,6 +35,14 @@ struct ViewportResult {
 };
 
 double aspect_value(AspectMode m, double custom, double window_aspect);
+// Widescreen margin (columns per side of the native 320 px image) that fills
+// a frame of the given display aspect, capped at max_extra.
+int widescreen_extra(double frame_aspect, int max_extra);
+// Display aspect of a rendered image `width` pixels wide whose native part
+// (shown at 4:3 on the original hardware) is `native_width` pixels.
+inline double image_aspect_for_width(int width, int native_width) {
+    return native_width > 0 ? (4.0 / 3.0) * double(width) / double(native_width) : 4.0 / 3.0;
+}
 ViewportResult compute_viewport(const ViewportConfig& cfg, int out_w, int out_h, int sim_w, int sim_h);
 
 const char* aspect_name(AspectMode m);

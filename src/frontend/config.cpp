@@ -61,6 +61,7 @@ bool Config::load(const std::string& path) {
                 else window_mode = WindowMode::Windowed;
             } else if (k == "WindowScale") window_scale = std::max(1, std::atoi(v.c_str()));
             else if (k == "VSync") vsync = parse_bool(v, vsync);
+            else if (k == "Widescreen") widescreen = parse_bool(v, widescreen);
         } else if (section == "Audio") {
             if (k == "Enabled") audio = parse_bool(v, audio);
             else if (k == "Volume") volume = std::clamp(std::atoi(v.c_str()), 0, 100);
@@ -86,6 +87,8 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Auto (match window) | 4:3 | 16:9 | 16:10 | 21:9 | W:H\n");
     if (viewport.aspect == AspectMode::Custom) std::fprintf(f, "AspectRatio = %.4f\n", viewport.custom_aspect);
     else std::fprintf(f, "AspectRatio = %s\n", aspect_name(viewport.aspect));
+    std::fprintf(f, "# true: levels render extra columns up to the aspect ratio (max ~1.87:1); false: original 4:3\n");
+    std::fprintf(f, "Widescreen = %s\n", widescreen ? "true" : "false");
     std::fprintf(f, "# Integer | Fit | Stretch\nScaling = %s\n", scale_name(viewport.scale));
     std::fprintf(f, "# Nearest | Linear\nFilter = %s\n", linear_filter ? "Linear" : "Nearest");
     std::fprintf(f, "# Windowed | Borderless | Fullscreen\nWindowMode = %s\n", window_mode_name(window_mode));

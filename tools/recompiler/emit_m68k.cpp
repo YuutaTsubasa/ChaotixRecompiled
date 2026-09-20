@@ -1,5 +1,6 @@
 // 68000 -> C++ code generation.
 #include "emit.h"
+#include "runtime/patches.h"
 #include <cstdarg>
 #include <set>
 
@@ -179,6 +180,7 @@ void emit_insn(FnCtx& x, const m68k::Insn& in, bool last_in_block, uint32_t bloc
     Out& o = x.o;
     const uint32_t next = in.pc + in.len;
     o.f("  // %06X: %s\n", in.pc, m68k::disassemble(in).c_str());
+    if (patches::is_m68k_hook(in.pc)) o.f("  if (c->hook) c->hook(c, 0x%Xu);\n", in.pc);
     o.f("  { [[maybe_unused]] static constexpr m68k::Insn I = %s;\n", insn_init(in).c_str());
     o.f("    c->cycles -= %u;\n", in.cycles);
     using m68k::Op;
