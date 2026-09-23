@@ -29,8 +29,10 @@ compiled from it — the desktop executable, the Android APK, an iOS build.
 
 Consequently:
 
-- `generated/`, `coverage/*.cov` and build outputs are gitignored, and must
-  stay that way.
+- `generated/` and the build outputs are gitignored, and must stay that way.
+  (`coverage/*.cov` *is* tracked on purpose: those files are lists of program
+  counter values this project's own tools recorded, so the recompiler knows
+  which addresses are code. They contain no ROM bytes and no instructions.)
 - **Do not distribute the built game** — not the executable, not the APK, not
   a "portable" folder, not to friends, not on a release page. Each person
   builds it from their own ROM.

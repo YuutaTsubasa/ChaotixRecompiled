@@ -152,7 +152,7 @@ template <int S> M68K_INLINE void op_movem_mr_s(State* c, const Insn& in) {
     for (int r = 0; r < 16; ++r) {
         if (m & (1u << r)) {
             uint32_t v = rd<S>(c, addr);
-            if (S == 2) v = uint32_t(int32_t(int16_t(v)));
+            if constexpr (S == 2) v = uint32_t(int32_t(int16_t(v)));
             if (r < 8) c->d[r] = v; else c->a[r - 8] = v;
             addr += S;
         }
@@ -187,16 +187,19 @@ template <Alu K, int S> M68K_INLINE void op_alu_s(State* c, const Insn& in) {
     uint32_t s = ea_read<S>(c, in.src);
     uint32_t addr = 0;
     uint32_t d = ea_rmw_read<S>(c, in.dst, addr);
-    uint32_t r;
-    if constexpr (K == Alu::ADD) r = alu_add<S>(c, s, d);
-    else if constexpr (K == Alu::SUB) r = alu_sub<S>(c, s, d);
-    else if constexpr (K == Alu::AND) r = alu_logic<S>(c, s & d);
-    else if constexpr (K == Alu::OR) r = alu_logic<S>(c, s | d);
-    else if constexpr (K == Alu::EOR) r = alu_logic<S>(c, s ^ d);
-    else if constexpr (K == Alu::ADDX) r = alu_addx<S>(c, s, d);
-    else if constexpr (K == Alu::SUBX) r = alu_subx<S>(c, s, d);
-    else { alu_cmp<S>(c, s, d); return; }
-    ea_rmw_write<S>(c, in.dst, addr, r);
+    if constexpr (K == Alu::CMP) {
+        alu_cmp<S>(c, s, d);
+    } else {
+        uint32_t r;
+        if constexpr (K == Alu::ADD) r = alu_add<S>(c, s, d);
+        else if constexpr (K == Alu::SUB) r = alu_sub<S>(c, s, d);
+        else if constexpr (K == Alu::AND) r = alu_logic<S>(c, s & d);
+        else if constexpr (K == Alu::OR) r = alu_logic<S>(c, s | d);
+        else if constexpr (K == Alu::EOR) r = alu_logic<S>(c, s ^ d);
+        else if constexpr (K == Alu::ADDX) r = alu_addx<S>(c, s, d);
+        else r = alu_subx<S>(c, s, d);
+        ea_rmw_write<S>(c, in.dst, addr, r);
+    }
 }
 template <Alu K> M68K_INLINE void op_alu(State* c, const Insn& in) {
     switch (in.size) {
@@ -218,8 +221,8 @@ template <bool SUB> M68K_INLINE void op_addq(State* c, const Insn& in) {
 template <int K> M68K_INLINE void op_adda(State* c, const Insn& in) {  // K: 0 add, 1 sub, 2 cmp
     uint32_t s = in.size == 2 ? uint32_t(int32_t(int16_t(ea_read<2>(c, in.src)))) : ea_read<4>(c, in.src);
     uint32_t& d = c->a[in.dst.reg];
-    if (K == 0) d += s;
-    else if (K == 1) d -= s;
+    if constexpr (K == 0) d += s;
+    else if constexpr (K == 1) d -= s;
     else alu_cmp<4>(c, s, d);
 }
 
@@ -347,21 +350,24 @@ template <Bit K> M68K_INLINE void op_bit(State* c, const Insn& in) {
         bitn &= 31;
         uint32_t& r = c->d[in.dst.reg];
         c->z = ((r >> bitn) & 1) == 0;
-        if (K == Bit::CHG) r ^= 1u << bitn;
-        else if (K == Bit::CLR) r &= ~(1u << bitn);
-        else if (K == Bit::SET) r |= 1u << bitn;
-        if (K == Bit::CLR || (K != Bit::TST && bitn >= 16)) c->cycles -= 2;
+        if constexpr (K == Bit::CHG) r ^= 1u << bitn;
+        else if constexpr (K == Bit::CLR) r &= ~(1u << bitn);
+        else if constexpr (K == Bit::SET) r |= 1u << bitn;
+        if constexpr (K == Bit::CLR) c->cycles -= 2;
+        else if constexpr (K != Bit::TST) { if (bitn >= 16) c->cycles -= 2; }
         return;
     }
     bitn &= 7;
     uint32_t addr = 0;
     uint32_t v = ea_rmw_read<1>(c, in.dst, addr);
     c->z = ((v >> bitn) & 1) == 0;
-    if (K == Bit::TST) return;
-    if (K == Bit::CHG) v ^= 1u << bitn;
-    else if (K == Bit::CLR) v &= ~(1u << bitn);
-    else v |= 1u << bitn;
-    ea_rmw_write<1>(c, in.dst, addr, v);
+    if constexpr (K == Bit::TST) return;
+    else {
+        if constexpr (K == Bit::CHG) v ^= 1u << bitn;
+        else if constexpr (K == Bit::CLR) v &= ~(1u << bitn);
+        else v |= 1u << bitn;
+        ea_rmw_write<1>(c, in.dst, addr, v);
+    }
 }
 
 // ---------------------------------------------------------------------------

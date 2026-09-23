@@ -8,7 +8,12 @@ set(CHAOTIX_GENERATED_DIR "${CMAKE_SOURCE_DIR}/generated" CACHE PATH "Directory 
 
 function(chaotix_set_warnings target)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive-)
+        # /utf-8: the sources are UTF-8 (they contain em dashes and the like),
+        # which MSVC otherwise reads in the machine's ANSI code page.
+        # _CRT_SECURE_NO_WARNINGS: the code uses standard fopen/getenv on
+        # purpose, since it has to build with GCC and Clang too.
+        target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wno-unused-parameter)
     endif()

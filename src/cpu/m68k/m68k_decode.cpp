@@ -161,7 +161,7 @@ bool decode_impl(Rd& r, Insn& o) {
             if (o.dst.mode == EA_DREG)
                 o.cycles = o.op == Op::BTST ? 6 : o.op == Op::BCLR ? 10 : 8;
             else
-                o.cycles = (o.op == Op::BTST ? 4 : 8) + ea_time(o.dst.mode, false);
+                o.cycles = uint16_t((o.op == Op::BTST ? 4 : 8) + ea_time(o.dst.mode, false));
             return true;
         }
         if (rx == 4) {  // static bit ops
@@ -176,7 +176,7 @@ bool decode_impl(Rd& r, Insn& o) {
             if (o.dst.mode == EA_DREG)
                 o.cycles = o.op == Op::BTST ? 10 : o.op == Op::BCLR ? 14 : 12;
             else
-                o.cycles = (o.op == Op::BTST ? 8 : 12) + ea_time(o.dst.mode, false);
+                o.cycles = uint16_t((o.op == Op::BTST ? 8 : 12) + ea_time(o.dst.mode, false));
             return true;
         }
         static const Op iops[8] = {Op::ORI, Op::ANDI, Op::SUBI, Op::ADDI, Op::INVALID, Op::EORI, Op::CMPI, Op::INVALID};
@@ -189,9 +189,9 @@ bool decode_impl(Rd& r, Insn& o) {
         if (!dec_ea(r, mode, ry, o.size, o.dst, allowed)) return false;
         bool lng = o.size == 4;
         if (o.op == Op::CMPI)
-            o.cycles = o.dst.mode == EA_DREG ? (lng ? 14 : 8) : (lng ? 12 : 8) + ea_time(o.dst.mode, lng);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? (lng ? 14 : 8) : (lng ? 12 : 8) + ea_time(o.dst.mode, lng));
         else
-            o.cycles = o.dst.mode == EA_DREG ? (lng ? 16 : 8) : (lng ? 20 : 12) + ea_time(o.dst.mode, lng);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? (lng ? 16 : 8) : (lng ? 20 : 12) + ea_time(o.dst.mode, lng));
         return true;
     }
     case 0x1: case 0x2: case 0x3: {
@@ -204,13 +204,13 @@ bool decode_impl(Rd& r, Insn& o) {
             if (o.size == 1) return false;
             o.op = Op::MOVEA;
             o.dst = areg(rx);
-            o.cycles = 4 + ea_time(o.src.mode, lng);
+            o.cycles = uint16_t(4 + ea_time(o.src.mode, lng));
             return true;
         }
         o.op = Op::MOVE;
         if (!dec_ea(r, dmode, rx, o.size, o.dst, DATA_ALT)) return false;
         int dt = o.dst.mode == EA_PREDEC ? ea_time(EA_IND, lng) : ea_time(o.dst.mode, lng);
-        o.cycles = 4 + ea_time(o.src.mode, lng) + dt;
+        o.cycles = uint16_t(4 + ea_time(o.src.mode, lng) + dt);
         return true;
     }
     case 0x4: {
@@ -227,7 +227,7 @@ bool decode_impl(Rd& r, Insn& o) {
             o.size = 2;
             if (!dec_ea(r, mode, ry, 2, o.src, DATA)) return false;
             o.dst = dreg(rx);
-            o.cycles = 10 + ea_time(o.src.mode, false);
+            o.cycles = uint16_t(10 + ea_time(o.src.mode, false));
             o.flags |= IF_END_BLOCK;
             return true;
         }
@@ -235,24 +235,24 @@ bool decode_impl(Rd& r, Insn& o) {
         case 0x40C0:
             o.op = Op::MOVE_FROM_SR; o.size = 2;
             if (!dec_ea(r, mode, ry, 2, o.dst, DATA_ALT)) return false;
-            o.cycles = o.dst.mode == EA_DREG ? 6 : 8 + ea_time(o.dst.mode, false);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? 6 : 8 + ea_time(o.dst.mode, false));
             return true;
         case 0x44C0:
             o.op = Op::MOVE_TO_CCR; o.size = 2;
             if (!dec_ea(r, mode, ry, 2, o.src, DATA)) return false;
-            o.cycles = 12 + ea_time(o.src.mode, false);
+            o.cycles = uint16_t(12 + ea_time(o.src.mode, false));
             o.flags |= IF_END_BLOCK;
             return true;
         case 0x46C0:
             o.op = Op::MOVE_TO_SR; o.size = 2;
             if (!dec_ea(r, mode, ry, 2, o.src, DATA)) return false;
-            o.cycles = 12 + ea_time(o.src.mode, false);
+            o.cycles = uint16_t(12 + ea_time(o.src.mode, false));
             o.flags |= IF_END_BLOCK | IF_PRIV;
             return true;
         case 0x4800:
             o.op = Op::NBCD; o.size = 1;
             if (!dec_ea(r, mode, ry, 1, o.dst, DATA_ALT)) return false;
-            o.cycles = o.dst.mode == EA_DREG ? 6 : 8 + ea_time(o.dst.mode, false);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? 6 : 8 + ea_time(o.dst.mode, false));
             return true;
         case 0x4840:
             if (mode == 0) { o.op = Op::SWAP; o.size = 4; o.dst = dreg(ry); o.cycles = 4; return true; }
@@ -283,7 +283,7 @@ bool decode_impl(Rd& r, Insn& o) {
             if (op == 0x4AFC) { o.op = Op::ILLEGAL; o.flags |= IF_BRANCH | IF_NO_FALLTHROUGH | IF_END_BLOCK; o.cycles = 4; return true; }
             o.op = Op::TAS; o.size = 1;
             if (!dec_ea(r, mode, ry, 1, o.dst, DATA_ALT)) return false;
-            o.cycles = o.dst.mode == EA_DREG ? 4 : 14 + ea_time(o.dst.mode, false);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? 4 : 14 + ea_time(o.dst.mode, false));
             return true;
         case 0x4C80: case 0x4CC0: {
             o.op = Op::MOVEM_MR; o.size = (op & 0x40) ? 4 : 2;
@@ -345,9 +345,9 @@ bool decode_impl(Rd& r, Insn& o) {
             uint32_t allowed = kind == Op::TST ? (DATA_ALT) : DATA_ALT;
             if (!dec_ea(r, mode, ry, o.size, o.dst, allowed)) return false;
             bool lng = o.size == 4;
-            if (kind == Op::TST) o.cycles = 4 + ea_time(o.dst.mode, lng);
+            if (kind == Op::TST) o.cycles = uint16_t(4 + ea_time(o.dst.mode, lng));
             else if (o.dst.mode == EA_DREG) o.cycles = lng ? 6 : 4;
-            else o.cycles = (lng ? 12 : 8) + ea_time(o.dst.mode, lng);
+            else o.cycles = uint16_t((lng ? 12 : 8) + ea_time(o.dst.mode, lng));
             return true;
         }
     }
@@ -365,7 +365,7 @@ bool decode_impl(Rd& r, Insn& o) {
             }
             o.op = Op::SCC; o.size = 1;
             if (!dec_ea(r, mode, ry, 1, o.dst, DATA_ALT)) return false;
-            o.cycles = o.dst.mode == EA_DREG ? 4 : 8 + ea_time(o.dst.mode, false);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? 4 : 8 + ea_time(o.dst.mode, false));
             return true;
         }
         o.op = (op & 0x100) ? Op::SUBQ : Op::ADDQ;
@@ -376,7 +376,7 @@ bool decode_impl(Rd& r, Insn& o) {
         bool lng = o.size == 4;
         if (o.dst.mode == EA_DREG) o.cycles = lng ? 8 : 4;
         else if (o.dst.mode == EA_AREG) o.cycles = 8;
-        else o.cycles = (lng ? 12 : 8) + ea_time(o.dst.mode, lng);
+        else o.cycles = uint16_t((lng ? 12 : 8) + ea_time(o.dst.mode, lng));
         return true;
     }
     case 0x6: {
@@ -434,11 +434,11 @@ bool decode_impl(Rd& r, Insn& o) {
         if (op & 0x100) {  // Dn,<ea>
             o.src = dreg(rx);
             if (!dec_ea(r, mode, ry, o.size, o.dst, MEM_ALT)) return false;
-            o.cycles = (lng ? 12 : 8) + ea_time(o.dst.mode, lng);
+            o.cycles = uint16_t((lng ? 12 : 8) + ea_time(o.dst.mode, lng));
         } else {
             if (!dec_ea(r, mode, ry, o.size, o.src, DATA)) return false;
             o.dst = dreg(rx);
-            o.cycles = 4 + ea_time(o.src.mode, lng) + (lng ? ((o.src.mode == EA_DREG || o.src.mode == EA_IMM) ? 4 : 2) : 0);
+            o.cycles = uint16_t(4 + ea_time(o.src.mode, lng) + (lng ? ((o.src.mode == EA_DREG || o.src.mode == EA_IMM) ? 4 : 2) : 0));
         }
         return true;
     }
@@ -470,12 +470,12 @@ bool decode_impl(Rd& r, Insn& o) {
         if (op & 0x100) {
             o.src = dreg(rx);
             if (!dec_ea(r, mode, ry, o.size, o.dst, MEM_ALT)) return false;
-            o.cycles = (lng ? 12 : 8) + ea_time(o.dst.mode, lng);
+            o.cycles = uint16_t((lng ? 12 : 8) + ea_time(o.dst.mode, lng));
         } else {
             uint32_t allowed = o.size == 1 ? DATA : ALL;
             if (!dec_ea(r, mode, ry, o.size, o.src, allowed)) return false;
             o.dst = dreg(rx);
-            o.cycles = 4 + ea_time(o.src.mode, lng) + (lng ? ((o.src.mode == EA_DREG || o.src.mode == EA_AREG || o.src.mode == EA_IMM) ? 4 : 2) : 0);
+            o.cycles = uint16_t(4 + ea_time(o.src.mode, lng) + (lng ? ((o.src.mode == EA_DREG || o.src.mode == EA_AREG || o.src.mode == EA_IMM) ? 4 : 2) : 0));
         }
         return true;
     }
@@ -501,7 +501,7 @@ bool decode_impl(Rd& r, Insn& o) {
             o.op = Op::EOR;
             o.src = dreg(rx);
             if (!dec_ea(r, mode, ry, o.size, o.dst, DATA_ALT)) return false;
-            o.cycles = o.dst.mode == EA_DREG ? (lng ? 8 : 4) : (lng ? 12 : 8) + ea_time(o.dst.mode, lng);
+            o.cycles = uint16_t(o.dst.mode == EA_DREG ? (lng ? 8 : 4) : (lng ? 12 : 8) + ea_time(o.dst.mode, lng));
             return true;
         }
         o.op = Op::CMP;
