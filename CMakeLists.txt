@@ -45,6 +45,7 @@ add_library(chaotix_runtime STATIC
     src/audio/sn76489.cpp
     src/renderer/image_io.cpp
     src/renderer/viewport.cpp
+    src/frontend/setup.cpp
     src/input/input.cpp
     src/input/touch_controls.cpp
 )
@@ -107,6 +108,7 @@ if(CHAOTIX_BUILD_FRONTEND)
     endif()
     set(_frontend_sources
         src/platform/sdl_main.cpp
+        src/platform/sdl_setup.cpp
         src/frontend/config.cpp
         src/frontend/debug_overlay.cpp
     )

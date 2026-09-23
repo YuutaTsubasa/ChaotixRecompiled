@@ -42,12 +42,21 @@ See [platforms/android/README.md](platforms/android/README.md).
 ## Run
 
 ```bash
-build/ChaotixRecompiled /path/to/chaotix.32x
+build/ChaotixRecompiled
 ```
 
-Or set `RomPath` in the config file, or put the ROM in a `__ROM__` folder
-next to the executable. Settings live in the user data directory
-(`Config/chaotix.ini`); saves in `SaveData/`.
+On the first launch a setup page asks for your ROM: it lists the ROMs it can
+find (Downloads, Documents, `__ROM__` next to the executable, ...), and you can
+also drag a file onto the window or press `O` to browse. The file is verified
+and copied into the app's own folder, so later launches go straight into the
+game. A ROM given on the command line still wins over the installed copy.
+
+Useful flags: `--user-dir DIR` keeps settings, saves and the installed ROM in
+`DIR` (portable install), and `--install FILE` installs a ROM without showing
+the setup page (for packaging scripts).
+
+Settings live in the user data directory (`Config/chaotix.ini`), saves in
+`SaveData/`, the installed ROM in `Game/`.
 
 | Key | Action |
 |---|---|

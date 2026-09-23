@@ -9,6 +9,8 @@
 
 #include "frontend/config.h"
 #include "frontend/debug_overlay.h"
+#include "frontend/setup.h"
+#include "platform/sdl_setup.h"
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
 #include "input/touch_controls.h"
@@ -73,36 +75,52 @@ void capture_output(App& app) {
     SDL_DestroySurface(c);
 }
 
-std::string find_rom(const App& app, int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        std::string a = argv[i];
-        if (a.size() > 4 && a[0] != '-') return a;
-    }
-    if (!app.cfg.rom_path.empty() && std::filesystem::exists(app.cfg.rom_path)) return app.cfg.rom_path;
-    // Look in conventional places next to the executable / working directory.
+// Places a user's ROM is likely to be, for the first-run setup to offer.
+std::vector<std::string> rom_search_dirs(const App& app) {
     std::vector<std::filesystem::path> dirs = {"__ROM__", "rom", "."};
     if (const char* base = SDL_GetBasePath()) {
         dirs.push_back(std::filesystem::path(base) / "__ROM__");
         dirs.push_back(std::filesystem::path(base) / "rom");
+        dirs.push_back(std::filesystem::path(base));
     }
     dirs.push_back(std::filesystem::path(app.store.root()) / "rom");
-    // Mobile: users import the ROM through the Files app / document folder.
-    if (const char* docs = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS)) {
-        dirs.push_back(std::filesystem::path(docs));
-        dirs.push_back(std::filesystem::path(docs) / "Chaotix");
-    }
+    // Desktop: the usual download/document folders. Mobile: the app's own
+    // documents folder, which is what file managers expose.
+    for (SDL_Folder f : {SDL_FOLDER_DOWNLOADS, SDL_FOLDER_DOCUMENTS, SDL_FOLDER_DESKTOP})
+        if (const char* p = SDL_GetUserFolder(f)) {
+            dirs.push_back(std::filesystem::path(p));
+            dirs.push_back(std::filesystem::path(p) / "Chaotix");
+        }
 #if defined(SDL_PLATFORM_ANDROID)
     if (const char* ext = SDL_GetAndroidExternalStoragePath()) {
         dirs.push_back(std::filesystem::path(ext));
         dirs.push_back(std::filesystem::path(ext) / "rom");
     }
 #endif
-    for (const auto& d : dirs) {
-        std::error_code ec;
-        for (const auto& e : std::filesystem::directory_iterator(d, ec)) {
-            auto ext = e.path().extension().string();
-            if (ext == ".32x" || ext == ".32X" || ext == ".bin") return e.path().string();
+    std::vector<std::string> out;
+    for (const auto& d : dirs) out.push_back(d.string());
+    return out;
+}
+
+// Options that take a separate value, so a ROM path on the command line is
+// not confused with one of them.
+bool option_takes_value(const std::string& a) {
+    static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
+                                       "--press", "--user-dir", "--install"};
+    for (const char* o : with_value)
+        if (a == o) return true;
+    return false;
+}
+
+// A ROM given on the command line wins over everything else.
+std::string rom_from_args(int argc, char** argv) {
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (!a.empty() && a[0] == '-') {
+            if (option_takes_value(a)) ++i;
+            continue;
         }
+        if (a.size() > 4) return a;
     }
     return "";
 }
@@ -239,13 +257,49 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    char* pref = SDL_GetPrefPath("ChaotixRecompiled", "ChaotixRecompiled");
-    app.store = SaveStore(pref ? pref : "./");
-    SDL_free(pref);
+    // --user-dir puts settings, saves and the installed ROM in a folder of the
+    // caller's choice (portable installs, and the setup test).
+    std::string user_dir;
+    std::string install_path;  // --install: install this ROM and exit
+    for (int i = 1; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--user-dir" && i + 1 < argc) user_dir = argv[++i];
+        else if (a == "--install" && i + 1 < argc) install_path = argv[++i];
+    }
+    if (!user_dir.empty() && user_dir.back() != '/' && user_dir.back() != '\\') user_dir += '/';
+    if (user_dir.empty()) {
+        char* pref = SDL_GetPrefPath("ChaotixRecompiled", "ChaotixRecompiled");
+        user_dir = pref ? pref : "./";
+        SDL_free(pref);
+    } else {
+        std::error_code ec;
+        std::filesystem::create_directories(user_dir, ec);
+    }
+    app.store = SaveStore(user_dir);
     if (!app.cfg.load(app.store.config_file())) {
         app.cfg.set_defaults();
         app.cfg.save(app.store.config_file());
     }
+    // Non-interactive install: verify and copy the ROM, then exit. Used by
+    // packaging scripts and by the setup test.
+    if (!install_path.empty()) {
+        std::string installed, err;
+        if (!setup::install(install_path, app.store.root(), &installed, &err)) {
+            std::fprintf(stderr, "install failed: %s\n", err.c_str());
+            SDL_Quit();
+            return 1;
+        }
+        Rom rom;
+        rom.load(installed, &err);
+        app.cfg.installed = true;
+        app.cfg.rom_sha1 = rom.sha1;
+        app.cfg.rom_path = installed;
+        app.cfg.save(app.store.config_file());
+        std::printf("installed %s (%s)\n", installed.c_str(), rom.sha1.c_str());
+        SDL_Quit();
+        return 0;
+    }
+
     bool force_interp = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -255,6 +309,7 @@ int main(int argc, char** argv) {
         else if (a == "--windowed") app.cfg.window_mode = WindowMode::Windowed;
         else if (a == "--aspect" && i + 1 < argc) parse_aspect(argv[++i], app.cfg.viewport.aspect, app.cfg.viewport.custom_aspect);
         else if (a == "--no-widescreen") app.cfg.widescreen = false;
+        else if (a == "--user-dir" && i + 1 < argc) ++i;  // handled above
         else if (a == "--touch") app.cfg.touch = TouchMode::On;
         else if (a == "--debug") app.cfg.debug_overlay = true;
         else if (a == "--autotest" && i + 1 < argc) app.autotest_frames = std::strtoull(argv[++i], nullptr, 10);
@@ -281,29 +336,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::string rom_path = find_rom(app, argc, argv);
-    app.m = std::make_unique<Machine>();
-    std::string err;
-    if (rom_path.empty() || !app.m->load_rom(rom_path, &err)) {
-        std::string msg = "Knuckles' Chaotix ROM not found or invalid.\n\n"
-                          "This project does not include any game data. Provide your own legally obtained ROM by:\n"
-                          " - passing its path on the command line, or\n"
-                          " - setting RomPath in " + app.store.config_file() + ", or\n"
-                          " - placing it in a '__ROM__' folder next to the executable.\n\n" + err;
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Knuckles' Chaotix Recompiled", msg.c_str(), nullptr);
-        SDL_Quit();
-        return 1;
-    }
-    if (app.m->rom.version == RomVersion::Unknown)
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Knuckles' Chaotix Recompiled",
-                                 "This ROM does not match the verified Knuckles' Chaotix (Japan, USA) image.\n"
-                                 "The recompiled code will not be used; the reference interpreter will run it instead.", nullptr);
-    app.m->input.six_button[0] = app.cfg.six_button;
-    app.m->reset();
-    if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
-    RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
-    LOGI("app", "execution: %s", rs.description.c_str());
-
     int win_h = kActiveLines * app.cfg.window_scale;
     int win_w = int(std::lround(win_h * 4.0 / 3.0));
     if (app.cfg.raw.count("cli.w")) { win_w = std::atoi(app.cfg.raw["cli.w"].c_str()); win_h = std::atoi(app.cfg.raw["cli.h"].c_str()); }
@@ -313,6 +345,49 @@ int main(int argc, char** argv) {
     if (!app.renderer) { std::fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderVSync(app.renderer, app.cfg.vsync ? 1 : 0);
     LOGI("app", "renderer: %s", SDL_GetRendererName(app.renderer));
+
+    // Where to get the ROM, in order: the command line, the copy installed
+    // by a previous run, then the config or the usual folders.
+    std::string rom_path = rom_from_args(argc, argv);
+    if (rom_path.empty() && app.cfg.installed && setup::is_installed(app.store.root(), app.cfg.rom_sha1))
+        rom_path = setup::installed_rom_path(app.store.root());
+    if (rom_path.empty() && !app.cfg.rom_path.empty() && std::filesystem::exists(app.cfg.rom_path))
+        rom_path = app.cfg.rom_path;
+
+    app.m = std::make_unique<Machine>();
+    std::string err;
+    if (rom_path.empty() || !app.m->load_rom(rom_path, &err)) {
+        if (app.autotest_frames) {  // tests never show the setup screen
+            std::fprintf(stderr, "no usable ROM: %s\n", err.c_str());
+            return 1;
+        }
+        // First run, or the ROM moved: let the user install one.
+        rom_path = run_setup_screen(app.window, app.renderer, app.store.root(), rom_search_dirs(app));
+        if (rom_path.empty()) { SDL_Quit(); return 0; }
+        app.m = std::make_unique<Machine>();
+        if (!app.m->load_rom(rom_path, &err)) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Knuckles' Chaotix Recompiled", err.c_str(), app.window);
+            SDL_Quit();
+            return 1;
+        }
+    }
+    // Remember the installed copy so the next launch starts straight up.
+    if (rom_path == setup::installed_rom_path(app.store.root())) {
+        app.cfg.installed = true;
+        app.cfg.rom_sha1 = app.m->rom.sha1;
+        app.cfg.rom_path = rom_path;
+        app.cfg.save(app.store.config_file());
+    }
+    if (app.m->rom.version == RomVersion::Unknown)
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Knuckles' Chaotix Recompiled",
+                                 "This ROM does not match the verified Knuckles' Chaotix (Japan, USA) image.\n"
+                                 "The recompiled code will not be used; the reference interpreter will run it instead.",
+                                 app.window);
+    app.m->input.six_button[0] = app.cfg.six_button;
+    app.m->reset();
+    if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
+    RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
+    LOGI("app", "execution: %s", rs.description.c_str());
     app.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, kScreenWidth, kScreenHeight);
     SDL_SetTextureScaleMode(app.texture, app.cfg.linear_filter ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     apply_window_mode(app);

@@ -13,6 +13,10 @@ enum class TouchMode { Auto, On, Off };
 struct Config {
     // [Game]
     std::string rom_path;
+    // First-run setup: set once the user's ROM has been copied into the user
+    // data directory, with the hash it was verified against.
+    bool installed = false;
+    std::string rom_sha1;
     // [Video]
     ViewportConfig viewport;
     bool linear_filter = false;

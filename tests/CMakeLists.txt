@@ -4,6 +4,7 @@ add_executable(chaotix_tests
     test_m68k.cpp
     test_sh2.cpp
     test_viewport.cpp
+    test_setup.cpp
 )
 target_link_libraries(chaotix_tests PRIVATE chaotix_runtime)
 chaotix_set_warnings(chaotix_tests)
