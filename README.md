@@ -68,12 +68,21 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | F2 | Aspect ratio (Auto, 4:3, 16:9, 16:10, 21:9) |
 | F3 / F4 | Filter / scaling mode |
 | F6 | True widescreen on/off (extra columns apply from the next level load) |
+| F7 | Achievement list |
 | F11, Alt+Enter | Borderless fullscreen |
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
 Gamepads (Xbox, PlayStation, Nintendo layouts via SDL): West/South/East =
 A/B/C, LB/North/RB = X/Y/Z. On touch devices virtual controls appear.
+
+## Achievements
+
+A small local achievement system, in the spirit of RetroAchievements: the
+conditions in [`assets/achievements.ini`](assets/achievements.ini) are checked
+against the game's memory each frame, unlocks pop up in game and are stored in
+`SaveData/achievements.ini`. Nothing is downloaded or uploaded. `F7` shows the
+list; see [docs/ACHIEVEMENTS.md](docs/ACHIEVEMENTS.md) to add your own.
 
 ## Tools
 

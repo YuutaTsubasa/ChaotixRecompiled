@@ -80,7 +80,7 @@ endif()
 # ---------------------------------------------------------------------------
 include(ChaotixGenerated)
 
-add_library(chaotix_game STATIC src/game/recomp_dispatch.cpp ${CHAOTIX_GENERATED_SOURCES})
+add_library(chaotix_game STATIC src/game/recomp_dispatch.cpp src/game/achievements.cpp ${CHAOTIX_GENERATED_SOURCES})
 target_include_directories(chaotix_game PUBLIC src PRIVATE ${CHAOTIX_GENERATED_DIR})
 target_link_libraries(chaotix_game PUBLIC chaotix_runtime)
 target_compile_definitions(chaotix_game PRIVATE CHAOTIX_HAVE_GENERATED=$<BOOL:${CHAOTIX_HAVE_GENERATED}>)

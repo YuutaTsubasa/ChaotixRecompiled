@@ -5,8 +5,9 @@ add_executable(chaotix_tests
     test_sh2.cpp
     test_viewport.cpp
     test_setup.cpp
+    test_achievements.cpp
 )
-target_link_libraries(chaotix_tests PRIVATE chaotix_runtime)
+target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime)
 chaotix_set_warnings(chaotix_tests)
 add_test(NAME unit COMMAND chaotix_tests)
 
@@ -40,6 +41,14 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 ${_script}
                 --expect-hash 2800:${CHAOTIX_GOLDEN_169_A} --expect-hash 3200:${CHAOTIX_GOLDEN_169_B})
     set_tests_properties(lockstep_boot_to_level golden_frames lockstep_widescreen golden_frames_widescreen golden_frames_16_9 widescreen_centre_matches_4_3 PROPERTIES TIMEOUT 900)
+
+    # The shipped achievement definitions must still unlock while the attract
+    # demos play (a definition that never fires is silent otherwise).
+    add_test(NAME achievements_attract
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 12000
+                --achievements ${CMAKE_SOURCE_DIR}/assets/achievements.ini)
+    set_tests_properties(achievements_attract PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "unlocked First Ring")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)

@@ -24,6 +24,15 @@ analysis_out/
 *.srm
 saves/
 
+# Android: machine-specific SDK location and Gradle state
+platforms/android/local.properties
+platforms/android/.gradle/
+platforms/android/build/
+platforms/android/app/build/
+platforms/android/app/.cxx/
+platforms/android/**/.cxx/
+.gradle/
+
 # IDE
 .vs/
 .vscode/

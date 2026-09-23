@@ -8,6 +8,7 @@
 #include "cpu/m68k/m68k_ops.h"
 #include "cpu/sh2/sh2_interp.h"
 #include "cpu/sh2/sh2_ops.h"
+#include "game/achievements.h"
 #include "game/recomp_dispatch.h"
 #include "renderer/image_io.h"
 #include "runtime/log.h"
@@ -168,6 +169,7 @@ int main(int argc, char** argv) {
     // the cameras legitimately differ (the widescreen camera clamp keeps the
     // margins inside the level near its edges).
     bool compare_native = false;
+    std::string achievements_file;  // --achievements FILE: report unlocks
     uint64_t min_centre_frames = 0;  // fail if fewer frames could be compared
     std::string wav_path;
     std::string coverage_path;
@@ -235,6 +237,7 @@ int main(int argc, char** argv) {
         else if (a == "--wide") wide = std::atoi(next().c_str());
         else if (a == "--wide-bottom") wide_bottom = std::atoi(next().c_str());
         else if (a == "--compare-native") compare_native = true;
+        else if (a == "--achievements" && i + 1 < argc) achievements_file = next();
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
         else if (a == "--expect-hash") {
@@ -334,6 +337,15 @@ int main(int argc, char** argv) {
         m->exec.m68k_block = trace_m68k_block;
         m->exec.sh2_block = trace_sh2_block;
     }
+    achievements::Tracker tracker;
+    if (!achievements_file.empty()) {
+        std::string aerr;
+        if (!tracker.load_definitions(achievements_file, &aerr)) {
+            std::fprintf(stderr, "achievements: %s\n", aerr.c_str());
+            return 2;
+        }
+        std::printf("achievements: %zu definitions, %d points\n", tracker.list().size(), tracker.points_total());
+    }
     auto t0 = std::chrono::steady_clock::now();
     for (uint64_t f = 0; f < frames; ++f) {
         uint16_t btn = 0;
@@ -376,6 +388,11 @@ int main(int argc, char** argv) {
                 ++centre_ok_frames;
             }
         }
+        if (!achievements_file.empty())
+            tracker.update(*m, [&](const achievements::Achievement& a) {
+                std::printf("frame %llu: unlocked %s (%d points) - %s\n", (unsigned long long)m->frame_count,
+                            a.title.c_str(), a.points, a.description.c_str());
+            });
         if (shots.count(m->frame_count)) {
             char name[512];
             std::snprintf(name, sizeof name, "%s/frame_%05llu.png", out_dir.c_str(), (unsigned long long)m->frame_count);

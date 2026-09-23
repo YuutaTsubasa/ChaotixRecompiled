@@ -11,6 +11,7 @@
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
+#include "game/achievements.h"
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
 #include "input/touch_controls.h"
@@ -62,7 +63,36 @@ struct App {
     std::string autotest_shot;
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> script;
+    // Achievements: evaluated once per emulated frame, unlocks shown as a
+    // notification and written to the save folder straight away.
+    achievements::Tracker achievements;
+    bool achievements_on = false;
+    bool show_achievement_list = false;
+    struct Toast { std::string title, description; Uint64 until_ms = 0; };
+    std::vector<Toast> toasts;
 };
+
+// Looks for a data file shipped with the build: next to the executable, in an
+// "assets" folder beside it, or in the source tree during development.
+std::string find_asset(const App& app, const std::string& name) {
+    std::vector<std::filesystem::path> candidates;
+    candidates.push_back(std::filesystem::path(app.store.root()) / name);
+    if (const char* base = SDL_GetBasePath()) {
+        candidates.push_back(std::filesystem::path(base) / name);
+        candidates.push_back(std::filesystem::path(base) / "assets" / name);
+        candidates.push_back(std::filesystem::path(base) / ".." / "assets" / name);
+    }
+    candidates.push_back(std::filesystem::path("assets") / name);
+    for (const auto& c : candidates) {
+        std::error_code ec;
+        if (std::filesystem::exists(c, ec) && !ec) return c.string();
+    }
+    return "";
+}
+
+std::string achievements_progress_path(const App& app) {
+    return app.store.save_dir() + "achievements.ini";
+}
 
 void capture_output(App& app) {
     SDL_Surface* s = SDL_RenderReadPixels(app.renderer, nullptr);
@@ -182,6 +212,58 @@ uint16_t gamepad_buttons(SDL_Gamepad* g) {
     return out;
 }
 
+// Unlock notifications, newest at the bottom, and the full list on F7.
+void draw_achievements(App& app, int ow, int oh) {
+    const float scale = std::max(1.0f, float(oh) / 400.0f);
+    SDL_SetRenderScale(app.renderer, scale, scale);
+    const float w = float(ow) / scale, h = float(oh) / scale;
+    auto line = [&](float x, float y, const std::string& t, Uint8 r, Uint8 g, Uint8 b) {
+        SDL_SetRenderDrawColor(app.renderer, r, g, b, 255);
+        SDL_RenderDebugText(app.renderer, x, y, t.c_str());
+    };
+
+    if (app.show_achievement_list) {
+        SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 205);
+        SDL_FRect bg{0, 0, w, h};
+        SDL_RenderFillRect(app.renderer, &bg);
+        char head[128];
+        std::snprintf(head, sizeof head, "Achievements   %d / %zu    %d / %d points",
+                      app.achievements.unlocked_count(), app.achievements.list().size(),
+                      app.achievements.points_earned(), app.achievements.points_total());
+        line(8, 8, head, 255, 232, 120);
+        float y = 26;
+        for (const auto& a : app.achievements.list()) {
+            char row[160];
+            std::snprintf(row, sizeof row, "%s %-28s %3d  %s", a.unlocked ? "*" : " ", a.title.c_str(), a.points,
+                          a.description.c_str());
+            if (a.unlocked) line(8, y, row, 160, 255, 160);
+            else line(8, y, row, 130, 130, 145);
+            y += 10;
+            if (y > h - 12) break;
+        }
+        line(8, h - 10, "F7: close", 150, 215, 255);
+    }
+
+    const Uint64 now = SDL_GetTicks();
+    app.toasts.erase(std::remove_if(app.toasts.begin(), app.toasts.end(),
+                                    [&](const App::Toast& t) { return now >= t.until_ms; }),
+                     app.toasts.end());
+    float y = h - 8 - 26 * float(app.toasts.size());
+    for (const auto& t : app.toasts) {
+        SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+        SDL_SetRenderDrawColor(app.renderer, 20, 24, 48, 220);
+        SDL_FRect box{6, y - 3, std::min(w - 12, 300.0f), 24};
+        SDL_RenderFillRect(app.renderer, &box);
+        SDL_SetRenderDrawColor(app.renderer, 255, 232, 120, 255);
+        SDL_RenderRect(app.renderer, &box);
+        line(12, y + 1, "Achievement unlocked: " + t.title, 255, 232, 120);
+        line(12, y + 11, t.description, 210, 210, 220);
+        y += 26;
+    }
+    SDL_SetRenderScale(app.renderer, 1, 1);
+}
+
 void save_screenshot(App& app) {
     std::string dir = app.store.root() + "Screenshots/";
     std::error_code ec;
@@ -214,6 +296,7 @@ void handle_key(App& app, const SDL_KeyboardEvent& k) {
         break;
     case SDLK_F5: app.overlay_page = (app.overlay_page + 1) % 4; break;
     case SDLK_F6: app.cfg.widescreen = !app.cfg.widescreen; break;
+    case SDLK_F7: app.show_achievement_list = !app.show_achievement_list; break;
     case SDLK_F11:
         app.cfg.window_mode = app.cfg.window_mode == WindowMode::Windowed ? WindowMode::Borderless : WindowMode::Windowed;
         apply_window_mode(app);
@@ -388,6 +471,23 @@ int main(int argc, char** argv) {
     if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
     RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
     LOGI("app", "execution: %s", rs.description.c_str());
+
+    if (app.cfg.achievements) {
+        const std::string defs = find_asset(app, "achievements.ini");
+        std::string aerr;
+        if (defs.empty()) {
+            LOGW("achievements", "achievements.ini not found; achievements are off");
+        } else if (!app.achievements.load_definitions(defs, &aerr)) {
+            LOGW("achievements", "%s", aerr.c_str());
+        } else {
+            std::error_code ec;
+            std::filesystem::create_directories(app.store.save_dir(), ec);
+            app.achievements.load_progress(achievements_progress_path(app));
+            app.achievements_on = true;
+            LOGI("achievements", "%zu definitions, %d/%d points already earned",
+                 app.achievements.list().size(), app.achievements.points_earned(), app.achievements.points_total());
+        }
+    }
     app.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, kScreenWidth, kScreenHeight);
     SDL_SetTextureScaleMode(app.texture, app.cfg.linear_filter ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     apply_window_mode(app);
@@ -486,6 +586,12 @@ int main(int argc, char** argv) {
                 if (app.m->frame_count >= p.frame && app.m->frame_count < p.frame + p.duration) scripted |= p.buttons;
             app.m->input.pad[0] = uint16_t(buttons | scripted);
             app.m->run_frame();
+            if (app.achievements_on) {
+                app.achievements.update(*app.m, [&](const achievements::Achievement& a) {
+                    app.toasts.push_back({a.title, a.description, SDL_GetTicks() + 5000});
+                    app.achievements.save_progress(achievements_progress_path(app));
+                });
+            }
             if (!app.fast_forward) accumulator -= frame_ticks;
             ++steps;
         }
@@ -537,6 +643,7 @@ int main(int argc, char** argv) {
             app.touch.layout(ow, oh);
             draw_touch_controls(app, touch_held);
         }
+        if (app.achievements_on) draw_achievements(app, ow, oh);
         if (app.cfg.debug_overlay) {
             const SDL_DisplayMode* dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(app.window));
             app.timing.refresh_hz = dm ? unsigned(dm->refresh_rate + 0.5f) : 0;

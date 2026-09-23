@@ -64,6 +64,8 @@ bool Config::load(const std::string& path) {
             } else if (k == "WindowScale") window_scale = std::max(1, std::atoi(v.c_str()));
             else if (k == "VSync") vsync = parse_bool(v, vsync);
             else if (k == "Widescreen") widescreen = parse_bool(v, widescreen);
+        } else if (section == "Achievements") {
+            if (k == "Enabled") achievements = parse_bool(v, achievements);
         } else if (section == "Audio") {
             if (k == "Enabled") audio = parse_bool(v, audio);
             else if (k == "Volume") volume = std::clamp(std::atoi(v.c_str()), 0, 100);
@@ -99,6 +101,8 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Windowed | Borderless | Fullscreen\nWindowMode = %s\n", window_mode_name(window_mode));
     std::fprintf(f, "WindowScale = %d\nVSync = %s\n\n", window_scale, vsync ? "true" : "false");
     std::fprintf(f, "[Audio]\nEnabled = %s\nVolume = %d\n\n", audio ? "true" : "false", volume);
+    std::fprintf(f, "[Achievements]\n# Local achievements from assets/achievements.ini (nothing leaves this machine)\n");
+    std::fprintf(f, "Enabled = %s\n\n", achievements ? "true" : "false");
     std::fprintf(f, "[Input]\n# Auto | On | Off\nTouchControls = %s\n", touch == TouchMode::On ? "On" : touch == TouchMode::Off ? "Off" : "Auto");
     std::fprintf(f, "SixButtonPad = %s\n", six_button ? "true" : "false");
     for (const auto& [b, k] : keys) std::fprintf(f, "Key.%s = %s\n", b.c_str(), k.c_str());
