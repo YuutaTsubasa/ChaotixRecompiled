@@ -1,9 +1,12 @@
 name: CI
 
 # The ROM is never available here, so CI builds the parts that do not need
-# one: the CPU cores, the runtime, the tools, and the unit tests. Anything
+# one: the CPU cores, the runtime, the tools and the unit tests. Anything
 # that needs game code (lockstep, golden frames) runs on a developer machine
 # with CHAOTIX_ROM set.
+#
+# Only actions/checkout is used: everything else is plain CMake with each
+# runner's default generator, so there is nothing else to trust or to pin.
 on:
   push:
     branches: [main, master]
@@ -24,33 +27,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Set up MSVC
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure
-        run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCHAOTIX_BUILD_FRONTEND=OFF
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCHAOTIX_BUILD_FRONTEND=OFF
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build build --config Release
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --build-config Release
 
   frontend:
     name: Frontend (SDL3, Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Install SDL3 build dependencies
         run: |
@@ -69,12 +59,11 @@ jobs:
 
       - name: Configure
         run: >
-          cmake -S . -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DCHAOTIX_SDL3_SOURCE_DIR=${{ github.workspace }}/_sdl3
 
       - name: Build
-        run: cmake --build build
+        run: cmake --build build --config Release
 
   hygiene:
     name: No game data
