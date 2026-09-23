@@ -1,0 +1,94 @@
+name: CI
+
+# The ROM is never available here, so CI builds the parts that do not need
+# one: the CPU cores, the runtime, the tools, and the unit tests. Anything
+# that needs game code (lockstep, golden frames) runs on a developer machine
+# with CHAOTIX_ROM set.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: "Linux (gcc)", os: ubuntu-latest}
+          - {name: "macOS (clang)", os: macos-latest}
+          - {name: "Windows (MSVC)", os: windows-latest}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCHAOTIX_BUILD_FRONTEND=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+  frontend:
+    name: Frontend (SDL3, Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Install SDL3 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libxrandr-dev \
+            libxcursor-dev libxi-dev libxfixes-dev libxss-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols \
+            libasound2-dev libpulse-dev libdrm-dev libgbm-dev
+
+      - name: Check out SDL3
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL
+          ref: release-3.2.24
+          path: _sdl3
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCHAOTIX_SDL3_SOURCE_DIR=${{ github.workspace }}/_sdl3
+
+      - name: Build
+        run: cmake --build build
+
+  hygiene:
+    name: No game data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse ROM images and generated code
+        run: |
+          set -e
+          bad=$(git ls-files | grep -Ei '\.(32x|bin|gen|smd)$' || true)
+          bad="$bad$(git ls-files 'generated/*' | grep -v '^generated/README.md$' || true)"
+          if [ -n "$(echo "$bad" | tr -d '[:space:]')" ]; then
+            echo "Files that must never be committed:"; echo "$bad"; exit 1
+          fi
+          # A ROM would be ~3 MB; nothing tracked here comes close.
+          big=$(git ls-files -z | xargs -0 -I{} sh -c 'test -f "{}" && find "{}" -size +512k -print' || true)
+          if [ -n "$big" ]; then echo "Unexpectedly large tracked files:"; echo "$big"; exit 1; fi

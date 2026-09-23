@@ -1,0 +1,54 @@
+name: Bug report
+description: Something renders, sounds or behaves differently from the real game
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not attach a ROM, files from `generated/`, or memory dumps.**
+        A screenshot of the rendered game is fine.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you see, and what the real game does instead.
+    validations: {required: true}
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reach it
+      description: |
+        From a fresh launch: which menu, which level, which character. If you
+        know the frame number from `chaotix_headless`, include it.
+      placeholder: |
+        1. Start, pick Botanic Base
+        2. Run right past the first pair of springs
+        3. The background column at the left edge flickers
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Commit
+      description: Output of `git rev-parse --short HEAD`.
+    validations: {required: true}
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options: [Windows, Linux, macOS, Android, iOS]
+    validations: {required: true}
+  - type: input
+    id: build
+    attributes:
+      label: Compiler and build type
+      placeholder: GCC 15.2 (MSYS2 mingw64), Release
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: The ROM's SHA-1 is `0c2fff7bc79ed26507c08ac47464c3af19f7ced7`
+          required: true
+        - label: This issue contains no ROM data, generated sources or memory dumps
+          required: true
+        - label: I tried it with `Widescreen = false` as well, if it is a rendering bug

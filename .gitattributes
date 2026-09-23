@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+*.32x binary
+*.bin binary
+*.png binary
+*.cov text

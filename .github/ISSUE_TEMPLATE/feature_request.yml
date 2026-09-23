@@ -1,0 +1,22 @@
+name: Feature or enhancement
+description: A port target, a frontend feature, an accuracy improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like
+    validations: {required: true}
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it makes possible that is not possible now.
+    validations: {required: true}
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - label: This does not require distributing game data in any form
+          required: true
