@@ -336,6 +336,8 @@ void draw_touch_controls(App& app, uint16_t held) {
 
 int main(int argc, char** argv) {
     App app;
+    // The game image is 4:3 or wider: ask mobile platforms for landscape.
+    SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;

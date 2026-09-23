@@ -14,8 +14,16 @@ namespace chaotix {
 
 namespace {
 
+struct Hit {
+    float x = 0, y = 0, w = 0, h = 0;
+    int index = -1;          // candidate index, or one of the actions below
+};
+enum : int { kActionBrowse = -2, kActionInstall = -3 };
+
 struct SetupState {
     std::vector<setup::Candidate> candidates;
+    std::vector<Hit> hits;   // touch targets from the last frame
+    float scale = 1;         // render scale the hits were computed in
     int selected = 0;
     std::string status;
     std::string picked;      // filled in by the file dialog callback
@@ -43,7 +51,8 @@ void SDLCALL file_chosen(void* userdata, const char* const* files, int) {
     if (files && files[0]) st->picked = files[0];
 }
 
-void draw(SDL_Renderer* renderer, const std::string& store_root, const SetupState& st) {
+void draw(SDL_Renderer* renderer, const std::string& store_root, SetupState& st) {
+    st.hits.clear();
     int ow = 0, oh = 0;
     SDL_GetRenderOutputSize(renderer, &ow, &oh);
     SDL_SetRenderDrawColor(renderer, 12, 14, 32, 255);
@@ -51,6 +60,7 @@ void draw(SDL_Renderer* renderer, const std::string& store_root, const SetupStat
     // The debug font is 8x8; scale it so the page fills a reasonable part of
     // the window on both a small window and a phone screen.
     const float scale = std::max(1.0f, std::min(float(ow) / 520.0f, float(oh) / 300.0f));
+    st.scale = scale;
     SDL_SetRenderScale(renderer, scale, scale);
     const float h = float(oh) / scale, w = float(ow) / scale;
 
@@ -82,6 +92,7 @@ void draw(SDL_Renderer* renderer, const std::string& store_root, const SetupStat
             if (c.verified) text(renderer, 20, y, line, sel ? 180 : 140, 255, sel ? 180 : 140);
             else if (c.loadable) text(renderer, 20, y, line, 255, sel ? 220 : 180, 120);
             else text(renderer, 20, y, line, 190, 130, 130);
+            st.hits.push_back({12, y - 2, w - 24, 12, int(i)});
             y += 11;
         }
     }
@@ -93,9 +104,21 @@ void draw(SDL_Renderer* renderer, const std::string& store_root, const SetupStat
     }
 
     const float footer = h - 46;
-    text(renderer, 16, footer, "Enter / (A): install    O: browse    R: rescan", 150, 215, 255);
-    text(renderer, 16, footer + 11, "Esc: quit     or drag a ROM file onto this window", 150, 215, 255);
-    if (!st.status.empty()) text(renderer, 16, footer + 24, fit(st.status, 16, w - 8), 255, 200, 140);
+    // Tappable buttons, with the keyboard shortcuts written next to them.
+    auto button = [&](float x, float bw, const char* label, int action, bool enabled) {
+        SDL_FRect r{x, footer - 16, bw, 14};
+        SDL_SetRenderDrawColor(renderer, enabled ? 40 : 26, enabled ? 60 : 30, enabled ? 110 : 40, 255);
+        SDL_RenderFillRect(renderer, &r);
+        SDL_SetRenderDrawColor(renderer, enabled ? 150 : 80, enabled ? 215 : 90, 255, 255);
+        SDL_RenderRect(renderer, &r);
+        text(renderer, x + 6, footer - 12, label, enabled ? 235 : 130, enabled ? 235 : 130, 255);
+        if (enabled) st.hits.push_back({x, footer - 16, bw, 14, action});
+    };
+    button(16, 86, "INSTALL", kActionInstall, !st.candidates.empty());
+    button(110, 86, "BROWSE", kActionBrowse, true);
+    text(renderer, 16, footer + 2, "Enter / (A): install    O: browse    R: rescan", 150, 215, 255);
+    text(renderer, 16, footer + 13, "Esc: quit     or drag a ROM file onto this window", 150, 215, 255);
+    if (!st.status.empty()) text(renderer, 16, footer + 26, fit(st.status, 16, w - 8), 255, 200, 140);
 
     text(renderer, 16, h - 12, fit("Installs to " + setup::installed_rom_path(store_root), 16, w - 8, true), 120, 120, 145);
 
@@ -174,6 +197,35 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
                     break;
                 }
                 break;
+            case SDL_EVENT_FINGER_DOWN:
+            case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+                int ow = 0, oh = 0;
+                SDL_GetRenderOutputSize(renderer, &ow, &oh);
+                float px = 0, py = 0;
+                if (e.type == SDL_EVENT_FINGER_DOWN) {
+                    px = e.tfinger.x * float(ow) / st.scale;
+                    py = e.tfinger.y * float(oh) / st.scale;
+                } else {
+                    px = e.button.x / st.scale;
+                    py = e.button.y / st.scale;
+                }
+                for (const Hit& hit : st.hits) {
+                    if (px < hit.x || px > hit.x + hit.w || py < hit.y || py > hit.y + hit.h) continue;
+                    if (hit.index == kActionBrowse) { browse(); break; }
+                    const int target = hit.index == kActionInstall ? st.selected : hit.index;
+                    if (target < 0 || target >= int(st.candidates.size())) break;
+                    // First tap highlights, a tap on the highlighted row (or
+                    // the INSTALL button) goes ahead.
+                    if (hit.index != kActionInstall && target != st.selected) {
+                        st.selected = target;
+                        break;
+                    }
+                    std::string installed = install(st.candidates[size_t(target)].path);
+                    if (!installed.empty()) return installed;
+                    break;
+                }
+                break;
+            }
             case SDL_EVENT_GAMEPAD_ADDED:
                 SDL_OpenGamepad(e.gdevice.which);
                 break;
