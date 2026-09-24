@@ -48,7 +48,26 @@ android {
             java.srcDirs += ["${sdl3Dir}/android-project/app/src/main/java"]
         }
     }
+    // A release APK is unsigned, and so uninstallable, unless you give it your
+    // own keystore. Supply these on the command line or, better, in
+    // platforms/android/gradle.properties, which is gitignored:
+    //   -PKEYSTORE_FILE=... -PKEYSTORE_PASSWORD=... -PKEY_ALIAS=... -PKEY_PASSWORD=...
+    // Keep that keystore: Android requires every later update to be signed
+    // with the same key.
+    signingConfigs {
+        release {
+            if (project.hasProperty('KEYSTORE_FILE')) {
+                storeFile file(project.property('KEYSTORE_FILE'))
+                storePassword project.findProperty('KEYSTORE_PASSWORD')
+                keyAlias project.findProperty('KEY_ALIAS')
+                keyPassword project.findProperty('KEY_PASSWORD')
+            }
+        }
+    }
     buildTypes {
-        release { minifyEnabled false }
+        release {
+            minifyEnabled false
+            if (project.hasProperty('KEYSTORE_FILE')) signingConfig signingConfigs.release
+        }
     }
 }

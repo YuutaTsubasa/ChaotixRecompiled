@@ -81,6 +81,31 @@ the top corner opens it, dragging scrolls it and a tap closes it; on a gamepad
 it is the left stick click. The definitions are compiled into the binary, so
 they work without the APK carrying an assets folder.
 
+## Signing
+
+`assembleDebug` produces an APK signed with the standard Android debug key:
+installable, but marked debuggable, so it is for testing rather than for
+handing to other people. A release APK is unsigned unless you supply your own
+keystore:
+
+```bash
+gradle assembleRelease -PSDL3_SOURCE_DIR=... -PSDL3_TTF_SOURCE_DIR=...   -PKEYSTORE_FILE=/path/to/my.keystore -PKEYSTORE_PASSWORD=...   -PKEY_ALIAS=... -PKEY_PASSWORD=...
+```
+
+Put those in `platforms/android/gradle.properties` rather than on the command
+line; it is gitignored, as are `*.keystore` and `*.jks`. Keep the keystore
+somewhere safe: Android requires every later update to be signed with the
+same key, and there is no way to recover it.
+
+## Windows: keep the build path short
+
+The Android CMake build nests deeply (`app/.cxx/<config>/<hash>/<abi>/SDL3/
+CMakeFiles/CMakeTmp/SDL_detect_arch/...`). From a long source path that
+exceeds Windows' 260-character limit and the build fails early, inside SDL's
+CPU detection, with `ninja: error: loading 'build.ninja'` and a
+"cannot find the path specified" message. Build from something short like
+`C:\src\ChaotixRecompiled` if you hit it.
+
 ## Emulator notes
 
 A stock AVD's userdata partition is too small for a debug APK with the

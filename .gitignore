@@ -26,6 +26,10 @@ saves/
 
 # Android: machine-specific SDK location and Gradle state
 platforms/android/local.properties
+# Signing keystore paths and passwords, if you build a signed release APK.
+platforms/android/gradle.properties
+*.keystore
+*.jks
 platforms/android/.gradle/
 platforms/android/build/
 platforms/android/app/build/
