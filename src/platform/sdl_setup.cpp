@@ -107,6 +107,7 @@ void draw(ui::Ui& g, const std::string& store_root, SetupState& st) {
         g.text_fit(ui::Font::Small, x + g.px(14), y + g.px(10) + g.line_height(ui::Font::Body),
                    column - g.px(28), "Drop a file onto this window, or use Browse below.",
                    ui::theme::text_dim);
+        y += box.h + card_gap;
     } else {
         // Keep the highlighted row on screen when the list is longer than the
         // window: scroll by whole rows.
