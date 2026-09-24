@@ -4,6 +4,7 @@ option(CHAOTIX_LONG_TESTS "Register long-running validation tests (minutes)" OFF
 option(CHAOTIX_BUILD_TOOLS "Build host tools (rom_analyzer, recompiler)" ON)
 set(CHAOTIX_ROM "" CACHE FILEPATH "Path to the user's Knuckles' Chaotix ROM (never committed)")
 set(CHAOTIX_SDL3_SOURCE_DIR "" CACHE PATH "Build SDL3 from this source tree instead of find_package (mobile)")
+set(CHAOTIX_SDL3_TTF_SOURCE_DIR "" CACHE PATH "Build SDL3_ttf from this source tree instead of find_package (mobile)")
 set(CHAOTIX_GENERATED_DIR "${CMAKE_SOURCE_DIR}/generated" CACHE PATH "Directory holding recompiler output")
 
 function(chaotix_set_warnings target)

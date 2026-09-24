@@ -38,8 +38,8 @@ Traditional Chinese; the rest of the documentation is in English.)
 
 ## Build
 
-Requirements: CMake ≥ 3.20, a C++17 compiler, SDL3 for the playable frontend.
-GCC, Clang and MSVC all build the tree warning-free.
+Requirements: CMake ≥ 3.20, a C++17 compiler, and SDL3 plus SDL_ttf for the
+playable frontend. GCC, Clang and MSVC all build the tree warning-free.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCHAOTIX_ROM=/path/to/chaotix.32x
@@ -51,8 +51,13 @@ in `coverage/`) and compiles the resulting C++ from `generated/`. Without
 `CHAOTIX_ROM` you get an interpreter-only runtime and the unit tests — which
 is what CI builds, since CI has no ROM.
 
-Windows (MSYS2 MinGW64): `pacman -S mingw-w64-x86_64-{gcc,cmake,ninja,sdl3}`,
+Windows (MSYS2 MinGW64): `pacman -S mingw-w64-x86_64-{gcc,cmake,ninja,sdl3,sdl3-ttf}`,
 and pass a Windows-style ROM path (`cygpath -m`).
+
+Where SDL is not packaged (Android, iOS, CI), point the build at source
+checkouts instead: `-DCHAOTIX_SDL3_SOURCE_DIR=...` and
+`-DCHAOTIX_SDL3_TTF_SOURCE_DIR=...` (the latter needs its vendored
+submodules, so clone it with `--recurse-submodules`).
 
 Presets: `cmake --preset windows-msvc | windows-ninja | linux |
 macos-universal | macos-xcode | ios | android-arm64`, with the `CHAOTIX_ROM`
@@ -76,8 +81,9 @@ copied into the app's own folder, so later launches go straight into the game.
 A ROM given on the command line still wins over the installed copy.
 
 Useful flags: `--user-dir DIR` keeps settings, saves and the installed ROM in
-`DIR` (a portable install), and `--install FILE` installs a ROM without
-showing the setup page (for packaging scripts).
+`DIR` (a portable install), `--install FILE` installs a ROM without showing
+the setup page (for packaging scripts), and `--show-achievements` opens the
+achievement list at startup (so the page can be captured without a keyboard).
 
 Settings live in the user data directory (`Config/chaotix.ini`), saves in
 `SaveData/`, the installed ROM in `Game/`.
@@ -92,14 +98,17 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | F2 | Aspect ratio (Auto, 4:3, 16:9, 16:10, 21:9) |
 | F3 / F4 | Filter / scaling mode |
 | F6 | True widescreen on/off (extra columns apply from the next level load) |
-| F7 | Achievement list |
+| F7 | Achievement list (or click the left stick on a pad) |
 | F11, Alt+Enter | Borderless fullscreen |
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
 Gamepads work through SDL (Xbox, PlayStation and Nintendo layouts):
-West/South/East = A/B/C, LB/North/RB = X/Y/Z. On touch devices virtual
-controls appear over the game.
+West/South/East = A/B/C, LB/North/RB = X/Y/Z, Back = Mode. Every other
+button belongs to the emulated 6-button pad, so the achievement list is on
+the left stick click; B closes it again. On touch devices virtual controls
+appear over the game, and the unlock counter in the top corner opens the
+list.
 
 ## Achievements
 
@@ -134,6 +143,10 @@ few minutes.
 
 Coverage traces for the recompiler are recorded with
 `python tools/coverage/record_sessions.py --rom <rom>` (writes `coverage/*.cov`).
+
+The screens the program draws itself (first-run setup, achievements) use
+Inter, which is compiled into the executable so they work before anything has
+been installed. See [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## Contributing
 

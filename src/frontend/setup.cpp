@@ -34,15 +34,18 @@ Candidate check_file(const std::string& path) {
     Rom rom;
     std::string err;
     if (!rom.load(path, &err)) {
-        c.label = file_name(path) + "  -  " + err;
+        c.name = file_name(path);
+        c.note = err;
+        c.label = c.name + "  -  " + c.note;
         return c;
     }
     c.loadable = true;
     c.sha1 = rom.sha1;
     c.version = rom.version;
     c.verified = rom.version != RomVersion::Unknown;
-    c.label = file_name(path);
-    c.label += c.verified ? "  -  verified Knuckles' Chaotix" : "  -  unrecognised 32X ROM (will run interpreted)";
+    c.name = file_name(path);
+    c.note = c.verified ? "verified Knuckles' Chaotix" : "unrecognised 32X ROM (will run interpreted)";
+    c.label = c.name + "  -  " + c.note;
     return c;
 }
 

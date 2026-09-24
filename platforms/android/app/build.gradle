@@ -1,12 +1,14 @@
 // Android build: the native code is the same CMake project as desktop.
 // Requirements (see platforms/android/README.md):
 //   - SDL3 source checkout: -PSDL3_SOURCE_DIR=/path/to/SDL (provides SDLActivity Java sources)
+//   - SDL_ttf source checkout: -PSDL3_TTF_SOURCE_DIR=/path/to/SDL_ttf (with its vendored deps)
 //   - code generated on a desktop host into <repo>/generated (the recompiler is a host tool)
 plugins {
     id 'com.android.application'
 }
 
 def sdl3Dir = project.findProperty('SDL3_SOURCE_DIR') ?: System.getenv('SDL3_SOURCE_DIR')
+def sdl3TtfDir = project.findProperty('SDL3_TTF_SOURCE_DIR') ?: System.getenv('SDL3_TTF_SOURCE_DIR')
 def repoDir = file('../../..').canonicalPath
 
 android {
@@ -25,6 +27,7 @@ android {
         externalNativeBuild {
             cmake {
                 arguments "-DCHAOTIX_SDL3_SOURCE_DIR=${sdl3Dir}",
+                          "-DCHAOTIX_SDL3_TTF_SOURCE_DIR=${sdl3TtfDir}",
                           "-DCHAOTIX_GENERATED_DIR=${repoDir}/generated",
                           "-DCHAOTIX_BUILD_TOOLS=OFF",
                           "-DCHAOTIX_BUILD_TESTS=OFF",

@@ -1,5 +1,7 @@
 * text=auto eol=lf
 
+*.ttf binary
+*.otf binary
 *.32x binary
 *.bin binary
 *.png binary

@@ -106,11 +106,44 @@ if(CHAOTIX_BUILD_FRONTEND)
     else()
         find_package(SDL3 CONFIG REQUIRED)
     endif()
+    # SDL3_ttf draws the setup and achievement screens. Same rule as SDL3:
+    # an installed package, or a source checkout for the mobile targets.
+    if(CHAOTIX_SDL3_TTF_SOURCE_DIR)
+        set(SDLTTF_VENDORED ON CACHE BOOL "" FORCE)
+        set(SDLTTF_SAMPLES OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${CHAOTIX_SDL3_TTF_SOURCE_DIR} ${CMAKE_BINARY_DIR}/SDL3_ttf EXCLUDE_FROM_ALL)
+    else()
+        find_package(SDL3_ttf CONFIG REQUIRED)
+    endif()
+
+    # Data the program cannot run without is compiled into the binary rather
+    # than looked up on disk: the setup screen runs before any asset directory
+    # is known, and an Android APK has no filesystem to put assets in.
+    set(_embedded "")
+    foreach(asset fonts/Inter-Regular.ttf:font_regular
+                  fonts/Inter-SemiBold.ttf:font_semibold
+                  achievements.ini:achievements_ini)
+        string(REPLACE ":" ";" asset ${asset})
+        list(GET asset 0 _rel)
+        list(GET asset 1 _symbol)
+        set(_src ${CMAKE_SOURCE_DIR}/assets/${_rel})
+        set(_out ${CMAKE_BINARY_DIR}/embedded/${_symbol}.cpp)
+        add_custom_command(
+            OUTPUT ${_out}
+            COMMAND ${CMAKE_COMMAND} -DIN=${_src} -DOUT=${_out} -DSYMBOL=${_symbol}
+                    -P ${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake
+            DEPENDS ${_src} ${CMAKE_SOURCE_DIR}/cmake/embed_file.cmake
+            COMMENT "Embedding ${_rel}")
+        list(APPEND _embedded ${_out})
+    endforeach()
+
     set(_frontend_sources
         src/platform/sdl_main.cpp
         src/platform/sdl_setup.cpp
+        src/platform/ui.cpp
         src/frontend/config.cpp
         src/frontend/debug_overlay.cpp
+        ${_embedded}
     )
     if(ANDROID)
         # SDLActivity loads libmain.so and calls SDL_main.
@@ -120,7 +153,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         add_executable(chaotix WIN32 MACOSX_BUNDLE ${_frontend_sources})
         set_target_properties(chaotix PROPERTIES OUTPUT_NAME "ChaotixRecompiled")
     endif()
-    target_link_libraries(chaotix PRIVATE chaotix_game SDL3::SDL3)
+    target_link_libraries(chaotix PRIVATE chaotix_game SDL3::SDL3 SDL3_ttf::SDL3_ttf)
     chaotix_set_warnings(chaotix)
     if(APPLE)
         set_target_properties(chaotix PROPERTIES

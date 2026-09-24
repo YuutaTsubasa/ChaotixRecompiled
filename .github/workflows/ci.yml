@@ -57,10 +57,19 @@ jobs:
           ref: release-3.2.24
           path: _sdl3
 
+      - name: Check out SDL_ttf
+        uses: actions/checkout@v4
+        with:
+          repository: libsdl-org/SDL_ttf
+          ref: release-3.2.2
+          path: _sdl3_ttf
+          submodules: recursive   # vendored FreeType and HarfBuzz
+
       - name: Configure
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DCHAOTIX_SDL3_SOURCE_DIR=${{ github.workspace }}/_sdl3
+          -DCHAOTIX_SDL3_TTF_SOURCE_DIR=${{ github.workspace }}/_sdl3_ttf
 
       - name: Build
         run: cmake --build build --config Release

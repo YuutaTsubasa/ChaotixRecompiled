@@ -3,7 +3,9 @@
 #include <SDL3/SDL.h>
 
 #include "frontend/setup.h"
+#include "platform/ui.h"
 #include "renderer/image_io.h"
+#include "runtime/log.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -15,35 +17,21 @@ namespace chaotix {
 namespace {
 
 struct Hit {
-    float x = 0, y = 0, w = 0, h = 0;
+    SDL_FRect r{};
     int index = -1;          // candidate index, or one of the actions below
 };
-enum : int { kActionBrowse = -2, kActionInstall = -3 };
+enum : int { kActionBrowse = -2, kActionInstall = -3, kActionRescan = -4 };
 
 struct SetupState {
     std::vector<setup::Candidate> candidates;
     std::vector<Hit> hits;   // touch targets from the last frame
-    float scale = 1;         // render scale the hits were computed in
     int selected = 0;
+    int visible = 0;         // rows the last layout had room for
     std::string status;
     std::string picked;      // filled in by the file dialog callback
     bool dialog_open = false;
     bool rescan = true;
 };
-
-// The debug font is 8 px wide; keep a line inside the window, with the tail
-// of a long path rather than its head (the file name matters most).
-std::string fit(const std::string& s, float x, float width, bool keep_tail = false) {
-    const size_t room = size_t(std::max(4.0f, (width - x) / 8.0f));
-    if (s.size() <= room) return s;
-    if (keep_tail) return "..." + s.substr(s.size() - (room - 3));
-    return s.substr(0, room - 3) + "...";
-}
-
-void text(SDL_Renderer* r, float x, float y, const std::string& s, Uint8 cr, Uint8 cg, Uint8 cb) {
-    SDL_SetRenderDrawColor(r, cr, cg, cb, 255);
-    SDL_RenderDebugText(r, x, y, s.c_str());
-}
 
 void SDLCALL file_chosen(void* userdata, const char* const* files, int) {
     auto* st = static_cast<SetupState*>(userdata);
@@ -51,78 +39,129 @@ void SDLCALL file_chosen(void* userdata, const char* const* files, int) {
     if (files && files[0]) st->picked = files[0];
 }
 
-void draw(SDL_Renderer* renderer, const std::string& store_root, SetupState& st) {
-    st.hits.clear();
-    int ow = 0, oh = 0;
-    SDL_GetRenderOutputSize(renderer, &ow, &oh);
-    SDL_SetRenderDrawColor(renderer, 12, 14, 32, 255);
-    SDL_RenderClear(renderer);
-    // The debug font is 8x8; scale it so the page fills a reasonable part of
-    // the window on both a small window and a phone screen.
-    const float scale = std::max(1.0f, std::min(float(ow) / 520.0f, float(oh) / 300.0f));
-    st.scale = scale;
-    SDL_SetRenderScale(renderer, scale, scale);
-    const float h = float(oh) / scale, w = float(ow) / scale;
+// A button. Returns its rectangle so the caller can lay the next one out.
+SDL_FRect button(ui::Ui& g, SetupState& st, float x, float y, const std::string& label,
+                 int action, bool enabled, bool primary) {
+    const float pad = g.px(16);
+    const float w = g.text_width(ui::Font::Body, label) + pad * 2;
+    const float h = g.line_height(ui::Font::Body) + g.px(14);
+    const SDL_FRect r{x, y, w, h};
+    const float radius = g.px(8);
+    if (!enabled) {
+        g.panel(r, ui::theme::surface, ui::theme::outline, radius);
+        g.text(ui::Font::Body, x + pad, y + g.px(7), label, ui::theme::text_faint);
+    } else if (primary) {
+        g.rect(r, ui::theme::accent, radius);
+        g.text(ui::Font::Body, x + pad, y + g.px(7), label, ui::theme::background);
+    } else {
+        g.panel(r, ui::theme::surface_raised, ui::theme::outline_strong, radius);
+        g.text(ui::Font::Body, x + pad, y + g.px(7), label, ui::theme::text);
+    }
+    if (enabled) st.hits.push_back({r, action});
+    return r;
+}
 
-    float y = 16;
-    text(renderer, 16, y, "Knuckles' Chaotix Recompiled", 255, 232, 120);
-    y += 12;
-    text(renderer, 16, y, "Setup", 255, 232, 120);
-    y += 20;
-    text(renderer, 16, y, "This program contains no game data.", 205, 205, 215);
-    y += 11;
-    text(renderer, 16, y, "Choose your own legally obtained Knuckles' Chaotix", 205, 205, 215);
-    y += 11;
-    text(renderer, 16, y, "ROM. It is copied into this app's own folder, so you", 205, 205, 215);
-    y += 11;
-    text(renderer, 16, y, "only have to do this once.", 205, 205, 215);
-    y += 20;
+void draw(ui::Ui& g, const std::string& store_root, SetupState& st) {
+    st.hits.clear();
+    g.begin_frame();
+    g.rect({0, 0, g.width(), g.height()}, ui::theme::background);
+
+    // A centred column, so the page does not stretch across a wide window.
+    const float column = std::min(g.width() - g.px(32), g.px(620));
+    const float x = (g.width() - column) * 0.5f;
+    const float right = x + column;
+
+    // Lay the page out before drawing it, so the whole block can be centred
+    // vertically instead of leaving a gap between the list and the footer.
+    const float card_h = g.line_height(ui::Font::Body) + g.line_height(ui::Font::Small) + g.px(18);
+    const float card_gap = g.px(8);
+    const float header_h = g.line_height(ui::Font::Title) + g.line_height(ui::Font::Subtitle)
+                         + g.px(14) + (g.line_height(ui::Font::Small) + g.px(2)) * 2 + g.px(20);
+    const float footer_h = g.line_height(ui::Font::Body) + g.px(14)     // buttons
+                         + g.line_height(ui::Font::Small) * 2 + g.px(34);
+    const int rows = st.candidates.empty() ? 1 : int(st.candidates.size());
+    const float room = g.height() - header_h - footer_h - g.px(48);
+    st.visible = std::clamp(int(room / (card_h + card_gap)), 1, rows);
+    const float list_h = float(st.visible) * (card_h + card_gap);
+    float y = std::max(g.px(24), (g.height() - header_h - list_h - footer_h) * 0.5f);
+
+    g.text(ui::Font::Title, x, y, "Knuckles' Chaotix", ui::theme::text);
+    y += g.line_height(ui::Font::Title);
+    g.text(ui::Font::Subtitle, x, y, "Recompiled", ui::theme::accent);
+    y += g.line_height(ui::Font::Subtitle) + g.px(14);
+
+    g.text_fit(ui::Font::Small, x, y, column,
+               "This program contains no game data. Choose your own legally obtained",
+               ui::theme::text_dim);
+    y += g.line_height(ui::Font::Small) + g.px(2);
+    g.text_fit(ui::Font::Small, x, y, column,
+               "ROM: it is copied into this app's folder, so you only do this once.",
+               ui::theme::text_dim);
+    y += g.line_height(ui::Font::Small) + g.px(20);
 
     if (st.candidates.empty()) {
-        text(renderer, 16, y, "No ROM found in the usual folders.", 230, 160, 160);
-        y += 11;
-        text(renderer, 16, y, "Drop a file onto this window, or press O to browse.", 205, 205, 215);
+        const SDL_FRect box{x, y, column, card_h + g.px(10)};
+        g.panel(box, ui::theme::surface, ui::theme::outline, g.px(10));
+        g.text_fit(ui::Font::Body, x + g.px(14), y + g.px(10), column - g.px(28),
+                   "No ROM found in the usual folders", ui::theme::warn);
+        g.text_fit(ui::Font::Small, x + g.px(14), y + g.px(10) + g.line_height(ui::Font::Body),
+                   column - g.px(28), "Drop a file onto this window, or use Browse below.",
+                   ui::theme::text_dim);
     } else {
-        text(renderer, 16, y, "Found:", 150, 200, 255);
-        y += 13;
-        for (size_t i = 0; i < st.candidates.size() && i < 8; ++i) {
-            const setup::Candidate& c = st.candidates[i];
-            const bool sel = int(i) == st.selected;
-            const std::string line = fit(std::string(sel ? "> " : "  ") + c.label, 20, w - 8);
-            if (c.verified) text(renderer, 20, y, line, sel ? 180 : 140, 255, sel ? 180 : 140);
-            else if (c.loadable) text(renderer, 20, y, line, 255, sel ? 220 : 180, 120);
-            else text(renderer, 20, y, line, 190, 130, 130);
-            st.hits.push_back({12, y - 2, w - 24, 12, int(i)});
-            y += 11;
+        // Keep the highlighted row on screen when the list is longer than the
+        // window: scroll by whole rows.
+        const int first = std::clamp(st.selected - st.visible + 1, 0,
+                                     std::max(0, int(st.candidates.size()) - st.visible));
+        const int last = std::min(int(st.candidates.size()), first + st.visible);
+        for (int i = first; i < last; ++i) {
+            const setup::Candidate& c = st.candidates[size_t(i)];
+            const bool sel = i == st.selected;
+            const SDL_FRect card{x, y, column, card_h};
+            g.panel(card, sel ? ui::theme::surface_raised : ui::theme::surface,
+                    sel ? ui::theme::accent : ui::theme::outline, g.px(10), sel ? g.px(2) : 1);
+
+            const char* status = c.verified ? "VERIFIED" : c.loadable ? "UNKNOWN" : "UNREADABLE";
+            const ui::Color status_fg = c.verified ? ui::theme::good
+                                      : c.loadable ? ui::theme::warn : ui::theme::bad;
+            const float pill_w = g.text_width(ui::Font::Small, status) + g.px(14);
+            g.pill(right - g.px(14) - pill_w, y + g.px(10), status, status_fg,
+                   status_fg.alpha(38));
+
+            const float text_w = column - g.px(36) - pill_w;
+            g.text_fit(ui::Font::Body, x + g.px(14), y + g.px(8), text_w, c.name,
+                       sel ? ui::theme::text : ui::theme::text_dim);
+            g.text_fit(ui::Font::Small, x + g.px(14), y + g.px(8) + g.line_height(ui::Font::Body),
+                       column - g.px(28), c.path, ui::theme::text_faint, true);
+
+            st.hits.push_back({card, i});
+            y += card_h + card_gap;
+        }
+        if (last < int(st.candidates.size()) || first > 0) {
+            char more[64];
+            std::snprintf(more, sizeof more, "%d of %zu", st.selected + 1, st.candidates.size());
+            g.text(ui::Font::Small, x, y - g.px(2), more, ui::theme::text_faint);
         }
     }
 
-    // Where the highlighted file actually is.
-    if (!st.candidates.empty()) {
-        y += 6;
-        text(renderer, 20, y, fit(st.candidates[size_t(st.selected)].path, 20, w - 8, true), 140, 140, 160);
+    // Footer: the actions, then the keyboard equivalents, then where it goes.
+    float fy = y + g.px(10);
+    SDL_FRect b = button(g, st, x, fy, "Install", kActionInstall, !st.candidates.empty(), true);
+    b = button(g, st, b.x + b.w + g.px(10), fy, "Browse", kActionBrowse, true, false);
+    button(g, st, b.x + b.w + g.px(10), fy, "Rescan", kActionRescan, true, false);
+    fy += b.h + g.px(12);
+
+    if (!st.status.empty()) {
+        g.text_fit(ui::Font::Small, x, fy, column, st.status, ui::theme::warn);
+    } else {
+        g.text_fit(ui::Font::Small, x, fy, column,
+                   "Enter or (A) install    O browse    R rescan    Esc quit",
+                   ui::theme::text_faint);
     }
+    fy += g.line_height(ui::Font::Small) + g.px(4);
+    g.text_fit(ui::Font::Small, x, fy, column, "Installs to " + setup::installed_rom_path(store_root),
+               ui::theme::text_faint, true);
 
-    const float footer = h - 46;
-    // Tappable buttons, with the keyboard shortcuts written next to them.
-    auto button = [&](float x, float bw, const char* label, int action, bool enabled) {
-        SDL_FRect r{x, footer - 16, bw, 14};
-        SDL_SetRenderDrawColor(renderer, enabled ? 40 : 26, enabled ? 60 : 30, enabled ? 110 : 40, 255);
-        SDL_RenderFillRect(renderer, &r);
-        SDL_SetRenderDrawColor(renderer, enabled ? 150 : 80, enabled ? 215 : 90, 255, 255);
-        SDL_RenderRect(renderer, &r);
-        text(renderer, x + 6, footer - 12, label, enabled ? 235 : 130, enabled ? 235 : 130, 255);
-        if (enabled) st.hits.push_back({x, footer - 16, bw, 14, action});
-    };
-    button(16, 86, "INSTALL", kActionInstall, !st.candidates.empty());
-    button(110, 86, "BROWSE", kActionBrowse, true);
-    text(renderer, 16, footer + 2, "Enter / (A): install    O: browse    R: rescan", 150, 215, 255);
-    text(renderer, 16, footer + 13, "Esc: quit     or drag a ROM file onto this window", 150, 215, 255);
-    if (!st.status.empty()) text(renderer, 16, footer + 26, fit(st.status, 16, w - 8), 255, 200, 140);
-
-    text(renderer, 16, h - 12, fit("Installs to " + setup::installed_rom_path(store_root), 16, w - 8, true), 120, 120, 145);
-
-    SDL_SetRenderScale(renderer, 1, 1);
+    g.end_frame();
 }
 
 } // namespace
@@ -131,6 +170,13 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
                              const std::string& store_root,
                              const std::vector<std::string>& search_dirs) {
     SetupState st;
+    ui::Ui g;
+    if (!g.init(renderer)) {
+        // Without a font there is nothing sensible to draw; the caller still
+        // accepts a ROM on the command line or an already installed copy.
+        LOGE("setup", "cannot initialise the setup screen (no font)");
+        return "";
+    }
     const SDL_DialogFileFilter filters[] = {{"32X ROM", "32x;bin;md;gen;rom"}, {"All files", "*"}};
 
     auto install = [&](const std::string& path) -> std::string {
@@ -199,23 +245,23 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
                 break;
             case SDL_EVENT_FINGER_DOWN:
             case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                int ow = 0, oh = 0;
-                SDL_GetRenderOutputSize(renderer, &ow, &oh);
                 float px = 0, py = 0;
                 if (e.type == SDL_EVENT_FINGER_DOWN) {
-                    px = e.tfinger.x * float(ow) / st.scale;
-                    py = e.tfinger.y * float(oh) / st.scale;
+                    px = e.tfinger.x * g.width();
+                    py = e.tfinger.y * g.height();
                 } else {
-                    px = e.button.x / st.scale;
-                    py = e.button.y / st.scale;
+                    px = e.button.x;
+                    py = e.button.y;
                 }
                 for (const Hit& hit : st.hits) {
-                    if (px < hit.x || px > hit.x + hit.w || py < hit.y || py > hit.y + hit.h) continue;
+                    if (px < hit.r.x || px > hit.r.x + hit.r.w) continue;
+                    if (py < hit.r.y || py > hit.r.y + hit.r.h) continue;
                     if (hit.index == kActionBrowse) { browse(); break; }
+                    if (hit.index == kActionRescan) { st.rescan = true; break; }
                     const int target = hit.index == kActionInstall ? st.selected : hit.index;
                     if (target < 0 || target >= int(st.candidates.size())) break;
                     // First tap highlights, a tap on the highlighted row (or
-                    // the INSTALL button) goes ahead.
+                    // the Install button) goes ahead.
                     if (hit.index != kActionInstall && target != st.selected) {
                         st.selected = target;
                         break;
@@ -249,7 +295,7 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
             if (!installed.empty()) return installed;
         }
 
-        draw(renderer, store_root, st);
+        draw(g, store_root, st);
         // Test hook: capture the page (before presenting, while the target
         // still holds it) and leave, so the setup screen can be checked
         // without a human at the keyboard.

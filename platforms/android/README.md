@@ -20,6 +20,7 @@ copyrighted code. See [../../LEGAL.md](../../LEGAL.md).
 | NDK | 29.0.13599879 (override with `-PNDK_VERSION=...`) |
 | CMake | 3.22.1+, from the SDK |
 | SDL3 source | ≥ 3.2, the same checkout the desktop build uses |
+| SDL_ttf source | ≥ 3.2, cloned with `--recurse-submodules` |
 
 `platforms/android/local.properties` must point at your SDK
 (`sdk.dir=C\:\Users\you\AppData\Local\Android\Sdk`); it is gitignored.
@@ -37,7 +38,7 @@ Then:
 
 ```bash
 cd platforms/android
-gradle assembleDebug -PSDL3_SOURCE_DIR=/path/to/SDL3 -PABIS=arm64-v8a
+gradle assembleDebug -PSDL3_SOURCE_DIR=/path/to/SDL3                      -PSDL3_TTF_SOURCE_DIR=/path/to/SDL_ttf                      -PABIS=arm64-v8a
 ```
 
 `-PABIS` is a comma-separated ABI list and defaults to `arm64-v8a`; use
@@ -74,6 +75,11 @@ opens the system file picker instead, and a verified ROM is labelled
 Touch controls (D-pad plus A/B/C and X/Y/Z) are drawn over the game and appear
 automatically on a touch screen; Bluetooth and USB gamepads work through SDL.
 The app requests landscape.
+
+The achievement list has no key to press on a phone, so the unlock counter in
+the top corner opens it, dragging scrolls it and a tap closes it; on a gamepad
+it is the left stick click. The definitions are compiled into the binary, so
+they work without the APK carrying an assets folder.
 
 ## Emulator notes
 

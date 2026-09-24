@@ -15,7 +15,9 @@ namespace chaotix::setup {
 // A file that might be the game ROM, with the result of checking it.
 struct Candidate {
     std::string path;
-    std::string label;      // what to show ("Chaotix ~ ... (verified)")
+    std::string label;      // name and note joined, for a one-line listing
+    std::string name;       // the file name on its own
+    std::string note;       // what checking it found, e.g. "verified Knuckles' Chaotix"
     std::string sha1;
     RomVersion version = RomVersion::Unknown;
     size_t size = 0;

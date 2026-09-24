@@ -9,7 +9,13 @@ no account or network connection is involved.
 - Definitions: [`assets/achievements.ini`](../assets/achievements.ini)
 - Engine: [`src/game/achievements.{h,cpp}`](../src/game/achievements.h)
 - Unlocks: `SaveData/achievements.ini` in the user data directory
-- In game: a notification appears on unlock; `F7` lists everything
+- In game: a notification appears on unlock; `F7` lists everything.
+  On a gamepad the list is the left stick click (every other button is
+  part of the emulated 6-button pad); on a touch screen, the unlock
+  counter in the top corner, where dragging scrolls the list. `B`, `F7`
+  or a tap closes it again.
+- Shipped definitions are compiled into the binary; a copy in the user data
+  directory or next to the executable overrides them.
 - Off switch: `[Achievements] Enabled = false` in `Config/chaotix.ini`
 - Headless: `chaotix_headless --rom <rom> --frames N --achievements assets/achievements.ini`
 
