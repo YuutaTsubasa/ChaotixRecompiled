@@ -164,6 +164,10 @@ Not affiliated with or endorsed by Sega.
 
 ## Licence
 
-Not chosen yet — the original code here has no licence attached, which means
-default copyright applies and nobody else may reuse it. A licence needs to be
-picked before this is useful to anyone else.
+[MIT](LICENSE), for the original code in this repository.
+
+That covers this project's own work only. The bundled Inter font is under the
+SIL Open Font License, and SDL3 and SDL_ttf under Zlib; see
+[THIRD_PARTY.md](THIRD_PARTY.md). It does **not** extend to anything derived
+from your ROM: `generated/` and every binary built from it remain Sega's
+copyright and must not be redistributed ([LEGAL.md](LEGAL.md)).
