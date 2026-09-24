@@ -5,9 +5,10 @@ the `x86_64` ABI: the first-run setup page appears in landscape, finds a ROM
 pushed to the app's external files folder, installs it, and the game boots.
 `arm64-v8a` builds from the same tree (not yet run on physical hardware).
 
-The APK contains the recompiled game code, which is generated from *your* ROM.
-Build it for yourself; **do not distribute the APK** — it carries Sega's
-copyrighted code. See [../../LEGAL.md](../../LEGAL.md).
+The APK contains the recompiled game code, generated from a ROM. It holds a
+translation of the game's instructions and none of its data, and it stops at
+the setup screen until the user supplies their own ROM. Read
+[../../LEGAL.md](../../LEGAL.md) before redistributing one.
 
 ## Prerequisites
 

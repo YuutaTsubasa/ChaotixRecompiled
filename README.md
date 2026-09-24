@@ -156,9 +156,14 @@ change to emulated behaviour is reviewable only with a lockstep run behind it.
 ## Legal
 
 This repository contains only original code. It does not contain, and must
-not be used to distribute, Sega's copyrighted ROM, BIOS or assets. The code
-in `generated/` and every binary built from it are derived from your ROM and
-must not be redistributed. See [LEGAL.md](LEGAL.md).
+not be used to distribute, Sega's copyrighted ROM, BIOS or assets.
+
+The releases ship a built binary containing the recompiled code, as other
+static recompilation projects do. That binary holds a translation of the
+game's instructions and none of its data — no graphics, music or level data —
+and it stops at the setup screen until you supply your own ROM. That position
+is not settled law; [LEGAL.md](LEGAL.md) sets out what is shipped, what is
+not, and the risk.
 
 Not affiliated with or endorsed by Sega.
 
@@ -168,6 +173,5 @@ Not affiliated with or endorsed by Sega.
 
 That covers this project's own work only. The bundled Inter font is under the
 SIL Open Font License, and SDL3 and SDL_ttf under Zlib; see
-[THIRD_PARTY.md](THIRD_PARTY.md). It does **not** extend to anything derived
-from your ROM: `generated/` and every binary built from it remain Sega's
-copyright and must not be redistributed ([LEGAL.md](LEGAL.md)).
+[THIRD_PARTY.md](THIRD_PARTY.md). It does **not** grant you any rights to
+*Knuckles' Chaotix* itself, which remains Sega's ([LEGAL.md](LEGAL.md)).
