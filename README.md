@@ -137,7 +137,13 @@ out of the game's own tables rather than invented here, and START uses the
 game's own route into a level, so a run behaves exactly as the console would.
 START goes straight there, in about a second: none of the game's own screens
 are passed through, only its level entry (the ball wipe and the BOTANIC BASE
-ticket). The game's HUD keeps the time. Two players needs a device for player 2 under
+ticket).
+
+BEST TIME shows the record for whichever stage is selected. When a run ends
+the game would send you to its lobby, so the front end takes the time and
+brings you back to this page instead, with what you managed. A run that used
+up the level's own ten minutes is not a time. The clock is the one the game's
+HUD draws, so a record reads the same as the time you watched. Two players needs a device for player 2 under
 CONTROLS, which starts as NONE.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
@@ -177,6 +183,12 @@ against the game's memory every frame, unlocks pop up in game and are stored
 in `SaveData/achievements.ini`. Nothing is downloaded or uploaded and no
 account is involved. `F7` shows the list; see
 [docs/ACHIEVEMENTS.md](docs/ACHIEVEMENTS.md) to write your own.
+
+Twenty-two of them, 270 points: rings, each of the seven attractions, how far
+in you get, one for each of the seven characters, and one for playing with a
+second player on the partner. The character ones want TIME ATTACK, which is
+how you reach a character the game would otherwise have chosen for you. Each
+was checked by driving the game to it rather than by reading the conditions.
 
 ## Tools
 

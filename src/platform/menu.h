@@ -86,6 +86,8 @@ private:
         // with an initialiser, so the entries that leave it out keep both
         // their order and a quiet build.
         std::string note = {};
+        // A value that is shown but not edited (a record, say): no arrows.
+        bool read_only = false;
     };
 
     // Pages are built when they are opened, not when they are drawn, so the

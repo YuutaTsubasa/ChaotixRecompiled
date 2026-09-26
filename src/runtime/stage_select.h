@@ -24,6 +24,7 @@
 //           0x10 is what gives the partner to the second pad
 #pragma once
 #include <cstdint>
+#include <string>
 
 namespace chaotix {
 
@@ -71,6 +72,35 @@ struct Request {
     uint16_t combi = kEspio;
     bool two_players = false;
 };
+
+// The level clock.
+//
+// FFE052 looks like it, and it does start at zero when play begins -- but the
+// player resets it by pressing anything, while the HUD carries on (measured:
+// one jump sent FFE052 from 888 back to 1 with the HUD going 0'14"58 ->
+// 0'16"41). It was only ever checked against the HUD in runs with no input
+// after the level loaded, which is why it passed.
+//
+// What the HUD draws is the level engine's own frame counter, the long at
+// FFE002, less whatever it held when the clock started. FFE052 is still what
+// marks that moment: it reads zero through the level's entry sequence, and the
+// player cannot press anything to reset it before play begins. So the base is
+// taken on the first frame FFE052 is non-zero and FFE052 is not used again.
+inline constexpr uint32_t kFrameCounter = 0xE002;   // long
+inline constexpr uint32_t kClockStart = 0xE052;     // word, zero until play begins
+// The HUD draws the time five frames behind the counter (measured against the
+// screen at several points), so the same offset is applied when a time is
+// written out and the two agree to within a hundredth of a second.
+inline constexpr int kHudLag = 5;
+// The level's own limit. A run that reaches it was not finished.
+inline constexpr int kTimeLimit = 36000;
+
+// m'ss"cc, the way the game writes it.
+std::string format_time(int frames);
+
+// Where the game sends you when a run ends, however it ended: its lobby. So a
+// run is over once the zone is no longer the one that was asked for.
+inline constexpr int kLobbyPlace = 7;
 
 // Whether the place has this level at all, by the game's own table.
 bool has_level(int place, int level);

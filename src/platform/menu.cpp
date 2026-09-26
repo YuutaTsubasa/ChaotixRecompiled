@@ -295,6 +295,16 @@ void Menu::build_time_attack() {
     items_.push_back({"PLAYERS",
                       [c] { return std::string(c->ta_two_players ? "2 PLAYERS" : "1 PLAYER"); },
                       [c](int s) { if (s) c->ta_two_players = !c->ta_two_players; }});
+    // Not a setting: the record for whatever is selected above, so choosing a
+    // stage shows what there is to beat. Left and right do nothing.
+    Item best{"BEST TIME",
+              [c] {
+                  const int b = best_time(*c, c->ta_place, c->ta_level);
+                  return b ? format_time(b) : std::string("--");
+              },
+              [](int) {}};
+    best.read_only = true;
+    items_.push_back(std::move(best));
     items_.push_back({"START", {}, [this, c](int) {
         Request r;
         r.place = uint16_t(c->ta_place);
@@ -394,7 +404,13 @@ void Menu::move(int delta) {
     confirm_reset_ = false;
     if (items_.empty()) return;
     const int n = int(items_.size());
-    selected_ = (selected_ + delta % n + n) % n;
+    const int step = delta < 0 ? -1 : 1;
+    // A row that only shows something (a record) is stepped over rather than
+    // stopped on, so it does not sit in the way of the entries below it.
+    for (int moved = 0; moved < n; ++moved) {
+        selected_ = (selected_ + step + n) % n;
+        if (!items_[size_t(selected_)].read_only) break;
+    }
     anim_ = 0;
 }
 
@@ -711,7 +727,7 @@ void Menu::draw_options(ui::Ui& g) {
                        sel ? ui::theme::accent : ui::theme::text_dim);
             // Arrows only where left/right actually does something: on the
             // key page the value changes by capturing a press instead.
-            if (sel && page_ != Page::Keys) {
+            if (sel && page_ != Page::Keys && !it.read_only) {
                 const float aw = wrapped[i] ? std::min(vw, room) : vw;
                 const float ax = wrapped[i] ? vx : x + column - vw;
                 g.text(ui::Font::Pixel, ax - g.px(22), vy, "<", ui::theme::accent);

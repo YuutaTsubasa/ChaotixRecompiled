@@ -13,6 +13,7 @@
 #include "renderer/image_io.h"
 #include "runtime/log.h"
 #include "runtime/patches.h"
+#include "frontend/time_attack.h"
 #include "runtime/system.h"
 #include <chrono>
 #include <cstdio>
@@ -182,6 +183,7 @@ int main(int argc, char** argv) {
     bool stage_set = false;
     stage_select::Request stage;
     int stage_kick = -1;              // frames since the request, while it waits
+    time_attack::Run ta;              // the same run tracking the frontend uses
     uint64_t stage_started = 0;       // the frame the game took it
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
@@ -376,6 +378,7 @@ int main(int argc, char** argv) {
             m->stage_pending = true;
             if (ref) { ref->stage_request = stage; ref->stage_pending = true; }
             stage_kick = 0;
+            ta.begin(stage);
         }
         // The same taps of Start the frontend gives a waiting request: the
         // title screen needs one press to get past its animation and another
@@ -394,6 +397,15 @@ int main(int argc, char** argv) {
         if (ref) ref->input.pad[0] = btn;
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
+        if (ta.update(*m))
+            std::printf("stage: the run ended after %d frames (%s)%s\n", ta.time,
+                        stage_select::format_time(ta.time).c_str(),
+                        ta.timed_out() ? " - the level's own limit" : "");
+        // The running clock, so a screenshot at the same frame can be held
+        // against what the game's own HUD says.
+        if (ta.running && ta.clock_started && shots.count(f))
+            std::printf("stage: at frame %llu the run clock reads %s (%d frames)\n",
+                        (unsigned long long)f, stage_select::format_time(ta.time).c_str(), ta.time);
         if (m->audio_enabled) { wav.insert(wav.end(), m->audio_out.begin(), m->audio_out.end()); m->audio_out.clear(); }
         if (ref) {
             ref->run_frame();

@@ -15,6 +15,7 @@ target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime)
 if(CHAOTIX_BUILD_FRONTEND)
     target_sources(chaotix_tests PRIVATE
         test_menu.cpp
+        test_time_attack.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/ui.cpp
         ${CMAKE_SOURCE_DIR}/src/frontend/config.cpp
@@ -91,6 +92,24 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(stage_select_starts_the_chosen_level PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION
         "stage: taken after ([0-9]|[1-9][0-9]|1[0-9][0-9]) frames, pending=0 mode=0018 zone=4 level=3 player=20 combi=28 padoff=10")
+
+    # A run has to end somewhere, and be timed. The game does not tell anyone
+    # a run is over -- it just moves the player on -- so the frontend watches
+    # the zone and level. INTRODUCTION's first level ends by itself, which
+    # makes it the one run a script can actually finish.
+    add_test(NAME time_attack_times_a_finished_run
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 5200
+                --stage 600:6:0:0:2:7:0 --press 1400:right:3600
+                --press 1440:c:14 --press 1560:c:14 --press 1680:c:14 --press 1800:c:14
+                --press 1920:c:14 --press 2040:c:14 --press 2160:c:14 --press 2280:c:14
+                --press 2400:c:14 --press 2520:c:14 --press 2640:c:14 --press 2760:c:14
+                --press 2880:c:14 --press 3000:c:14 --press 3120:c:14 --press 3240:c:14
+                --press 3360:c:14 --press 3480:c:14 --press 3600:c:14 --press 3720:c:14)
+    # A plausible time, and not the level's own limit: the clock this reads
+    # must be the one the HUD draws, not FFE052, which the player resets by
+    # pressing anything (the presses above are what caught that).
+    set_tests_properties(time_attack_times_a_finished_run PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "the run ended after [12][0-9][0-9][0-9] frames \\([0-9]'[0-9][0-9]\"[0-9][0-9]\\)\n")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)

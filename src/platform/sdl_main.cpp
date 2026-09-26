@@ -8,6 +8,7 @@
 #include <SDL3/SDL_main.h>
 
 #include "frontend/config.h"
+#include "frontend/time_attack.h"
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
@@ -101,6 +102,12 @@ struct App {
     // request is waiting, Start is tapped for it. Counts frames since the
     // request, to pace the taps and to give up rather than press for ever.
     int stage_kick = -1;
+    // A time attack run in progress. The game has no idea it is one: when the
+    // run ends, however it ends, it sends the player to its own lobby. So the
+    // frontend watches the zone and level, and when they are no longer the
+    // ones it asked for the run is over -- and the level clock at that moment
+    // is the time.
+    time_attack::Run ta;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
@@ -355,6 +362,7 @@ bool return_to_title(App& app) {
     // and its Start taps would go on pressing.
     app.m->stage_pending = false;
     app.stage_kick = -1;
+    app.ta.cancel();
     app.m->remap_m68k();
     app.m->remap_sh2();
     app.handed_over = false;
@@ -398,6 +406,25 @@ uint16_t stage_kick_button(App& app) {
     const bool down = app.stage_kick % 24 < 6;
     ++app.stage_kick;
     return down ? uint16_t(PAD_START) : uint16_t(0);
+}
+
+// Watches a time attack run; called once per emulated frame. The game just
+// moves the player on when a run ends, so the frontend takes the time and puts
+// itself back instead, which is where the player came from.
+void follow_time_attack(App& app) {
+    if (!app.ta.update(*app.m)) return;
+    const int frames = app.ta.time;
+    const bool ran_out = app.ta.timed_out();
+    const bool best = !ran_out && record_best(app.cfg, app.ta.request.place,
+                                              app.ta.request.level, frames);
+    LOGI("stage", "time attack: over after %d frames%s", frames,
+         ran_out ? " (the level's own limit)" : best ? " - a new best" : "");
+    app.toasts.push_back({ran_out ? std::string("OUT OF TIME")
+                                  : "TIME " + stage_select::format_time(frames),
+                          ran_out ? "The level's own limit ran out."
+                                  : (best ? "A new best for this stage." : "Not a new best."),
+                          SDL_GetTicks() + 6000});
+    if (return_to_title(app)) app.menu.show_page("timeattack");
 }
 
 void handle_pad_button(App& app, Uint8 button) {
@@ -643,6 +670,7 @@ int main(int argc, char** argv) {
             // dispatcher on its own.
             app.inject_start = 0;
             app.stage_kick = 0;
+            app.ta.begin(r);
         };
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
@@ -887,6 +915,7 @@ int main(int argc, char** argv) {
             app.m->input.pad[0] = uint16_t(buttons | scripted);
             app.m->input.pad[1] = raw2;
             app.m->run_frame();
+            follow_time_attack(app);
             if (app.achievements_on) {
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {
                     app.toasts.push_back({a.title, a.description, SDL_GetTicks() + 5000});

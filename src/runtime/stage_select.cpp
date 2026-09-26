@@ -2,6 +2,8 @@
 #include "runtime/stage_select.h"
 #include "runtime/system.h"
 
+#include <cstdio>
+
 namespace chaotix::stage_select {
 
 namespace {
@@ -31,6 +33,15 @@ enum : uint32_t {
 constexpr uint16_t kModeLevel = 0x18;
 
 } // namespace
+
+std::string format_time(int frames) {
+    frames -= kHudLag;
+    if (frames < 0) frames = 0;
+    const int cs = frames * 100 / 60;
+    char out[32];
+    std::snprintf(out, sizeof out, "%d'%02d\"%02d", cs / 6000, (cs / 100) % 60, cs % 100);
+    return out;
+}
 
 bool has_level(int place, int level) {
     if (place < 0 || place >= kPlaceCount || level < 0 || level > 7) return false;

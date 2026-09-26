@@ -54,6 +54,8 @@ struct Config {
     int ta_player = 2;    // KNUCKLES
     int ta_combi = 7;     // ESPIO
     bool ta_two_players = false;
+    // Best time per stage, in level-clock frames, keyed "<place>.<level>".
+    std::map<std::string, int> ta_best;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;
@@ -66,5 +68,11 @@ struct Config {
 };
 
 const char* window_mode_name(WindowMode m);
+
+// Best times. 0 means there is none yet; record_best returns true when the
+// time is an improvement (and stores it).
+std::string best_key(int place, int level);
+int best_time(const Config& c, int place, int level);
+bool record_best(Config& c, int place, int level, int frames);
 
 } // namespace chaotix

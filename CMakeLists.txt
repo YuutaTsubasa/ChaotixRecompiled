@@ -47,6 +47,7 @@ add_library(chaotix_runtime STATIC
     src/renderer/image_io.cpp
     src/renderer/viewport.cpp
     src/frontend/setup.cpp
+    src/frontend/time_attack.cpp
     src/input/input.cpp
     src/input/touch_controls.cpp
 )

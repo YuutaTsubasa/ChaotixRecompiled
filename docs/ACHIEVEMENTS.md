@@ -72,19 +72,29 @@ never unlocks.
 3. Confirm by replaying the whole attract loop and printing every change: the
    transitions line up exactly with the level start and end frames.
 
-### The level timer
+### The level timer, and getting it wrong
 
-`FFE052` (word) counts frames from the moment a level proper begins, at the
-60 Hz field rate. An earlier search for it failed because it looked for the
-time as drawn: the game stores frames and converts only when drawing the HUD.
+`FFE052` (word) was taken for the level clock, and it is not. It does start
+at zero when play begins and it did match the HUD wherever it was checked —
+but every check was made in a run where nothing was pressed after the level
+loaded. Press anything and it goes back to zero while the HUD carries on: one
+jump sent it from 888 to 1 with the HUD going `0'14"58` → `0'16"41`. It is
+frames since the player last did something, which is presumably how the game
+decides to give up and start its attract demo.
 
-Checked against the HUD at two points in one run: 236 while it read `0'03"31`
-and 736 while it read `0'11"65` — 500 frames for 8.34 seconds. The drawn time
-runs 37 frames behind the counter, which is the gap between the level loading
-and the clock the HUD starts. `FFE050` holds the same value as a long, and
-`FFE060`/`FFE062` mirror both.
+What the HUD draws is the level engine's own frame counter, the long at
+`FFE002`, less whatever it held when the clock started. `FFE052` is still what
+marks that moment — it reads zero throughout a level's entry sequence, and the
+player cannot press anything to reset it before they have control — so the
+base is taken on the first frame it is non-zero and it is not used again.
+Checked against the HUD at five points in a run with a jump every two seconds:
+`0'18"10`, `0'26"43`, `0'31"43`, `0'41"43`, `0'51"43`, all exact, with the
+drawn time five frames behind the counter.
 
-Time-based achievements are still not defined, but the address is now known.
+The lesson is the one the attract-demo mistake taught as well: a variable that
+matches in every run you tried can still be the wrong variable, if every run
+you tried was the same kind of run. `src/frontend/time_attack.cpp` is where
+this now lives, and the frontend's TIME ATTACK records the result.
 
 ## Game modes, and why nothing is earned by the demo
 

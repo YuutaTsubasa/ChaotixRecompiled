@@ -102,6 +102,7 @@ bool Config::load(const std::string& path) {
             else if (k == "Player") ta_player = std::atoi(v.c_str());
             else if (k == "Combi") ta_combi = std::atoi(v.c_str());
             else if (k == "TwoPlayers") ta_two_players = parse_bool(v, ta_two_players);
+            else if (k.rfind("Best.", 0) == 0) ta_best[k.substr(5)] = std::atoi(v.c_str());
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
             else if (k == "UseRecompiledCode") use_recompiled = parse_bool(v, use_recompiled);
@@ -146,8 +147,27 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");
+    std::fprintf(f, "# Best times, in level-clock frames at 60 Hz (Best.<place>.<level>)\n");
+    for (const auto& [k, v] : ta_best) std::fprintf(f, "Best.%s = %d\n", k.c_str(), v);
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");
     std::fclose(f);
+    return true;
+}
+
+std::string best_key(int place, int level) {
+    return std::to_string(place) + "." + std::to_string(level);
+}
+
+int best_time(const Config& c, int place, int level) {
+    auto it = c.ta_best.find(best_key(place, level));
+    return it == c.ta_best.end() ? 0 : it->second;
+}
+
+bool record_best(Config& c, int place, int level, int frames) {
+    if (frames <= 0) return false;
+    const int had = best_time(c, place, level);
+    if (had && had <= frames) return false;
+    c.ta_best[best_key(place, level)] = frames;
     return true;
 }
 
