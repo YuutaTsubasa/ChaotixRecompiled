@@ -87,6 +87,10 @@ struct App {
     bool front_end = true;
     int inject_start = 0;   // frames of Start to hand the game on the way out
     uint16_t prev_buttons = 0;
+    // The game's own mode word: a level is running, or the title screen and
+    // its menus are. Read once a frame and kept here so key handling can ask.
+    bool in_level = false;
+    bool was_in_level = false;
     // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
@@ -199,14 +203,27 @@ void apply_window_mode(App& app) {
     }
 }
 
-uint16_t keyboard_buttons(const App& app) {
+uint16_t keyboard_buttons(const App& app, int player) {
     const bool* ks = SDL_GetKeyboardState(nullptr);
+    const auto& binds = player == 0 ? app.cfg.keys : app.cfg.keys2;
     uint16_t out = 0;
-    for (const auto& [name, keyname] : app.cfg.keys) {
+    for (const auto& [name, keyname] : binds) {
         SDL_Scancode sc = SDL_GetScancodeFromName(keyname.c_str());
         if (sc != SDL_SCANCODE_UNKNOWN && ks[sc]) out |= pad_button_from_name(name.c_str());
     }
     return out;
+}
+
+// A binding that does not name a real key does nothing, silently, which is
+// impossible to tell from a key that simply is not pressed. Say so once.
+void warn_about_dead_bindings(const App& app) {
+    for (int p = 0; p < 2; ++p) {
+        for (const auto& [name, keyname] : (p == 0 ? app.cfg.keys : app.cfg.keys2)) {
+            if (SDL_GetScancodeFromName(keyname.c_str()) == SDL_SCANCODE_UNKNOWN)
+                LOGW("input", "player %d: \"%s\" is not a key name, so %s is unbound",
+                     p + 1, keyname.c_str(), name.c_str());
+        }
+    }
 }
 
 uint16_t gamepad_buttons(SDL_Gamepad* g) {
@@ -232,6 +249,17 @@ uint16_t gamepad_buttons(SDL_Gamepad* g) {
     if (ly < -dead) out |= PAD_UP;
     if (ly > dead) out |= PAD_DOWN;
     return out;
+}
+
+// Which physical device drives a player: "keyboard", "padN", or "none".
+uint16_t device_buttons(const App& app, int player) {
+    const std::string& dev = app.cfg.device[player];
+    if (dev == "keyboard") return keyboard_buttons(app, player);
+    if (dev.rfind("pad", 0) == 0) {
+        const size_t i = size_t(std::atoi(dev.c_str() + 3)) - 1;  // pad1 is the first
+        return i < app.pads.size() ? gamepad_buttons(app.pads[i]) : uint16_t(0);
+    }
+    return 0;
 }
 
 // Unlock notifications, newest at the bottom, and the full list on F7.
@@ -299,7 +327,13 @@ void handle_key(App& app, const SDL_KeyboardEvent& k) {
     // triggered from underneath it.
     if (app.menu.on_key(k.key)) return;
     switch (k.key) {
-    case SDLK_ESCAPE: app.menu.toggle(); break;
+    case SDLK_ESCAPE:
+        // Outside a level Esc belongs to the front end; inside one it is the
+        // pause menu.
+        if (app.menu.open()) app.menu.close();
+        else if (!app.in_level) app.menu.open_front();
+        else app.menu.toggle();
+        break;
     case SDLK_F1: app.cfg.debug_overlay = !app.cfg.debug_overlay; break;
     case SDLK_F2: {
         static const AspectMode order[] = {AspectMode::Auto, AspectMode::R4_3, AspectMode::R16_9, AspectMode::R16_10, AspectMode::R21_9};
@@ -475,6 +509,7 @@ int main(int argc, char** argv) {
             // have without us in the way.
             app.inject_start = 8;
         },
+        [&app] { return int(app.pads.size()); },  // pad_count
     });
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
         LOGW("app", "--menu: unknown page '%s' (main, options, awards)", menu_page.c_str());
@@ -517,6 +552,8 @@ int main(int argc, char** argv) {
                                  "The recompiled code will not be used; the reference interpreter will run it instead.",
                                  app.window);
     app.m->input.six_button[0] = app.cfg.six_button;
+    app.m->input.six_button[1] = app.cfg.six_button;
+    warn_about_dead_bindings(app);
     app.m->reset();
     if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
     RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
@@ -629,10 +666,19 @@ int main(int argc, char** argv) {
         // the character.
         uint16_t touch_held = 0;
         for (const auto& [id, b] : app.fingers) touch_held |= b;
-        uint16_t raw = 0;
+        // Leaving a level puts the game back at its title screen, so the
+        // front end arms again: otherwise our menu was reachable exactly once
+        // per launch, and never again after playing.
+        const uint16_t game_mode = uint16_t(app.m->wram[0xDFDE] << 8 | app.m->wram[0xDFDF]);
+        app.in_level = game_mode == 0x0038;
+        if (app.was_in_level && !app.in_level) app.front_end = true;
+        app.was_in_level = app.in_level;
+
+        uint16_t raw = 0, raw2 = 0;
         if (!app.menu.open()) {
-            raw = keyboard_buttons(app) | touch_held;
-            for (SDL_Gamepad* g : app.pads) raw |= gamepad_buttons(g);
+            // Touch belongs to player 1; the on-screen pad has no second set.
+            raw = device_buttons(app, 0) | touch_held;
+            raw2 = device_buttons(app, 1);
         }
         uint16_t buttons = raw;
         // On the title screen Start belongs to our front end. The edge is
@@ -645,6 +691,7 @@ int main(int argc, char** argv) {
         app.prev_buttons = raw;
         if (app.inject_start > 0) { buttons |= PAD_START; --app.inject_start; }
         app.m->input.pad[0] = buttons;
+        app.m->input.pad[1] = raw2;
 
         // Fixed-timestep simulation at the original frame rate, independent of
         // the display refresh rate (120/144 Hz monitors do not speed up the game).
@@ -673,6 +720,7 @@ int main(int argc, char** argv) {
             for (const auto& p : app.script)
                 if (app.m->frame_count >= p.frame && app.m->frame_count < p.frame + p.duration) scripted |= p.buttons;
             app.m->input.pad[0] = uint16_t(buttons | scripted);
+            app.m->input.pad[1] = raw2;
             app.m->run_frame();
             if (app.achievements_on) {
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {

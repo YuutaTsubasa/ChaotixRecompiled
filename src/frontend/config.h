@@ -31,7 +31,12 @@ struct Config {
     // [Input]
     TouchMode touch = TouchMode::Auto;
     bool six_button = true;
-    std::map<std::string, std::string> keys;  // pad button name -> key name
+    // What drives each player: "keyboard", "pad1".."padN", or "none".
+    std::string device[2] = {"keyboard", "none"};
+    // pad button name -> key name, one set per player, so two people can
+    // share a keyboard.
+    std::map<std::string, std::string> keys;
+    std::map<std::string, std::string> keys2;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

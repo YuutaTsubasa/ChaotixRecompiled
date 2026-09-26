@@ -105,10 +105,15 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | F12 | Screenshot |
 
 Pressing Start on the title screen opens the front end: START GAME, OPTIONS,
-AWARDS and QUIT, drawn over the title screen in the style of the era. START
-GAME hands over to the game's own menus, so nothing the original offers is
-lost. Esc opens the same menu at any time as a pause menu, with the settings
-and the achievement list on it. Gamepads work through SDL
+CONTROLS, AWARDS and QUIT, drawn over the title screen in the style of the
+era. START GAME hands over to the game's own menus, so nothing the original
+offers is lost. Esc opens it again outside a level, and opens the same menu
+as a pause menu inside one.
+
+CONTROLS gives each player a device of its own — the keyboard, a numbered
+gamepad, or nothing — and a key set each, so two people can share one
+keyboard (player 2 starts on the keypad). Select a button and press Enter to
+rebind it; Escape leaves it alone. Gamepads work through SDL
 (Xbox, PlayStation and Nintendo layouts): West/South/East = A/B/C,
 LB/North/RB = X/Y/Z, Back = Mode. Every other button belongs to the emulated
 6-button pad, so the menu is on the left stick click; B backs out of it. On

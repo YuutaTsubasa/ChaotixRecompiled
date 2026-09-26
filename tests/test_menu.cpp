@@ -125,7 +125,7 @@ TEST(menu, selection_wraps_both_ways) {
     bool quit = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, [&quit] { quit = true; }, nullptr});
+    m.set_hooks({nullptr, [&quit] { quit = true; }, nullptr, nullptr});
     m.toggle();
     // QUIT is the last entry, so one step left from the first reaches it.
     CHECK(m.on_key(SDLK_LEFT));
@@ -154,7 +154,7 @@ TEST(menu, front_page_starts_the_game) {
     bool started = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, nullptr, [&started] { started = true; }});
+    m.set_hooks({nullptr, nullptr, [&started] { started = true; }, nullptr});
     m.open_front();
     CHECK_STR(m.page_name(), "front");
     CHECK_STR(m.selected_label(), "START GAME");
@@ -185,6 +185,57 @@ TEST(menu, sub_pages_return_to_the_page_that_opened_them) {
     CHECK(select_row(m, "BACK"));
     CHECK(m.on_key(SDLK_RETURN));
     CHECK_STR(m.page_name(), "main");
+}
+
+TEST(menu, controls_assigns_a_device_per_player) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    // Two pads plugged in, so the choices are keyboard, pad1, pad2, none.
+    m.set_hooks({nullptr, nullptr, nullptr, [] { return 2; }});
+    m.open_front();
+    CHECK(select_row(m, "CONTROLS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "controls");
+
+    CHECK(select_row(m, "2P DEVICE"));
+    CHECK_STR(cfg.device[1], "none");
+    CHECK(m.on_key(SDLK_RIGHT));          // none wraps round to keyboard
+    CHECK_STR(cfg.device[1], "keyboard");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(cfg.device[1], "pad1");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(cfg.device[1], "keyboard");
+    // Player 1 is untouched by any of that.
+    CHECK_STR(cfg.device[0], "keyboard");
+}
+
+TEST(menu, rebinding_a_key_takes_the_next_press) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    m.set_hooks({nullptr, nullptr, nullptr, [] { return 0; }});
+    m.open_front();
+    CHECK(select_row(m, "CONTROLS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(select_row(m, "2P KEYS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "keys");
+
+    CHECK(select_row(m, "A"));
+    CHECK(m.on_key(SDLK_RETURN));          // start capturing
+    CHECK(m.on_key(SDLK_K));               // this is the new binding
+    CHECK_STR(cfg.keys2["a"], "K");
+    // Player 1 keeps its own set.
+    CHECK_STR(cfg.keys["a"], "Z");
+
+    // Escape during a capture leaves the binding alone.
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(m.on_key(SDLK_ESCAPE));
+    CHECK_STR(cfg.keys2["a"], "K");
+    CHECK_STR(m.page_name(), "keys");      // and does not navigate away
 }
 
 TEST(menu, awards_page_is_reachable_and_returns) {

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <cstdio>
+#include <string>
 
 #include "frontend/config.h"
 #include "game/achievements.h"
@@ -32,15 +34,22 @@ void cycle(T& value, int count, int step) {
 
 bool Menu::is_row_page(Page p) { return p == Page::Front || p == Page::Main; }
 
+bool Menu::is_list_page(Page p) {
+    return p == Page::Options || p == Page::Controls || p == Page::Keys;
+}
+
 void Menu::set_page(Page p) {
     if (is_row_page(p)) return_to_ = p;
     page_ = p;
     selected_ = 0;
     scroll_ = 0;
     anim_ = 0;
+    awaiting_.clear();
     if (p == Page::Front) build_front();
     else if (p == Page::Main) build_main();
     else if (p == Page::Options) build_options();
+    else if (p == Page::Controls) build_controls();
+    else if (p == Page::Keys) build_keys();
     else items_.clear();
 }
 
@@ -54,6 +63,11 @@ void Menu::show_achievements() { set_page(Page::Achievements); }
 
 bool Menu::show_page(const std::string& name) {
     if (name == "front") set_page(Page::Front);
+    else if (name == "controls") set_page(Page::Controls);
+    else if (name == "keys1" || name == "keys2") {
+        keys_player_ = name == "keys1" ? 0 : 1;
+        set_page(Page::Keys);
+    }
     else if (name == "main") set_page(Page::Main);
     else if (name == "options") set_page(Page::Options);
     else if (name == "awards") set_page(Page::Achievements);
@@ -66,6 +80,8 @@ std::string Menu::page_name() const {
     case Page::Front: return "front";
     case Page::Main: return "main";
     case Page::Options: return "options";
+    case Page::Controls: return "controls";
+    case Page::Keys: return "keys";
     case Page::Achievements: return "awards";
     default: return "";
     }
@@ -85,6 +101,7 @@ void Menu::build_front() {
         if (hooks_.start_game) hooks_.start_game();
     }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
+    items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
     items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
 }
@@ -93,8 +110,81 @@ void Menu::build_main() {
     items_.clear();
     items_.push_back({"RESUME", {}, [this](int) { close(); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
+    items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
     items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
+}
+
+// The buttons of a Mega Drive pad, in the order they sit on it rather than
+// the order a map happens to store them in.
+const char* const kPadButtons[] = {"up", "down", "left", "right",
+                                   "a", "b", "c", "x", "y", "z", "start", "mode"};
+
+std::string upper(std::string v) {
+    for (char& c : v) c = char(std::toupper((unsigned char)c));
+    return v;
+}
+
+std::string device_label(const std::string& dev) {
+    if (dev == "keyboard") return "KEYBOARD";
+    if (dev == "none") return "NONE";
+    if (dev.rfind("pad", 0) == 0) return "PAD " + dev.substr(3);
+    return upper(dev);
+}
+
+std::vector<std::string> Menu::device_choices() const {
+    std::vector<std::string> out{"keyboard"};
+    const int pads = hooks_.pad_count ? hooks_.pad_count() : 0;
+    for (int i = 1; i <= pads; ++i) out.push_back("pad" + std::to_string(i));
+    out.push_back("none");
+    return out;
+}
+
+void Menu::build_controls() {
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    for (int p = 0; p < 2; ++p) {
+        items_.push_back({std::to_string(p + 1) + "P DEVICE",
+                          [c, p] { return device_label(c->device[p]); },
+                          [this, c, p](int step) {
+                              if (!step) return;
+                              const std::vector<std::string> all = device_choices();
+                              int i = 0;
+                              for (size_t k = 0; k < all.size(); ++k)
+                                  if (all[k] == c->device[p]) i = int(k);
+                              i = (i + step + int(all.size())) % int(all.size());
+                              c->device[p] = all[size_t(i)];
+                          }});
+    }
+    for (int p = 0; p < 2; ++p) {
+        items_.push_back({std::to_string(p + 1) + "P KEYS", {},
+                          [this, p](int) { keys_player_ = p; set_page(Page::Keys); }});
+    }
+    items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
+}
+
+void Menu::build_keys() {
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    const int p = keys_player_;
+    for (const char* b : kPadButtons) {
+        const std::string button = b;
+        items_.push_back({upper(button),
+                          [this, c, p, button] {
+                              if (awaiting_ == button) return std::string("PRESS A KEY");
+                              auto& binds = p == 0 ? c->keys : c->keys2;
+                              auto it = binds.find(button);
+                              return it == binds.end() ? std::string("-") : upper(it->second);
+                          },
+                          [this, button](int step) {
+                              // Enter starts the capture; left/right do nothing
+                              // here, there is no list to step through.
+                              if (step == 0) awaiting_ = button;
+                          }});
+    }
+    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Controls); }});
 }
 
 void Menu::build_options() {
@@ -156,6 +246,21 @@ void Menu::activate(int step) {
 
 bool Menu::on_key(SDL_Keycode key) {
     if (!open()) return false;
+    if (!awaiting_.empty()) {
+        // Capturing a binding: the next key is the answer, except Escape,
+        // which leaves the binding alone.
+        if (key != SDLK_ESCAPE && cfg_) {
+            const SDL_Scancode sc = SDL_GetScancodeFromKey(key, nullptr);
+            if (const char* name = SDL_GetScancodeName(sc)) {
+                if (*name) {
+                    auto& binds = keys_player_ == 0 ? cfg_->keys : cfg_->keys2;
+                    binds[awaiting_] = name;
+                }
+            }
+        }
+        awaiting_.clear();
+        return true;
+    }
     switch (key) {
     case SDLK_ESCAPE:
         if (is_row_page(page_)) close(); else set_page(return_to_);
@@ -167,10 +272,10 @@ bool Menu::on_key(SDL_Keycode key) {
         if (is_row_page(page_)) move(+1); else activate(+1);
         return true;
     case SDLK_UP:
-        if (page_ == Page::Achievements) --scroll_; else if (page_ == Page::Options) move(-1);
+        if (page_ == Page::Achievements) --scroll_; else if (is_list_page(page_)) move(-1);
         return true;
     case SDLK_DOWN:
-        if (page_ == Page::Achievements) ++scroll_; else if (page_ == Page::Options) move(+1);
+        if (page_ == Page::Achievements) ++scroll_; else if (is_list_page(page_)) move(+1);
         return true;
     case SDLK_RETURN:
     case SDLK_KP_ENTER:
@@ -192,10 +297,10 @@ bool Menu::on_pad(Uint8 button) {
         if (is_row_page(page_)) move(+1); else activate(+1);
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
-        if (page_ == Page::Achievements) --scroll_; else if (page_ == Page::Options) move(-1);
+        if (page_ == Page::Achievements) --scroll_; else if (is_list_page(page_)) move(-1);
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
-        if (page_ == Page::Achievements) ++scroll_; else if (page_ == Page::Options) move(+1);
+        if (page_ == Page::Achievements) ++scroll_; else if (is_list_page(page_)) move(+1);
         return true;
     case SDL_GAMEPAD_BUTTON_SOUTH:
         if (page_ == Page::Achievements) set_page(return_to_); else activate(0);
@@ -242,7 +347,7 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
         draw_row_page(g, "Left/Right choose    Enter select");
     else if (page_ == Page::Main)
         draw_row_page(g, "Left/Right choose    Enter select    Esc close");
-    else if (page_ == Page::Options)
+    else if (page_ == Page::Options || page_ == Page::Controls || page_ == Page::Keys)
         draw_options(g);
     else
         draw_achievements(g, ach);
@@ -307,7 +412,10 @@ void Menu::draw_options(ui::Ui& g) {
     g.panel({x - pad, panel_top, column + pad * 2, total},
             ui::theme::background.alpha(240), ui::theme::accent, g.px(4), g.px(3));
 
-    g.text(ui::Font::PixelBig, x, y, "OPTIONS", ui::theme::accent);
+    const char* heading = page_ == Page::Controls ? "CONTROLS"
+                        : page_ == Page::Keys ? (keys_player_ == 0 ? "1P KEYS" : "2P KEYS")
+                        : "OPTIONS";
+    g.text(ui::Font::PixelBig, x, y, heading, ui::theme::accent);
     y += head_h;
 
     for (size_t i = 0; i < items_.size(); ++i) {
@@ -323,8 +431,9 @@ void Menu::draw_options(ui::Ui& g) {
             const float vw = g.text_width(ui::Font::Pixel, v);
             const float vx = x + column - vw;
             g.text(ui::Font::Pixel, vx, y, v, sel ? ui::theme::accent : ui::theme::text_dim);
-            // Arrows only on the row you can actually change.
-            if (sel) {
+            // Arrows only where left/right actually does something: on the
+            // key page the value changes by capturing a press instead.
+            if (sel && page_ != Page::Keys) {
                 g.text(ui::Font::Pixel, vx - g.px(22), y, "<", ui::theme::accent);
                 g.text(ui::Font::Pixel, x + column + g.px(8), y, ">", ui::theme::accent);
             }
@@ -333,8 +442,10 @@ void Menu::draw_options(ui::Ui& g) {
         y += row_h;
     }
 
-    g.text(ui::Font::Small, x, y + g.px(8),
-           "Up/Down choose    Left/Right change    Esc back", ui::theme::text_faint);
+    const char* hint = page_ == Page::Keys
+                           ? "Up/Down choose    Enter rebind    Esc back"
+                           : "Up/Down choose    Left/Right change    Esc back";
+    g.text(ui::Font::Small, x, y + g.px(8), hint, ui::theme::text_faint);
 }
 
 void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {

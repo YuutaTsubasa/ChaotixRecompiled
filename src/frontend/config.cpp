@@ -35,6 +35,13 @@ void Config::set_defaults() {
         {"a", "Z"}, {"b", "X"}, {"c", "C"}, {"start", "Return"},
         {"x", "A"}, {"y", "S"}, {"z", "D"}, {"mode", "Right Shift"},
     };
+    // Player 2 on the keypad: far enough from player 1 that two people can
+    // share one keyboard, and nothing clashes with the set above.
+    keys2 = {
+        {"up", "Keypad 8"}, {"down", "Keypad 2"}, {"left", "Keypad 4"}, {"right", "Keypad 6"},
+        {"a", "Keypad 1"}, {"b", "Keypad 3"}, {"c", "Keypad 0"}, {"start", "Keypad Enter"},
+        {"x", "Keypad 7"}, {"y", "Keypad 9"}, {"z", "Keypad 5"}, {"mode", "Keypad +"},
+    };
 }
 
 bool Config::load(const std::string& path) {
@@ -72,7 +79,10 @@ bool Config::load(const std::string& path) {
         } else if (section == "Input") {
             if (k == "TouchControls") touch = v == "On" ? TouchMode::On : v == "Off" ? TouchMode::Off : TouchMode::Auto;
             else if (k == "SixButtonPad") six_button = parse_bool(v, six_button);
+            else if (k == "Device1") device[0] = v;
+            else if (k == "Device2") device[1] = v;
             else if (k.rfind("Key.", 0) == 0) keys[k.substr(4)] = v;
+            else if (k.rfind("Key2.", 0) == 0) keys2[k.substr(5)] = v;
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
             else if (k == "UseRecompiledCode") use_recompiled = parse_bool(v, use_recompiled);
@@ -105,7 +115,10 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Enabled = %s\n\n", achievements ? "true" : "false");
     std::fprintf(f, "[Input]\n# Auto | On | Off\nTouchControls = %s\n", touch == TouchMode::On ? "On" : touch == TouchMode::Off ? "Off" : "Auto");
     std::fprintf(f, "SixButtonPad = %s\n", six_button ? "true" : "false");
+    std::fprintf(f, "# Who drives each player: keyboard | pad1..padN | none\n");
+    std::fprintf(f, "Device1 = %s\nDevice2 = %s\n", device[0].c_str(), device[1].c_str());
     for (const auto& [b, k] : keys) std::fprintf(f, "Key.%s = %s\n", b.c_str(), k.c_str());
+    for (const auto& [b, k] : keys2) std::fprintf(f, "Key2.%s = %s\n", b.c_str(), k.c_str());
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");
     std::fclose(f);
     return true;

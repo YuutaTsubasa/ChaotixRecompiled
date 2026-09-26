@@ -26,6 +26,9 @@ public:
         // Hands control to the game's own front end, as pressing Start on the
         // title screen would have done.
         std::function<void()> start_game;
+        // How many gamepads are plugged in, so the controls page can offer
+        // them by number.
+        std::function<int()> pad_count;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -53,7 +56,7 @@ public:
     void draw(ui::Ui& g, achievements::Tracker& ach);
 
 private:
-    enum class Page { Closed, Front, Main, Options, Achievements };
+    enum class Page { Closed, Front, Main, Options, Controls, Keys, Achievements };
 
     struct Item {
         std::string label;
@@ -65,15 +68,19 @@ private:
 
     // Pages are built when they are opened, not when they are drawn, so the
     // first key press after opening has something to act on.
-    static bool is_row_page(Page p);
+    static bool is_row_page(Page p);   // navigated left/right
+    static bool is_list_page(Page p);  // navigated up/down
     void set_page(Page p);
     void build_front();
     void build_main();
     void build_options();
+    void build_controls();
+    void build_keys();
     void move(int delta);
     void activate(int step);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);
+    std::vector<std::string> device_choices() const;
     void draw_achievements(ui::Ui& g, achievements::Tracker& ach);
 
     Hooks hooks_;
@@ -82,6 +89,8 @@ private:
     // Sub-pages return to whichever page opened them, so Options reached from
     // the title screen goes back there rather than to the pause menu.
     Page return_to_ = Page::Main;
+    int keys_player_ = 0;          // which player the key page is editing
+    std::string awaiting_;         // button being rebound, empty when not capturing
     std::vector<Item> items_;
     int selected_ = 0;
     int scroll_ = 0;          // achievements page
