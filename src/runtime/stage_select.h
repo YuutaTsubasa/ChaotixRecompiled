@@ -95,6 +95,18 @@ inline constexpr uint32_t kClockStart = 0xE052;     // word, zero until play beg
 // frames). So the clock is the difference of the two, and it also stops for
 // whatever else stops the game, which is what an end-of-level tally does.
 inline constexpr uint32_t kStoppedFrames = 0xAEEC;  // word, wraps
+// Reaching the goal stops the clock too, and that is not a stop FFAEEC counts:
+// the game holds the finished time on its results screen while the counter
+// runs on through the twenty-odd seconds of tally. FFFDC5 goes from 0 to 0xFF
+// on exactly the frame the drawn time stops, stays 0 through ordinary play,
+// and stays 0 when a level ends by running out of time instead (found by
+// replaying a session somebody finished and taking the addresses that changed
+// then and only then).
+inline constexpr uint32_t kReachedGoal = 0xFDC5;
+// The drawn time settles four frames after that flag is set (the reading the
+// results screen then held matched the clock four frames later, measured on a
+// finished run). Within a frame either way.
+inline constexpr int kGoalSettle = 4;
 // The HUD draws the time five frames behind the counter (measured against the
 // screen at several points), so the same offset is applied when a time is
 // written out and the two agree to within a hundredth of a second.

@@ -21,6 +21,9 @@ void Run::begin(const stage_select::Request& r) {
     request = r;
     time = 0;
     clock_started = false;
+    finished = false;
+    settling = 0;
+    goal_was_set = false;
     started = false;
     last_counter = 0;
     last_stopped = 0;
@@ -38,7 +41,18 @@ bool Run::update(const Machine& m) {
             // Still in the level's entry sequence; the clock has not begun.
             if (!rd16(m, stage_select::kClockStart)) return false;
             clock_started = true;
+            goal_was_set = m.wram[stage_select::kReachedGoal] != 0;
+        } else if (finished && settling <= 0) {
+            // Reached the goal: the time is settled, and everything after it
+            // is the game's tally, which is not the player's time.
         } else {
+            const bool goal = m.wram[stage_select::kReachedGoal] != 0;
+            if (!goal) goal_was_set = false;   // cleared: an arrival can count again
+            if (!finished && goal && !goal_was_set) {
+                finished = true;
+                settling = stage_select::kGoalSettle;
+            }
+            if (finished) --settling;
             // Frame by frame, and as differences, so that the counter of
             // stopped frames wrapping past 65535 does not matter -- it starts
             // near the top, so it wraps within a few seconds of stopped time.

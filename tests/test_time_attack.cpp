@@ -173,3 +173,65 @@ TEST(time_attack, times_are_written_the_way_the_game_writes_them) {
     CHECK_STR(stage_select::format_time(0), "0'00\"00");
     CHECK_STR(stage_select::format_time(3605), "1'00\"00");
 }
+
+TEST(time_attack, the_tally_after_the_goal_is_not_the_players_time) {
+    // Reaching the goal stops the game's clock while its frame counter runs on
+    // through twenty-odd seconds of tally. A player's run showed 0'34"66 and
+    // was recorded as 0'53"26 until this was noticed.
+    auto mp = std::make_unique<Machine>();
+    Machine& m = *mp;
+    stage_select::Request r;
+    time_attack::Run run;
+    run.begin(r);
+    m.stage_pending = false;
+    put_scene(m, r.place, r.level);
+    wr16(m, stage_select::kClockStart, 1);
+    wr32(m, stage_select::kFrameCounter, 1000);
+    CHECK(!run.update(m));
+
+    wr32(m, stage_select::kFrameCounter, 1500);
+    CHECK(!run.update(m));
+    CHECK_EQ(run.time, 500);
+
+    // The goal. The clock settles a few frames later, then holds.
+    m.wram[stage_select::kReachedGoal] = 0xFF;
+    for (int i = 1; i <= stage_select::kGoalSettle; ++i) {
+        wr32(m, stage_select::kFrameCounter, 1500 + i);
+        CHECK(!run.update(m));
+    }
+    CHECK(run.finished);
+    CHECK_EQ(run.time, 500 + stage_select::kGoalSettle);
+
+    // Everything after that is the tally, however long the game takes.
+    for (int i = 0; i < 1200; ++i) {
+        wr32(m, stage_select::kFrameCounter, 1500 + stage_select::kGoalSettle + i);
+        CHECK(!run.update(m));
+    }
+    CHECK_EQ(run.time, 500 + stage_select::kGoalSettle);
+
+    put_scene(m, stage_select::kLobbyPlace, 0);
+    CHECK(run.update(m));
+    CHECK_EQ(run.time, 500 + stage_select::kGoalSettle);
+}
+
+TEST(time_attack, a_goal_flag_left_set_by_whatever_came_before_is_ignored) {
+    auto mp = std::make_unique<Machine>();
+    Machine& m = *mp;
+    stage_select::Request r;
+    time_attack::Run run;
+    run.begin(r);
+    m.stage_pending = false;
+    put_scene(m, r.place, r.level);
+    m.wram[stage_select::kReachedGoal] = 0xFF;   // already set as the run starts
+    wr16(m, stage_select::kClockStart, 1);
+    wr32(m, stage_select::kFrameCounter, 1000);
+    CHECK(!run.update(m));
+    for (int i = 1; i <= 600; ++i) {
+        wr32(m, stage_select::kFrameCounter, 1000 + uint32_t(i));
+        CHECK(!run.update(m));
+    }
+    // It only counts as the goal once it is seen to arrive, so this run is
+    // still going and still being timed.
+    CHECK(!run.finished);
+    CHECK_EQ(run.time, 600);
+}

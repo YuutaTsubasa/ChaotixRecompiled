@@ -30,6 +30,14 @@ struct Run {
     bool clock_started = false;
     uint32_t last_counter = 0;
     unsigned last_stopped = 0;
+    // The goal has been reached, so the time is what it is: the game holds it
+    // on its results screen while everything else runs on. The clock settles a
+    // few frames after the flag, so it is counted down rather than stopped.
+    bool finished = false;
+    int settling = 0;
+    // What the goal flag held when this run's clock started. Only its arrival
+    // counts, so one left set by whatever came before cannot end a run.
+    bool goal_was_set = false;
     // The level has been reached at least once. Until then a mismatch only
     // means the game has not arrived yet.
     bool started = false;

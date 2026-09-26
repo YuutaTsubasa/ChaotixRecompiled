@@ -148,8 +148,10 @@ it. A whole run is about 150 KB and holds nothing but pad readings.
 BEST TIME shows the record for whichever stage is selected. When a run ends
 the game would send you to its lobby, so the front end takes the time and
 brings you back to this page instead, with what you managed. A run that used
-up the level's own ten minutes is not a time. The clock is the one the game's
-HUD draws, so a record reads the same as the time you watched. Two players needs a device for player 2 under
+up the level's own ten minutes is not a time. The clock stops where the game
+stops it -- at the goal, not at the end of the twenty-odd seconds of tally
+afterwards -- so a record reads the same as the time you watched when you
+finished. Two players needs a device for player 2 under
 CONTROLS, which starts as NONE.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any

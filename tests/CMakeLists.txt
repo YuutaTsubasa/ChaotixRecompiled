@@ -122,6 +122,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(time_attack_does_not_count_a_pause PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "at frame 2400 the run clock reads 0'18\"06.*at frame 2700 the run clock reads 0'18\"06")
 
+    # A real run, finished at the goal, recorded by the frontend and replayed
+    # here. The game holds the finished time on its results screen while its
+    # frame counter runs on through twenty-odd seconds of tally, so a run used
+    # to be recorded that much too long. The time below is what the player saw
+    # on the screen when they finished.
+    add_test(NAME time_attack_matches_what_the_player_saw
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4700
+                --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt)
+    set_tests_properties(time_attack_matches_what_the_player_saw PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "the run ended after 2085 frames .0.34.66.")
+
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)
     add_test(NAME lockstep_attract_long COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --lockstep)
