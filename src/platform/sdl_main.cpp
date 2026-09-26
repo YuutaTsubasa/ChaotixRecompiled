@@ -75,22 +75,35 @@ struct App {
     std::string autotest_shot;
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> script;
+    // --hold: the same thing but fed into the host's own input path, so it
+    // passes through the menu and the Start interception the way a real
+    // button does. --press goes straight to the emulated pad instead.
+    struct Hold { uint64_t frame; uint16_t buttons; int remaining = 0; bool armed = false; };
+    std::vector<Hold> host_script;
+    // --keys: synthetic key presses at given frames, pushed as real SDL
+    // events so they travel the same path a keyboard does. For testing the
+    // menu flows, which scripted pad input cannot reach.
+    struct KeyAt { uint64_t frame; SDL_Keycode key; bool done = false; };
+    std::vector<KeyAt> key_script;
+    // --shots: extra captures, so one run can show a whole flow.
+    struct Shot { uint64_t frame; std::string path; bool done = false; };
+    std::vector<Shot> extra_shots;
     // Achievements: evaluated once per emulated frame, unlocks shown as a
     // notification and written to the save folder straight away.
     achievements::Tracker achievements;
     ui::Ui ui;
     bool achievements_on = false;
     Menu menu;
-    // The game boots to its title screen; until the player chooses START GAME
-    // there, Start opens our front end instead of reaching the game. After
-    // that the game's own menus get Start as normal.
-    bool front_end = true;
     int inject_start = 0;   // frames of Start to hand the game on the way out
     uint16_t prev_buttons = 0;
-    // The game's own mode word: a level is running, or the title screen and
-    // its menus are. Read once a frame and kept here so key handling can ask.
+    // Where the game is, read from its own state once a frame (see
+    // read_game_state). These decide what Start and Escape mean.
+    bool at_title = false;      // the "PUSH START" screen
+    bool in_game_menu = false;  // the game's own SCENARIO QUEST / TRAINING menu
     bool in_level = false;
-    bool was_in_level = false;
+    // The title screen, kept so Escape can leave the game's menu: the game
+    // itself has no way back to the title from there.
+    std::unique_ptr<Machine> title_snapshot;
     // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
@@ -162,7 +175,7 @@ std::vector<std::string> rom_search_dirs(const App& app) {
 // not confused with one of them.
 bool option_takes_value(const std::string& a) {
     static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
-                                       "--press", "--user-dir", "--install", "--menu"};
+                                       "--press", "--user-dir", "--install", "--menu", "--keys", "--shots", "--hold"};
     for (const char* o : with_value)
         if (a == o) return true;
     return false;
@@ -327,9 +340,46 @@ void save_screenshot(App& app) {
 // Every face and shoulder button is taken by the emulated 6-button pad (and
 // Back is its Mode button), so the menu is on the left stick click, which
 // nothing else uses. While the menu is open it drives the menu, not the game.
+// Where the game is, from its own memory. FFDFDE is 0008 on the title screen
+// and in the game's own menu and something else once a level is running;
+// FFAD2E tells those two apart, which nothing else in work RAM does.
+void read_game_state(App& app) {
+    const uint8_t* w = app.m->wram;
+    const uint16_t mode = uint16_t(w[0xDFDE] << 8 | w[0xDFDF]);
+    const bool front = mode == 0x0008;
+    app.at_title = front && w[0xAD2E] == 0x00;
+    app.in_game_menu = front && w[0xAD2E] != 0x00;
+    app.in_level = !front && mode != 0x0000;
+}
+
+// Leaving the game's own menu. It has no way back to the title - none of the
+// seven buttons does anything there - so the title screen we kept when
+// handing over is put back instead. The copy carries pointers into the
+// machine it came from, so the buses are re-pointed afterwards.
+bool return_to_title(App& app) {
+    if (!app.title_snapshot) return false;
+    *app.m = *app.title_snapshot;
+    // The Start handed over at START GAME may still be in flight; leaving it
+    // running would walk the game straight back into the menu we just left.
+    app.inject_start = 0;
+    app.m->remap_m68k();
+    app.m->remap_sh2();
+    read_game_state(app);
+    return true;
+}
+
+// Escape, and the pad button standing in for it, mean different things
+// depending on where the game is.
+void menu_back(App& app) {
+    if (app.menu.open()) { app.menu.close(); return; }
+    if (app.at_title) { app.menu.open_front(); return; }
+    if (app.in_game_menu && return_to_title(app)) { app.menu.open_front(); return; }
+    app.menu.toggle();   // in a level: the pause menu
+}
+
 void handle_pad_button(App& app, Uint8 button) {
     if (app.menu.on_pad(button)) return;
-    if (button == SDL_GAMEPAD_BUTTON_LEFT_STICK) app.menu.toggle();
+    if (button == SDL_GAMEPAD_BUTTON_LEFT_STICK) menu_back(app);
 }
 
 void handle_key(App& app, const SDL_KeyboardEvent& k) {
@@ -338,13 +388,7 @@ void handle_key(App& app, const SDL_KeyboardEvent& k) {
     // triggered from underneath it.
     if (app.menu.on_key(k.key)) return;
     switch (k.key) {
-    case SDLK_ESCAPE:
-        // Outside a level Esc belongs to the front end; inside one it is the
-        // pause menu.
-        if (app.menu.open()) app.menu.close();
-        else if (!app.in_level) app.menu.open_front();
-        else app.menu.toggle();
-        break;
+    case SDLK_ESCAPE: menu_back(app); break;
     case SDLK_F1: app.cfg.debug_overlay = !app.cfg.debug_overlay; break;
     case SDLK_F2: {
         static const AspectMode order[] = {AspectMode::Auto, AspectMode::R4_3, AspectMode::R16_9, AspectMode::R16_10, AspectMode::R21_9};
@@ -470,11 +514,44 @@ int main(int argc, char** argv) {
         // Opens a menu page straight away, so it can be captured without a
         // keyboard (the same reason --autotest exists).
         else if (a == "--menu" && i + 1 < argc) menu_page = argv[++i];
+        else if (a == "--keys" && i + 1 < argc) {
+            // FRAME:KEYNAME[,FRAME:KEYNAME...]
+            std::string spec = argv[++i];
+            for (size_t st = 0; st < spec.size();) {
+                size_t comma = spec.find(',', st);
+                std::string one = spec.substr(st, comma == std::string::npos ? comma : comma - st);
+                size_t colon = one.find(':');
+                if (colon != std::string::npos) {
+                    const SDL_Keycode k = SDL_GetKeyFromName(one.substr(colon + 1).c_str());
+                    if (k == SDLK_UNKNOWN)
+                        std::fprintf(stderr, "--keys: unknown key '%s'\n",
+                                     one.substr(colon + 1).c_str());
+                    else
+                        app.key_script.push_back({std::strtoull(one.c_str(), nullptr, 10), k, false});
+                }
+                if (comma == std::string::npos) break;
+                st = comma + 1;
+            }
+        }
+        else if (a == "--shots" && i + 1 < argc) {
+            // FRAME:FILE[,FRAME:FILE...]
+            std::string spec = argv[++i];
+            for (size_t st = 0; st < spec.size();) {
+                size_t comma = spec.find(',', st);
+                std::string one = spec.substr(st, comma == std::string::npos ? comma : comma - st);
+                size_t colon = one.find(':');
+                if (colon != std::string::npos)
+                    app.extra_shots.push_back({std::strtoull(one.c_str(), nullptr, 10), one.substr(colon + 1), false});
+                if (comma == std::string::npos) break;
+                st = comma + 1;
+            }
+        }
         else if (a == "--show-achievements") menu_page = "awards";
         else if (a == "--window-size" && i + 1 < argc) {
             int w = 0, h = 0;
             if (std::sscanf(argv[++i], "%dx%d", &w, &h) == 2) { app.cfg.raw["cli.w"] = std::to_string(w); app.cfg.raw["cli.h"] = std::to_string(h); }
-        } else if (a == "--press" && i + 1 < argc) {
+        } else if ((a == "--press" || a == "--hold") && i + 1 < argc) {
+            const bool host = a == "--hold";
             // FRAME:BUTTON[+BUTTON]:DURATION
             std::string spec = argv[++i];
             App::Press p{0, 4, 0};
@@ -489,7 +566,8 @@ int main(int argc, char** argv) {
                 if (plus == std::string::npos) break;
                 st = plus + 1;
             }
-            app.script.push_back(p);
+            if (host) app.host_script.push_back({p.frame, p.buttons, int(p.duration), false});
+            else app.script.push_back(p);
         }
     }
 
@@ -514,10 +592,11 @@ int main(int argc, char** argv) {
         },
         [&app] { app.running = false; },
         [&app] {  // start_game
-            app.front_end = false;
-            // The game is still on its title screen waiting for Start, so give
-            // it one: it then proceeds into its own menus exactly as it would
-            // have without us in the way.
+            // Keep the title screen so Escape can come back to it later, then
+            // give the game the Start it is waiting for: it proceeds into its
+            // own menus exactly as it would have without us in the way.
+            if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
+            *app.title_snapshot = *app.m;
             app.inject_start = 8;
         },
         [&app] { return int(app.pads.size()); },  // pad_count
@@ -677,25 +756,25 @@ int main(int argc, char** argv) {
         // the character.
         uint16_t touch_held = 0;
         for (const auto& [id, b] : app.fingers) touch_held |= b;
-        // Leaving a level puts the game back at its title screen, so the
-        // front end arms again: otherwise our menu was reachable exactly once
-        // per launch, and never again after playing.
-        const uint16_t game_mode = uint16_t(app.m->wram[0xDFDE] << 8 | app.m->wram[0xDFDF]);
-        app.in_level = game_mode == 0x0038;
-        if (app.was_in_level && !app.in_level) app.front_end = true;
-        app.was_in_level = app.in_level;
-
+        read_game_state(app);
         uint16_t raw = 0, raw2 = 0;
+        // Emulated frames advance in batches, so a window of frame numbers can
+        // be stepped straight over: arm on reaching the frame, then hold for a
+        // number of passes round this loop.
+        for (auto& h : app.host_script) {
+            if (!h.armed && app.m->frame_count >= h.frame) { h.armed = true; h.remaining = int(h.frame ? h.remaining : h.remaining); }
+            if (h.armed && h.remaining > 0) { raw |= h.buttons; --h.remaining; }
+        }
         if (!app.menu.open()) {
             // Touch belongs to player 1; the on-screen pad has no second set.
-            raw = device_buttons(app, 0) | touch_held;
+            raw |= device_buttons(app, 0) | touch_held;
             raw2 = device_buttons(app, 1);
         }
         uint16_t buttons = raw;
         // On the title screen Start belongs to our front end. The edge is
         // taken from the unmasked buttons, or holding Start would re-open the
         // page every frame and never let the selection move.
-        if (app.front_end && (raw & PAD_START)) {
+        if (app.at_title && (raw & PAD_START)) {
             buttons &= uint16_t(~PAD_START);
             if (!(app.prev_buttons & PAD_START)) app.menu.open_front();
         }
@@ -726,6 +805,18 @@ int main(int argc, char** argv) {
         const bool autotest = app.autotest_frames != 0;
         while ((accumulator >= frame_ticks || app.fast_forward || autotest) && steps < (autotest ? 64 : max_steps)) {
             if (autotest && app.m->frame_count >= app.autotest_frames) break;
+            // Scripted keys are pushed as events and handled on the next pass
+            // round the event loop, exactly like a key someone pressed.
+            for (auto& k : app.key_script) {
+                if (k.done || app.m->frame_count < k.frame) continue;
+                k.done = true;
+                SDL_Event ke{};
+                ke.type = SDL_EVENT_KEY_DOWN;
+                ke.key.key = k.key;
+                ke.key.down = true;
+                ke.key.repeat = false;
+                SDL_PushEvent(&ke);
+            }
             // Scripted input is applied per emulated frame (deterministic).
             uint16_t scripted = 0;
             for (const auto& p : app.script)
@@ -819,6 +910,16 @@ int main(int argc, char** argv) {
         if (app.autotest_frames && app.m->frame_count >= app.autotest_frames) {
             if (!app.autotest_shot.empty()) capture_output(app);
             app.running = false;
+        }
+        // Emulated frames advance in batches, so fire on "reached" rather
+        // than "equals" or the moment is stepped straight over.
+        for (auto& shot : app.extra_shots) {
+            if (shot.done || app.m->frame_count < shot.frame) continue;
+            shot.done = true;
+            const std::string keep = app.autotest_shot;
+            app.autotest_shot = shot.path;
+            capture_output(app);
+            app.autotest_shot = keep;
         }
         SDL_RenderPresent(app.renderer);
         app.timing.present_ms = double(SDL_GetPerformanceCounter() - pr_t0) * 1000.0 / double(freq);

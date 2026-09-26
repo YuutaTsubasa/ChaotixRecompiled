@@ -110,6 +110,12 @@ era. START GAME hands over to the game's own menus, so nothing the original
 offers is lost. Esc opens it again outside a level, and opens the same menu
 as a pause menu inside one.
 
+Escape leaves the game's own menu and returns to the title screen. The game
+has no way back there itself, so the title screen is kept when handing over
+and put back; anything chosen inside the game's menus is discarded, as it
+would be by turning the console off. Inside a level Escape is the pause menu
+instead.
+
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
 gamepad, which is the default for player 1), the keyboard alone, one numbered
 gamepad, or nothing. Each player has its own key set, so two people can share
