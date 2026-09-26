@@ -31,8 +31,9 @@ struct Config {
     // [Input]
     TouchMode touch = TouchMode::Auto;
     bool six_button = true;
-    // What drives each player: "keyboard", "pad1".."padN", or "none".
-    std::string device[2] = {"keyboard", "none"};
+    // What drives each player: "auto" (the keyboard and every gamepad the
+    // other player has not claimed), "keyboard", "pad1".."padN", or "none".
+    std::string device[2] = {"auto", "none"};
     // pad button name -> key name, one set per player, so two people can
     // share a keyboard.
     std::map<std::string, std::string> keys;

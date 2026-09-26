@@ -110,10 +110,11 @@ era. START GAME hands over to the game's own menus, so nothing the original
 offers is lost. Esc opens it again outside a level, and opens the same menu
 as a pause menu inside one.
 
-CONTROLS gives each player a device of its own — the keyboard, a numbered
-gamepad, or nothing — and a key set each, so two people can share one
-keyboard (player 2 starts on the keypad). Select a button and press Enter to
-rebind it; Escape leaves it alone. Gamepads work through SDL
+CONTROLS gives each player a device of its own: AUTO (the keyboard and any
+gamepad, which is the default for player 1), the keyboard alone, one numbered
+gamepad, or nothing. Each player has its own key set, so two people can share
+one keyboard — player 2 starts on the keypad. Select a button and press Enter
+to rebind it; Escape leaves it alone. Gamepads work through SDL
 (Xbox, PlayStation and Nintendo layouts): West/South/East = A/B/C,
 LB/North/RB = X/Y/Z, Back = Mode. Every other button belongs to the emulated
 6-button pad, so the menu is on the left stick click; B backs out of it. On

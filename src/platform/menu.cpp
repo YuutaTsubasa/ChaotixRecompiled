@@ -126,6 +126,7 @@ std::string upper(std::string v) {
 }
 
 std::string device_label(const std::string& dev) {
+    if (dev == "auto") return "AUTO";
     if (dev == "keyboard") return "KEYBOARD";
     if (dev == "none") return "NONE";
     if (dev.rfind("pad", 0) == 0) return "PAD " + dev.substr(3);
@@ -133,7 +134,7 @@ std::string device_label(const std::string& dev) {
 }
 
 std::vector<std::string> Menu::device_choices() const {
-    std::vector<std::string> out{"keyboard"};
+    std::vector<std::string> out{"auto", "keyboard"};
     const int pads = hooks_.pad_count ? hooks_.pad_count() : 0;
     for (int i = 1; i <= pads; ++i) out.push_back("pad" + std::to_string(i));
     out.push_back("none");

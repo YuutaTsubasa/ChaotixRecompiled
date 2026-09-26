@@ -251,15 +251,26 @@ uint16_t gamepad_buttons(SDL_Gamepad* g) {
     return out;
 }
 
-// Which physical device drives a player: "keyboard", "padN", or "none".
+// Which physical device drives a player: "auto", "keyboard", "padN", "none".
 uint16_t device_buttons(const App& app, int player) {
     const std::string& dev = app.cfg.device[player];
-    if (dev == "keyboard") return keyboard_buttons(app, player);
+    const std::string& other = app.cfg.device[1 - player];
+    if (dev == "none") return 0;
     if (dev.rfind("pad", 0) == 0) {
         const size_t i = size_t(std::atoi(dev.c_str() + 3)) - 1;  // pad1 is the first
         return i < app.pads.size() ? gamepad_buttons(app.pads[i]) : uint16_t(0);
     }
-    return 0;
+    uint16_t out = keyboard_buttons(app, player);
+    // "auto" also answers to every gamepad, which is what someone who has
+    // never opened the controls page expects. A pad the other player has
+    // claimed is left alone, so the two do not drive each other.
+    if (dev == "auto") {
+        for (size_t i = 0; i < app.pads.size(); ++i) {
+            if (other == "pad" + std::to_string(i + 1)) continue;
+            out |= gamepad_buttons(app.pads[i]);
+        }
+    }
+    return out;
 }
 
 // Unlock notifications, newest at the bottom, and the full list on F7.

@@ -201,14 +201,17 @@ TEST(menu, controls_assigns_a_device_per_player) {
 
     CHECK(select_row(m, "2P DEVICE"));
     CHECK_STR(cfg.device[1], "none");
-    CHECK(m.on_key(SDLK_RIGHT));          // none wraps round to keyboard
+    CHECK(m.on_key(SDLK_RIGHT));          // none wraps round to the first choice
+    CHECK_STR(cfg.device[1], "auto");
+    CHECK(m.on_key(SDLK_RIGHT));
     CHECK_STR(cfg.device[1], "keyboard");
     CHECK(m.on_key(SDLK_RIGHT));
     CHECK_STR(cfg.device[1], "pad1");
     CHECK(m.on_key(SDLK_LEFT));
     CHECK_STR(cfg.device[1], "keyboard");
-    // Player 1 is untouched by any of that.
-    CHECK_STR(cfg.device[0], "keyboard");
+    // Player 1 is untouched by any of that, and starts on auto so that a
+    // gamepad works without anyone opening this page.
+    CHECK_STR(cfg.device[0], "auto");
 }
 
 TEST(menu, rebinding_a_key_takes_the_next_press) {
