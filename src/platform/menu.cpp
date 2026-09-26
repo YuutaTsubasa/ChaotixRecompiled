@@ -100,6 +100,11 @@ std::string Menu::selected_label() const {
     return items_[size_t(selected_)].label;
 }
 
+std::string Menu::selected_note() const {
+    if (selected_ < 0 || selected_ >= int(items_.size())) return "";
+    return items_[size_t(selected_)].note;
+}
+
 // The front end: what pressing Start on the title screen reaches. START GAME
 // hands over to the game's own menus, so nothing the original offers is lost.
 void Menu::build_front() {
@@ -132,8 +137,25 @@ void Menu::build_main() {
 
 // The buttons of a Mega Drive pad, in the order they sit on it rather than
 // the order a map happens to store them in.
-const char* const kPadButtons[] = {"up", "down", "left", "right",
-                                   "a", "b", "c", "x", "y", "z", "start", "mode"};
+// The buttons of a Mega Drive pad and what each one does in this game, so the
+// binding pages say more than "A". Measured rather than assumed: B is the one
+// the game itself answers with a HOLD! bubble, C is the one that jumps, A
+// takes ten rings off the counter the moment it is pressed, and X/Y/Z/Mode
+// leave the picture and the game's state untouched anywhere they were tried
+// (see ARCHITECTURE.md 8.4).
+struct PadButton { const char* name; const char* does; };
+const PadButton kPadButtons[] = {
+    {"up", "LOOK UP"},        {"down", "CROUCH"},
+    {"left", "MOVE LEFT"},    {"right", "MOVE RIGHT"},
+    {"a", "PULL PARTNER IN - 10 RINGS"},
+    {"b", "HOLD PARTNER STILL"},
+    {"c", "JUMP"},
+    {"x", "NOT USED BY THIS GAME"},
+    {"y", "NOT USED BY THIS GAME"},
+    {"z", "NOT USED BY THIS GAME"},
+    {"start", "PAUSE"},
+    {"mode", "NOT USED BY THIS GAME"},
+};
 
 // The buttons the emulated 6-button pad leaves alone, so opening the menu
 // never costs the game one. SDL's own names, with what they are called on the
@@ -294,8 +316,8 @@ void Menu::build_keys() {
     if (!c) return;
     const int p = keys_player_;
     const bool pad = keys_pad_;
-    for (const char* b : kPadButtons) {
-        const std::string button = b;
+    for (const PadButton& pb : kPadButtons) {
+        const std::string button = pb.name;
         items_.push_back({upper(button),
                           [this, c, p, pad, button] {
                               if (awaiting_ == button)
@@ -309,7 +331,8 @@ void Menu::build_keys() {
                               // Enter starts the capture; left/right do nothing
                               // here, there is no list to step through.
                               if (step == 0) awaiting_ = button;
-                          }});
+                          },
+                          pb.does});
     }
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Controls); }});
 }
@@ -629,10 +652,15 @@ void Menu::draw_options(ui::Ui& g) {
     // A value too wide to sit beside its label - a controller's own name, say
     // - gets a line of its own rather than running into it.
     std::vector<bool> wrapped(items_.size(), false);
+    // A note sits between the label and the value, so it counts towards the
+    // room a row needs.
+    auto note_width = [&g](const Item& it) {
+        return it.note.empty() ? 0.0f : g.text_width(ui::Font::Small, it.note) + g.px(16);
+    };
     float rows_h = 0;
     for (size_t i = 0; i < items_.size(); ++i) {
         if (items_[i].value) {
-            const float need = g.text_width(ui::Font::Pixel, items_[i].label) +
+            const float need = g.text_width(ui::Font::Pixel, items_[i].label) + note_width(items_[i]) +
                                g.text_width(ui::Font::Pixel, items_[i].value()) + g.px(60);
             wrapped[i] = need > column;
         }
@@ -662,7 +690,14 @@ void Menu::draw_options(ui::Ui& g) {
             const float bob = std::sin(anim_ * 3.0f) * g.px(2);
             g.text(ui::Font::Pixel, x - g.px(24) + bob, y, ">", ui::theme::accent);
         }
-        g.text(ui::Font::Pixel, x, y, it.label, sel ? ui::theme::text : ui::theme::text_dim);
+        const float label_w = g.text(ui::Font::Pixel, x, y, it.label,
+                                     sel ? ui::theme::text : ui::theme::text_dim);
+        if (!it.note.empty()) {
+            // Smaller and dimmer than the label, on the same middle line, so
+            // it reads as a caption rather than as a second entry.
+            const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(ui::Font::Small)) * 0.5f;
+            g.text(ui::Font::Small, x + label_w + g.px(16), ny, it.note, ui::theme::text_faint);
+        }
         const float this_h = wrapped[i] ? row_h * 2 : row_h;
         if (it.value) {
             const std::string v = it.value();

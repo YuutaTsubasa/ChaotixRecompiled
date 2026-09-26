@@ -146,17 +146,25 @@ by name, or nothing. Each player has its own keyboard set *and* its own
 gamepad set, so two people can share one keyboard (player 2 starts on the
 keypad) or two controllers can be laid out differently. Choose a button and
 press Enter, then press the key or the gamepad button to bind it; Escape
-leaves it alone. MENU BUTTON is Escape's counterpart on a controller: the
-emulated 6-button pad takes every face and shoulder button, so the choice is
-among the ones it leaves alone - left stick click (the default), right stick
-click, Guide/Home/PS, the touchpad click, or Share/Capture. The same button
-backs out of the menu again. OPTIONS has RESET AWARDS,
-which asks twice before locking everything again.
+leaves it alone. Each row also says what that button does in this game: C
+jumps, B holds your partner still (the game answers with its own HOLD!
+bubble), A pulls the partner in for ten rings, Start pauses. X, Y, Z and Mode
+say NOT USED BY THIS GAME, because they are: pressing them changes neither
+the picture nor the game's state, on the title screen or in a level.
+
+MENU BUTTON is Escape's counterpart on a controller: the emulated 6-button
+pad takes every face and shoulder button, so the choice is among the ones it
+leaves alone - left stick click (the default), right stick click,
+Guide/Home/PS, the touchpad click, or Share/Capture. The same button backs
+out of the menu again.
+
+OPTIONS has RESET AWARDS, which asks twice before locking everything again.
 
 On-screen touch controls appear once the screen is touched (`TouchControls =
 Auto`), always (`On`), or never (`Off`). Gamepads work through SDL
 (Xbox, PlayStation and Nintendo layouts): West/South/East = A/B/C,
-LB/North/RB = X/Y/Z, Back = Mode. Every other button belongs to the emulated
+LB/North/RB = X/Y/Z, Back = Mode (the game itself only uses three of those --
+see CONTROLS). Every other button belongs to the emulated
 6-button pad, so the menu is on one of the spare buttons (see MENU BUTTON
 above); East/B backs out of it too. On touch devices virtual controls appear
 over the game, and the unlock counter in the top corner opens the menu.

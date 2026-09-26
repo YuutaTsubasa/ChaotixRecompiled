@@ -55,6 +55,8 @@ public:
     std::string page_name() const;
     // The highlighted entry's label, empty when the page has no entries.
     std::string selected_label() const;
+    // What that entry is for, for tests and screenshots.
+    std::string selected_note() const;
     void close() { page_ = Page::Closed; }
 
     // Each returns true when the menu consumed the input.
@@ -79,6 +81,11 @@ private:
         std::function<std::string()> value;
         // step is -1 or +1 to change a value, 0 to activate an action.
         std::function<void(int)> act;
+        // What the entry is for, drawn small beside the label. The binding
+        // pages use it to say what each button does in this game. Last, and
+        // with an initialiser, so the entries that leave it out keep both
+        // their order and a quiet build.
+        std::string note = {};
     };
 
     // Pages are built when they are opened, not when they are drawn, so the

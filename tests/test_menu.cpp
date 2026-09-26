@@ -425,3 +425,36 @@ TEST(menu, the_menu_button_can_be_chosen_on_the_controls_page) {
         for (const auto& [button, bound] : cfg.pads2) CHECK(bound != cfg.menu_button);
     }
 }
+
+TEST(menu, the_binding_page_says_what_each_button_does) {
+    // "A" on its own tells nobody anything. Every button of the pad carries a
+    // note, and the ones this game ignores say so.
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    m.toggle();
+    CHECK(select_row(m, "CONTROLS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(select_row(m, "1P GAMEPAD"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "keys");
+
+    CHECK(select_row(m, "C"));
+    CHECK_STR(m.selected_note(), "JUMP");
+    CHECK(select_row(m, "B"));
+    CHECK_STR(m.selected_note(), "HOLD PARTNER STILL");
+    CHECK(select_row(m, "START"));
+    CHECK_STR(m.selected_note(), "PAUSE");
+    for (const char* unused : {"X", "Y", "Z", "MODE"}) {
+        CHECK(select_row(m, unused));
+        CHECK_STR(m.selected_note(), "NOT USED BY THIS GAME");
+    }
+    // Only BACK is without one.
+    for (const char* b : {"UP", "DOWN", "LEFT", "RIGHT", "A"}) {
+        CHECK(select_row(m, b));
+        CHECK(!m.selected_note().empty());
+    }
+    CHECK(select_row(m, "BACK"));
+    CHECK(m.selected_note().empty());
+}
