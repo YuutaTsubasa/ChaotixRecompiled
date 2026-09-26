@@ -135,9 +135,9 @@ complete stage-select screen that the shipped game never reaches (game mode
 The names, the levels each place has, and the two-player switch are all read
 out of the game's own tables rather than invented here, and START uses the
 game's own route into a level, so a run behaves exactly as the console would.
-START goes straight there: none of the game's own menus are passed through,
-only its level entry (the ball wipe and the BOTANIC BASE ticket), about five
-seconds. The game's HUD keeps the time. Two players needs a device for player 2 under
+START goes straight there, in about a second: none of the game's own screens
+are passed through, only its level entry (the ball wipe and the BOTANIC BASE
+ticket). The game's HUD keeps the time. Two players needs a device for player 2 under
 CONTROLS, which starts as NONE.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any

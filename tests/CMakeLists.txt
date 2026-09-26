@@ -80,11 +80,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     # count must all come out the other side, and the run stays bit-identical
     # between the interpreter and the recompiled code (the request is applied
     # by a patch hook, so both must take it at the same instruction).
+    # It must also be prompt. The request is taken at the mode dispatcher, and
+    # the title screen only goes back there once it is done with itself, so the
+    # frontend taps Start until it is taken; without that the stage waits out
+    # the whole title screen (about 500 frames of PUSH START) and the player
+    # watches the game's own screens go by first.
     add_test(NAME stage_select_starts_the_chosen_level
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --lockstep
-                --press 1750:start:5 --stage 1800:4:3:4:5:7:1)
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2000 --lockstep
+                --stage 1200:4:3:4:5:7:1)
     set_tests_properties(stage_select_starts_the_chosen_level PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "stage: pending=0 mode=0018 zone=4 level=3 player=20 combi=28 padoff=10")
+        PASS_REGULAR_EXPRESSION
+        "stage: taken after ([0-9]|[1-9][0-9]|1[0-9][0-9]) frames, pending=0 mode=0018 zone=4 level=3 player=20 combi=28 padoff=10")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)

@@ -181,6 +181,8 @@ int main(int argc, char** argv) {
     uint64_t stage_frame = 0;
     bool stage_set = false;
     stage_select::Request stage;
+    int stage_kick = -1;              // frames since the request, while it waits
+    uint64_t stage_started = 0;       // the frame the game took it
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -368,14 +370,28 @@ int main(int argc, char** argv) {
         uint16_t btn = 0;
         for (const auto& p : presses)
             if (f >= p.frame && f < p.frame + p.duration) btn |= p.buttons;
-        m->input.pad[0] = btn;
-        if (ref) ref->input.pad[0] = btn;
         if (stage_set && f == stage_frame) {
             // Both machines, so lockstep still compares like with like.
             m->stage_request = stage;
             m->stage_pending = true;
             if (ref) { ref->stage_request = stage; ref->stage_pending = true; }
+            stage_kick = 0;
         }
+        // The same taps of Start the frontend gives a waiting request: the
+        // title screen needs one press to get past its animation and another
+        // to leave, and only then does the game come back to the dispatcher
+        // where the request is taken.
+        if (stage_kick >= 0) {
+            if (!m->stage_pending) {
+                stage_kick = -1;
+                stage_started = f;
+            } else {
+                if (stage_kick % 24 < 6) btn |= PAD_START;
+                ++stage_kick;
+            }
+        }
+        m->input.pad[0] = btn;
+        if (ref) ref->input.pad[0] = btn;
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
         if (m->audio_enabled) { wav.insert(wav.end(), m->audio_out.begin(), m->audio_out.end()); m->audio_out.clear(); }
@@ -462,7 +478,11 @@ int main(int argc, char** argv) {
     }
     if (stage_set) {
         const auto w16 = [&m](uint32_t o) { return unsigned(m->wram[o] << 8 | m->wram[o + 1]); };
-        std::printf("stage: pending=%d mode=%04X zone=%u level=%u player=%u combi=%u padoff=%02X time=%u\n",
+        // On one line: a test can then require the stage to be both the one
+        // asked for and reached promptly.
+        std::printf("stage: taken after %llu frames, ",
+                    (unsigned long long)(stage_started - stage_frame));
+        std::printf("pending=%d mode=%04X zone=%u level=%u player=%u combi=%u padoff=%02X time=%u\n",
                     int(m->stage_pending), w16(0xDFDE), w16(0xDFF2), w16(0xDFF4), w16(0xE038),
                     w16(0xE03A), m->wram[0xE05C], w16(0xE052));
     }

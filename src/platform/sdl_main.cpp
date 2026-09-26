@@ -95,6 +95,12 @@ struct App {
     bool achievements_on = false;
     Menu menu;
     int inject_start = 0;   // frames of Start to hand the game on the way out
+    // A stage the front end asked for is taken at the game's mode dispatcher,
+    // which the title screen only reaches once it is done with itself: one
+    // press of Start gets past its animation, another leaves it. So while a
+    // request is waiting, Start is tapped for it. Counts frames since the
+    // request, to pace the taps and to give up rather than press for ever.
+    int stage_kick = -1;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
@@ -345,8 +351,10 @@ bool return_to_title(App& app) {
     // The Start handed over at START GAME may still be in flight; leaving it
     // running would walk the game straight back out of the title.
     app.inject_start = 0;
-    // A stage asked for but not yet started would fire on the way back in.
+    // A stage asked for but not yet started would fire on the way back in,
+    // and its Start taps would go on pressing.
     app.m->stage_pending = false;
+    app.stage_kick = -1;
     app.m->remap_m68k();
     app.m->remap_sh2();
     app.handed_over = false;
@@ -366,6 +374,30 @@ void menu_back(App& app) {
 SDL_GamepadButton menu_pad_button(const App& app) {
     const SDL_GamepadButton b = SDL_GetGamepadButtonFromString(app.cfg.menu_button.c_str());
     return b == SDL_GAMEPAD_BUTTON_INVALID ? SDL_GAMEPAD_BUTTON_LEFT_STICK : b;
+}
+
+// A stage the front end asked for is taken at the game's mode dispatcher, and
+// the title screen only gets back there once it is done with itself: one press
+// of Start gets past its animation, another leaves it. So Start is tapped
+// until the request is taken -- without this the stage waits out the whole
+// title screen, about eight seconds of PUSH START.
+uint16_t stage_kick_button(App& app) {
+    if (app.stage_kick < 0) return 0;
+    if (!app.m->stage_pending) {
+        app.stage_kick = -1;   // taken: stop at once, or Start would pause the level
+        return 0;
+    }
+    if (app.stage_kick > 900) {
+        // Some scene the request cannot interrupt. Leave it waiting rather
+        // than hold Start down on the game for ever.
+        LOGW("stage", "the game has not come back to its mode dispatcher; the stage is still waiting");
+        app.stage_kick = -1;
+        return 0;
+    }
+    // Taps, not a hold: the title screen wants separate presses.
+    const bool down = app.stage_kick % 24 < 6;
+    ++app.stage_kick;
+    return down ? uint16_t(PAD_START) : uint16_t(0);
 }
 
 void handle_pad_button(App& app, Uint8 button) {
@@ -604,9 +636,13 @@ int main(int argc, char** argv) {
             app.m->stage_request = r;
             app.m->stage_pending = true;
             app.handed_over = true;
-            // The title screen is waiting on Start; the dispatcher is reached
-            // once its handler is done with it, and the stage starts there.
-            app.inject_start = 8;
+            // Tapping Start until the request is taken, rather than one press:
+            // a single one only gets the title past its own animation, and the
+            // stage would then wait out the whole title screen (about eight
+            // seconds of PUSH START) before the game came back to the
+            // dispatcher on its own.
+            app.inject_start = 0;
+            app.stage_kick = 0;
         };
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
@@ -844,6 +880,10 @@ int main(int argc, char** argv) {
             uint16_t scripted = 0;
             for (const auto& p : app.script)
                 if (app.m->frame_count >= p.frame && app.m->frame_count < p.frame + p.duration) scripted |= p.buttons;
+            // And so are the taps of Start that carry a waiting stage request
+            // through the title screen: counted in emulated frames, or a pass
+            // that simulates several would stretch a tap into a hold.
+            scripted |= stage_kick_button(app);
             app.m->input.pad[0] = uint16_t(buttons | scripted);
             app.m->input.pad[1] = raw2;
             app.m->run_frame();
