@@ -73,17 +73,74 @@ void write_program_report(const Program& p, const std::string& dir, const char* 
     }
 }
 
+// Every instruction that touches one of these addresses, with a few
+// instructions either side, so the code can be read rather than guessed at.
+void report_refs_to(const Program& p, const std::vector<uint32_t>& targets) {
+    // Runtime addresses are not ROM offsets: the 68K sees the cartridge
+    // through windows, so each fetch goes back through the code spaces.
+    struct Ctx { const Program* p; };
+    Ctx ctx{&p};
+    auto fetch = [](void* user, uint32_t a) -> uint16_t {
+        const Program& pr = *static_cast<Ctx*>(user)->p;
+        for (const CodeSpace& sp : pr.spaces) {
+            if (sp.cpu != Cpu::M68K || !sp.contains(a)) continue;
+            const uint32_t off = sp.to_rom(a);
+            if (off + 1 < pr.rom().data.size()) return pr.rom().read16(off);
+        }
+        return 0;
+    };
+    auto disasm_at = [&](uint32_t addr) {
+        m68k::Insn in;
+        if (!m68k::decode(addr, fetch, &ctx, in)) return std::string("???");
+        return m68k::disassemble(in);
+    };
+
+    for (uint32_t t : targets) {
+        std::printf("\n=== instructions touching %06X ===\n", t);
+        int n = 0;
+        for (const DataRef& r : p.refs) {
+            if (r.target != t) continue;
+            ++n;
+            // Name the function it sits in, which is usually the useful handle.
+            uint32_t owner = 0;
+            for (const auto& [entry, fn] : p.functions)
+                if (entry <= r.from && uint32_t(entry) > owner) owner = uint32_t(entry);
+            std::printf("\n%c at %06X   (in function %06X)\n", r.kind, r.from, owner);
+            // Walk forward from a little before, so the operands line up.
+            uint32_t a = r.from;
+            for (int back = 0; back < 3 && a > 4; ++back) {
+                uint32_t probe = a - 2;
+                while (probe > 4 && p.insns.find(probe) == p.insns.end()) probe -= 2;
+                if (p.insns.find(probe) == p.insns.end()) break;
+                a = probe;
+            }
+            for (int i = 0; i < 9; ++i) {
+                auto it = p.insns.find(a);
+                if (it == p.insns.end()) break;
+                std::printf("   %s%06X  %s\n", a == r.from ? "->" : "  ", a, disasm_at(a).c_str());
+                a += it->second.len;
+            }
+        }
+        if (!n) std::printf("  (no references found)\n");
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
     std::string rom_path, out_dir = "analysis_out";
     std::vector<std::string> cov_paths;
+    // --refs-to: the instructions that touch one address, with the code around
+    // each, which is where following a variable back into the game starts.
+    std::vector<uint32_t> refs_to;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--rom" && i + 1 < argc) rom_path = argv[++i];
         else if (a == "--coverage" && i + 1 < argc) cov_paths.push_back(argv[++i]);
         else if (a == "--out" && i + 1 < argc) out_dir = argv[++i];
-        else { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir]\n"); return 2; }
+        else if (a == "--refs-to" && i + 1 < argc)
+            refs_to.push_back(uint32_t(std::strtoul(argv[++i], nullptr, 16)));
+        else { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir] [--refs-to <hex addr>]\n"); return 2; }
     }
     if (rom_path.empty()) { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir]\n"); return 2; }
     Rom rom;
@@ -111,6 +168,7 @@ int main(int argc, char** argv) {
         p.add_default_spaces();
         p.add_coverage(cov);
         p.analyze();
+        if (!refs_to.empty() && cpu == Cpu::M68K) report_refs_to(p, refs_to);
         size_t bytes = 0;
         for (const auto& [k, b] : p.blocks) bytes += b.end - b.start;
         const char* tag = cpu == Cpu::M68K ? "m68k" : "sh2";

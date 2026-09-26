@@ -146,8 +146,10 @@ account is involved. `F7` shows the list; see
 
 ## Tools
 
-- `rom_analyzer --rom <rom> [--coverage f.cov] --out dir` — verification and
-  reports (code spaces, functions, xrefs, hardware register usage).
+- `rom_analyzer --rom <rom> [--coverage f.cov] --out dir [--refs-to ADDR]` —
+  verification and reports (code spaces, functions, xrefs, hardware register
+  usage). `--refs-to` prints every instruction that touches one address, with
+  the code around it, which is how a variable is followed back into the game.
 - `chaotix_recomp --rom <rom> --coverage f.cov --out generated` — the recompiler.
 - `chaotix_headless --rom <rom> --frames N [--wide E] [--wide-bottom R]
   [--lockstep] [--compare-native] [--shot F] [--press F:btn:dur] [--coverage f]
