@@ -72,8 +72,19 @@ never unlocks.
 3. Confirm by replaying the whole attract loop and printing every change: the
    transitions line up exactly with the level start and end frames.
 
-The level timer is *not* a plain RAM counter (no encoding of the displayed
-time matched), so time-based achievements are not defined yet.
+### The level timer
+
+`FFE052` (word) counts frames from the moment a level proper begins, at the
+60 Hz field rate. An earlier search for it failed because it looked for the
+time as drawn: the game stores frames and converts only when drawing the HUD.
+
+Checked against the HUD at two points in one run: 236 while it read `0'03"31`
+and 736 while it read `0'11"65` — 500 frames for 8.34 seconds. The drawn time
+runs 37 frames behind the counter, which is the gap between the level loading
+and the clock the HUD starts. `FFE050` holds the same value as a long, and
+`FFE060`/`FFE062` mirror both.
+
+Time-based achievements are still not defined, but the address is now known.
 
 ## Game modes, and why nothing is earned by the demo
 
