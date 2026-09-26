@@ -456,18 +456,22 @@ void follow_time_attack(App& app) {
     if (!app.ta.update(*app.m)) return;
     const int frames = app.ta.time;
     const bool ran_out = app.ta.timed_out();
-    const bool best = !ran_out && record_best(app.cfg, app.ta.request.place,
-                                              app.ta.request.level, frames);
+    const bool timed = app.ta.timed() && !ran_out;
+    const bool best = timed && record_best(app.cfg, app.ta.request.place,
+                                           app.ta.request.level, frames);
     // Straight to disk, the way an unlocked achievement is. Waiting for a
     // clean exit loses the record if the program does not get one.
     if (best) app.cfg.save(app.store.config_file());
     LOGI("stage", "time attack: over after %d frames%s", frames,
          ran_out ? " (the level's own limit)" : best ? " - a new best" : "");
-    app.toasts.push_back({ran_out ? std::string("OUT OF TIME")
-                                  : "TIME " + stage_select::format_time(frames),
-                          ran_out ? "The level's own limit ran out."
-                                  : (best ? "A new best for this stage." : "Not a new best."),
-                          SDL_GetTicks() + 6000});
+    const std::string title = ran_out    ? std::string("OUT OF TIME")
+                              : !timed   ? std::string("NO TIME")
+                                         : "TIME " + stage_select::format_time(frames);
+    const std::string note = ran_out  ? "The level's own limit ran out."
+                             : !timed ? "This level does not keep a clock."
+                             : best   ? "A new best for this stage."
+                                      : "Not a new best.";
+    app.toasts.push_back({title, note, SDL_GetTicks() + 6000});
     // The run, as it was played. A recorded time that disagrees with what the
     // game showed can then be looked into without anyone having had to set up
     // a recording beforehand.

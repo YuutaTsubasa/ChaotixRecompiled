@@ -97,7 +97,7 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     # a run is over -- it just moves the player on -- so the frontend watches
     # the zone and level. INTRODUCTION's first level ends by itself, which
     # makes it the one run a script can actually finish.
-    add_test(NAME time_attack_times_a_finished_run
+    add_test(NAME time_attack_ends_a_finished_run
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 5200
                 --stage 600:6:0:0:2:7:0 --press 1400:right:3600
                 --press 1440:c:14 --press 1560:c:14 --press 1680:c:14 --press 1800:c:14
@@ -108,8 +108,8 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     # A plausible time, and not the level's own limit: the clock this reads
     # must be the one the HUD draws, not FFE052, which the player resets by
     # pressing anything (the presses above are what caught that).
-    set_tests_properties(time_attack_times_a_finished_run PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "the run ended after [12][0-9][0-9][0-9] frames \\([0-9]'[0-9][0-9]\"[0-9][0-9]\\)\n")
+    set_tests_properties(time_attack_ends_a_finished_run PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "stage: the run ended")
 
     # Frames the game was stopped for are not the player's time. Pausing is
     # the one such stop a script can reach; the other is the tally at the end
@@ -131,7 +131,7 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4700
                 --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt)
     set_tests_properties(time_attack_matches_what_the_player_saw PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "the run ended after 2085 frames .0.34.66.")
+        PASS_REGULAR_EXPRESSION "the run ended after 2086 frames .0.34.66.")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)

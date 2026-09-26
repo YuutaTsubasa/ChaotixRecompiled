@@ -27,10 +27,27 @@ void put_scene(Machine& m, unsigned place, unsigned level) {
     wr16(m, 0xDFF2, place);
     wr16(m, 0xDFF4, level);
 }
+// A level counting from `base`: the engine's counter at `counter`, FFE052
+// holding the frames since the clock started, and `stopped` frames of stopped
+// clock behind it.
+void put_clock(Machine& m, uint32_t counter, unsigned base, unsigned stopped) {
+    wr32(m, stage_select::kFrameCounter, counter);
+    wr16(m, stage_select::kSinceStart, counter > base ? unsigned(counter - base) : 0u);
+    wr16(m, stage_select::kStoppedFrames, stopped);
+}
+
+// Enough frames of a steadily climbing clock for the start to be worked out.
+void settle_start(Machine& m, time_attack::Run& run, uint32_t counter, unsigned base,
+                  unsigned stopped) {
+    for (int i = 0; i <= stage_select::kCalibrationFrames; ++i) {
+        put_clock(m, counter + uint32_t(i), base, stopped);
+        run.update(m);
+    }
+}
 
 } // namespace
 
-TEST(time_attack, the_clock_starts_when_the_level_does_not_when_it_loads) {
+TEST(time_attack, the_time_is_what_the_level_counts_from) {
     auto mp = std::make_unique<Machine>();
     Machine& m = *mp;
     stage_select::Request r;
@@ -44,38 +61,28 @@ TEST(time_attack, the_clock_starts_when_the_level_does_not_when_it_loads) {
     CHECK(!run.update(m));
     CHECK(!run.started);
 
-    // Taken, and the level's entry sequence is playing: the engine's frame
-    // counter is running but the clock has not begun.
+    // Taken, and the level's entry sequence is playing: the engine's counter
+    // is already running but the level has not begun counting yet.
     m.stage_pending = false;
     put_scene(m, 4, 3);
-    wr32(m, stage_select::kFrameCounter, 900);
-    wr16(m, stage_select::kClockStart, 0);
+    put_clock(m, 1000, 1004, 0xFF00);
     CHECK(!run.update(m));
     CHECK(run.started);
-    CHECK(!run.clock_started);
-    CHECK_EQ(run.time, 0);
+    CHECK_EQ(run.time, 0);       // never negative
 
-    // Play begins. The clock starts here, from zero.
-    wr32(m, stage_select::kFrameCounter, 1000);
-    wr16(m, stage_select::kClockStart, 1);
+    // Play. Once the clock has been climbing steadily the start is known, and
+    // the time is the counter less it.
+    settle_start(m, run, 1005, 1004, 0xFF00);
+    put_clock(m, 1300, 1004, 0xFF00);
     CHECK(!run.update(m));
-    CHECK(run.clock_started);
-    CHECK_EQ(run.time, 0);
-
-    // From now on only the counter matters. The player presses something, so
-    // the game puts FFE052 back to 1 -- which must not touch the run's time.
-    wr32(m, stage_select::kFrameCounter, 1300);
-    wr16(m, stage_select::kClockStart, 1);
-    CHECK(!run.update(m));
-    CHECK_EQ(run.time, 300);
+    CHECK_EQ(run.time, 296);
 }
 
 TEST(time_attack, frames_the_game_was_stopped_for_are_not_the_players_time) {
     // The engine's counter runs on while the game's own clock is stopped --
     // pause it and the HUD holds still while the counter does not. The game
     // counts those frames, and so must a run, or a record would include the
-    // pause and the tally at the end of a level (measured: a run came out 25
-    // seconds long).
+    // pause (measured: 600 frames of pause, 600 frames of counter).
     auto mp = std::make_unique<Machine>();
     Machine& m = *mp;
     stage_select::Request r;
@@ -83,26 +90,23 @@ TEST(time_attack, frames_the_game_was_stopped_for_are_not_the_players_time) {
     run.begin(r);
     m.stage_pending = false;
     put_scene(m, r.place, r.level);
-    wr32(m, stage_select::kFrameCounter, 1000);
-    wr16(m, stage_select::kClockStart, 1);
-    wr16(m, stage_select::kStoppedFrames, 0xFF00);
+    put_clock(m, 1000, 1000, 0xFF00);
     CHECK(!run.update(m));
+    settle_start(m, run, 1001, 1000, 0xFF00);
 
-    // A hundred frames of play.
-    wr32(m, stage_select::kFrameCounter, 1100);
+    put_clock(m, 1100, 1000, 0xFF00);
     CHECK(!run.update(m));
     CHECK_EQ(run.time, 100);
 
     // Six hundred frames during which the game was stopped: the counter moves
     // and so does the count of stopped frames, which wraps past 65535 on the
     // way (it starts near the top).
-    wr32(m, stage_select::kFrameCounter, 1700);
-    wr16(m, stage_select::kStoppedFrames, uint16_t(0xFF00 + 600));
+    put_clock(m, 1700, 1000, uint16_t(0xFF00 + 600));
     CHECK(!run.update(m));
     CHECK_EQ(run.time, 100);
 
     // And playing again.
-    wr32(m, stage_select::kFrameCounter, 1750);
+    put_clock(m, 1750, 1000, uint16_t(0xFF00 + 600));
     CHECK(!run.update(m));
     CHECK_EQ(run.time, 150);
 }
@@ -115,10 +119,10 @@ TEST(time_attack, a_run_ends_when_the_game_moves_the_player_on) {
     run.begin(r);
     m.stage_pending = false;
     put_scene(m, r.place, r.level);
-    wr32(m, stage_select::kFrameCounter, 1000);
-    wr16(m, stage_select::kClockStart, 1);
+    put_clock(m, 1000, 1000, 0);
     CHECK(!run.update(m));
-    wr32(m, stage_select::kFrameCounter, 1600);
+    settle_start(m, run, 1001, 1000, 0);
+    put_clock(m, 1600, 1000, 0);
     CHECK(!run.update(m));
     CHECK_EQ(run.time, 600);
 
@@ -140,38 +144,14 @@ TEST(time_attack, a_run_that_hit_the_levels_own_limit_is_not_a_time) {
     run.begin(r);
     m.stage_pending = false;
     put_scene(m, r.place, r.level);
-    wr32(m, stage_select::kFrameCounter, 100);
-    wr16(m, stage_select::kClockStart, 1);
+    put_clock(m, 100, 100, 0);
     run.update(m);
-    wr32(m, stage_select::kFrameCounter, 100 + stage_select::kTimeLimit);
+    settle_start(m, run, 101, 100, 0);
+    put_clock(m, uint32_t(100 + stage_select::kTimeLimit), 100, 0);
     run.update(m);
     put_scene(m, stage_select::kLobbyPlace, 0);
     CHECK(run.update(m));
     CHECK(run.timed_out());
-}
-
-TEST(time_attack, records_keep_only_the_quickest) {
-    Config cfg;
-    cfg.set_defaults();
-    CHECK_EQ(best_time(cfg, 4, 3), 0);
-    CHECK(record_best(cfg, 4, 3, 2000));
-    CHECK_EQ(best_time(cfg, 4, 3), 2000);
-    CHECK(!record_best(cfg, 4, 3, 2500));      // slower
-    CHECK_EQ(best_time(cfg, 4, 3), 2000);
-    CHECK(record_best(cfg, 4, 3, 1500));       // quicker
-    CHECK_EQ(best_time(cfg, 4, 3), 1500);
-    CHECK_EQ(best_time(cfg, 4, 4), 0);         // and each stage keeps its own
-    CHECK(!record_best(cfg, 4, 4, 0));         // nothing to record
-}
-
-TEST(time_attack, times_are_written_the_way_the_game_writes_them) {
-    // The offset is measured against the HUD; these read the same as the
-    // clock the player watched.
-    CHECK_STR(stage_select::format_time(1091), "0'18\"10");
-    CHECK_STR(stage_select::format_time(1591), "0'26\"43");
-    CHECK_STR(stage_select::format_time(3091), "0'51\"43");
-    CHECK_STR(stage_select::format_time(0), "0'00\"00");
-    CHECK_STR(stage_select::format_time(3605), "1'00\"00");
 }
 
 TEST(time_attack, the_tally_after_the_goal_is_not_the_players_time) {
@@ -185,18 +165,17 @@ TEST(time_attack, the_tally_after_the_goal_is_not_the_players_time) {
     run.begin(r);
     m.stage_pending = false;
     put_scene(m, r.place, r.level);
-    wr16(m, stage_select::kClockStart, 1);
-    wr32(m, stage_select::kFrameCounter, 1000);
+    put_clock(m, 1000, 1000, 0);
     CHECK(!run.update(m));
-
-    wr32(m, stage_select::kFrameCounter, 1500);
+    settle_start(m, run, 1001, 1000, 0);
+    put_clock(m, 1500, 1000, 0);
     CHECK(!run.update(m));
     CHECK_EQ(run.time, 500);
 
     // The goal. The clock settles a few frames later, then holds.
     m.wram[stage_select::kReachedGoal] = 0xFF;
     for (int i = 1; i <= stage_select::kGoalSettle; ++i) {
-        wr32(m, stage_select::kFrameCounter, 1500 + i);
+        put_clock(m, uint32_t(1500 + i), 1000, 0);
         CHECK(!run.update(m));
     }
     CHECK(run.finished);
@@ -204,7 +183,7 @@ TEST(time_attack, the_tally_after_the_goal_is_not_the_players_time) {
 
     // Everything after that is the tally, however long the game takes.
     for (int i = 0; i < 1200; ++i) {
-        wr32(m, stage_select::kFrameCounter, 1500 + stage_select::kGoalSettle + i);
+        put_clock(m, uint32_t(1500 + stage_select::kGoalSettle + i), 1000, 0);
         CHECK(!run.update(m));
     }
     CHECK_EQ(run.time, 500 + stage_select::kGoalSettle);
@@ -223,15 +202,40 @@ TEST(time_attack, a_goal_flag_left_set_by_whatever_came_before_is_ignored) {
     m.stage_pending = false;
     put_scene(m, r.place, r.level);
     m.wram[stage_select::kReachedGoal] = 0xFF;   // already set as the run starts
-    wr16(m, stage_select::kClockStart, 1);
-    wr32(m, stage_select::kFrameCounter, 1000);
+    put_clock(m, 1000, 1000, 0);
     CHECK(!run.update(m));
+    settle_start(m, run, 1001, 1000, 0);
     for (int i = 1; i <= 600; ++i) {
-        wr32(m, stage_select::kFrameCounter, 1000 + uint32_t(i));
+        put_clock(m, uint32_t(1000 + i), 1000, 0);
         CHECK(!run.update(m));
     }
     // It only counts as the goal once it is seen to arrive, so this run is
     // still going and still being timed.
     CHECK(!run.finished);
     CHECK_EQ(run.time, 600);
+}
+
+TEST(time_attack, records_keep_only_the_quickest) {
+    Config cfg;
+    cfg.set_defaults();
+    CHECK_EQ(best_time(cfg, 4, 3), 0);
+    CHECK(record_best(cfg, 4, 3, 2000));
+    CHECK_EQ(best_time(cfg, 4, 3), 2000);
+    CHECK(!record_best(cfg, 4, 3, 2500));      // slower
+    CHECK_EQ(best_time(cfg, 4, 3), 2000);
+    CHECK(record_best(cfg, 4, 3, 1500));       // quicker
+    CHECK_EQ(best_time(cfg, 4, 3), 1500);
+    CHECK_EQ(best_time(cfg, 4, 4), 0);         // and each stage keeps its own
+    CHECK(!record_best(cfg, 4, 4, 0));         // nothing to record
+}
+
+TEST(time_attack, times_are_written_the_way_the_game_writes_them) {
+    // The offset is measured against the HUD; these read the same as the clock
+    // the player watched.
+    // Both of these are readings taken off the game's own HUD in a replay of
+    // a session somebody played.
+    CHECK_STR(stage_select::format_time(2086), "0'34\"66");
+    CHECK_STR(stage_select::format_time(307), "0'05\"01");
+    CHECK_STR(stage_select::format_time(0), "0'00\"00");
+    CHECK_STR(stage_select::format_time(3606), "1'00\"00");
 }

@@ -509,16 +509,19 @@ int main(int argc, char** argv) {
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
         if (ta.update(*m)) {
-            std::printf("stage: the run ended after %d frames (%s)%s\n", ta.time,
-                        stage_select::format_time(ta.time).c_str(),
-                        ta.timed_out() ? " - the level's own limit" : "");
+            if (!ta.timed())
+                std::printf("stage: the run ended without a time (this level keeps no clock)\n");
+            else
+                std::printf("stage: the run ended after %d frames (%s)%s\n", ta.time,
+                            stage_select::format_time(ta.time).c_str(),
+                            ta.timed_out() ? " - the level's own limit" : "");
             if (replay_result >= 0)
                 std::printf("replay: %s -- the session this came from ended at %d frames\n",
                             ta.time == replay_result ? "faithful" : "DRIFTED", replay_result);
         }
         // The running clock, so a screenshot at the same frame can be held
         // against what the game's own HUD says.
-        if (ta.running && ta.clock_started && shots.count(f))
+        if (ta.running && ta.started && shots.count(f))
             std::printf("stage: at frame %llu the run clock reads %s (%d frames)\n",
                         (unsigned long long)f, stage_select::format_time(ta.time).c_str(), ta.time);
         if (m->audio_enabled) { wav.insert(wav.end(), m->audio_out.begin(), m->audio_out.end()); m->audio_out.clear(); }

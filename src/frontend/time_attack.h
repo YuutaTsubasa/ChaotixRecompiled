@@ -22,25 +22,29 @@ namespace time_attack {
 struct Run {
     bool running = false;
     stage_select::Request request;
-    // Elapsed level-clock frames at the last moment the run was still going.
+    // Elapsed level-clock frames, as the game itself reckons them.
     int time = 0;
-    // Whether the clock has begun, and the two readings it is stepped from:
-    // the level engine's frame counter and the count of frames the clock was
-    // stopped for (see stage_select.h).
-    bool clock_started = false;
-    uint32_t last_counter = 0;
-    unsigned last_stopped = 0;
+    // The level has been reached at least once. Until then a mismatch only
+    // means the game has not arrived yet.
+    bool started = false;
     // The goal has been reached, so the time is what it is: the game holds it
     // on its results screen while everything else runs on. The clock settles a
     // few frames after the flag, so it is counted down rather than stopped.
     bool finished = false;
     int settling = 0;
-    // What the goal flag held when this run's clock started. Only its arrival
-    // counts, so one left set by whatever came before cannot end a run.
+    // Whether the goal flag was already set when this run reached the level,
+    // so one left over from whatever came before cannot end it.
     bool goal_was_set = false;
-    // The level has been reached at least once. Until then a mismatch only
-    // means the game has not arrived yet.
-    bool started = false;
+    // Frames the game's clock was not counting (see stage_select.h), summed as
+    // differences because the game's own counter of them wraps.
+    unsigned stopped_total = 0;
+    unsigned last_stopped = 0;
+    // Where this level's clock started, and the state of working that out: how
+    // many consecutive frames FFE052 has climbed by one, and what it read last.
+    bool have_start = false;
+    uint32_t start_at = 0;
+    int climbing = 0;
+    unsigned last_since = 0;
 
     void begin(const stage_select::Request& r);
     void cancel() { running = false; }
@@ -50,6 +54,10 @@ struct Run {
     // A run that reached the level's own limit was not finished, so it is not
     // a time.
     bool timed_out() const { return time >= stage_select::kTimeLimit; }
+    // Whether this run was timed at all. Introduction's clock never starts --
+    // it is a tutorial, and nothing in it counts -- so a run there has no time
+    // rather than a time of zero.
+    bool timed() const { return have_start; }
 };
 
 } // namespace time_attack

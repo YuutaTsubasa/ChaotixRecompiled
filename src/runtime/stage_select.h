@@ -87,13 +87,27 @@ struct Request {
 // player cannot press anything to reset it before play begins. So the base is
 // taken on the first frame FFE052 is non-zero and FFE052 is not used again.
 inline constexpr uint32_t kFrameCounter = 0xE002;   // long
-inline constexpr uint32_t kClockStart = 0xE052;     // word, zero until play begins
+// Where a level's clock started, which is what the elapsed time is measured
+// from. Nothing holds it: FFAEFE looked like it and is not (it kept a previous
+// level's value through a whole run of Techno Tower). What there is, is
+// FFE052, which counts one per frame from the moment play begins -- so while
+// it is running untouched it *is* the elapsed time, and the counter less it is
+// where the level started.
+//
+// It cannot simply be read, for two reasons. It arrives holding whatever the
+// scene before left in it (77, in that same run) and is only zeroed part way
+// through the level's entry; and it blips to 1 for a single frame during that
+// entry before settling. So a reading counts only after it has climbed by one
+// on each of several consecutive frames, and the earliest start any such
+// reading implies is the true one -- the player pressing something puts it
+// back to zero, which can only make a later reading imply a later start.
+inline constexpr uint32_t kSinceStart = 0xE052;     // word
+inline constexpr int kCalibrationFrames = 2;
 // FFE002 keeps going while the game's clock is stopped -- pause it and the HUD
-// holds still while FFE002 does not. The frames it was stopped for are counted
-// in FFAEEC: it does not move while a level is being played and advances by
+// holds still while FFE002 does not, and the base above does not move either.
+// The frames it was stopped for are counted in FFAEEC, which advances by
 // exactly the length of a pause across one (measured: +600 for a pause of 600
-// frames). So the clock is the difference of the two, and it also stops for
-// whatever else stops the game, which is what an end-of-level tally does.
+// frames) and is otherwise still. It wraps, so it is taken as differences.
 inline constexpr uint32_t kStoppedFrames = 0xAEEC;  // word, wraps
 // Reaching the goal stops the clock too, and that is not a stop FFAEEC counts:
 // the game holds the finished time on its results screen while the counter
@@ -107,10 +121,10 @@ inline constexpr uint32_t kReachedGoal = 0xFDC5;
 // results screen then held matched the clock four frames later, measured on a
 // finished run). Within a frame either way.
 inline constexpr int kGoalSettle = 4;
-// The HUD draws the time five frames behind the counter (measured against the
+// The HUD draws the time six frames behind the counter (measured against the
 // screen at several points), so the same offset is applied when a time is
 // written out and the two agree to within a hundredth of a second.
-inline constexpr int kHudLag = 5;
+inline constexpr int kHudLag = 6;
 // The level's own limit. A run that reaches it was not finished.
 inline constexpr int kTimeLimit = 36000;
 
