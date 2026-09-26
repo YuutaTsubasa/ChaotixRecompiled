@@ -111,6 +111,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(time_attack_times_a_finished_run PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "the run ended after [12][0-9][0-9][0-9] frames \\([0-9]'[0-9][0-9]\"[0-9][0-9]\\)\n")
 
+    # Frames the game was stopped for are not the player's time. Pausing is
+    # the one such stop a script can reach; the other is the tally at the end
+    # of a level, which is what made a run come out 25 seconds long. The clock
+    # must read the same before and after 600 frames of pause.
+    add_test(NAME time_attack_does_not_count_a_pause
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3400
+                --stage 600:0:1:0:2:7:0 --press 1400:right:600
+                --press 2200:start:6 --press 2800:start:6 --shot 2400,2700)
+    set_tests_properties(time_attack_does_not_count_a_pause PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "at frame 2400 the run clock reads 0'18\"06.*at frame 2700 the run clock reads 0'18\"06")
+
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)
     add_test(NAME lockstep_attract_long COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 36000 --lockstep)

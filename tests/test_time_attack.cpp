@@ -55,19 +55,56 @@ TEST(time_attack, the_clock_starts_when_the_level_does_not_when_it_loads) {
     CHECK(!run.clock_started);
     CHECK_EQ(run.time, 0);
 
-    // Play begins. The base is taken here, from both readings at once.
+    // Play begins. The clock starts here, from zero.
     wr32(m, stage_select::kFrameCounter, 1000);
-    wr16(m, stage_select::kClockStart, 10);
+    wr16(m, stage_select::kClockStart, 1);
     CHECK(!run.update(m));
     CHECK(run.clock_started);
-    CHECK_EQ(run.time, 10);
+    CHECK_EQ(run.time, 0);
 
     // From now on only the counter matters. The player presses something, so
     // the game puts FFE052 back to 1 -- which must not touch the run's time.
     wr32(m, stage_select::kFrameCounter, 1300);
     wr16(m, stage_select::kClockStart, 1);
     CHECK(!run.update(m));
-    CHECK_EQ(run.time, 310);
+    CHECK_EQ(run.time, 300);
+}
+
+TEST(time_attack, frames_the_game_was_stopped_for_are_not_the_players_time) {
+    // The engine's counter runs on while the game's own clock is stopped --
+    // pause it and the HUD holds still while the counter does not. The game
+    // counts those frames, and so must a run, or a record would include the
+    // pause and the tally at the end of a level (measured: a run came out 25
+    // seconds long).
+    auto mp = std::make_unique<Machine>();
+    Machine& m = *mp;
+    stage_select::Request r;
+    time_attack::Run run;
+    run.begin(r);
+    m.stage_pending = false;
+    put_scene(m, r.place, r.level);
+    wr32(m, stage_select::kFrameCounter, 1000);
+    wr16(m, stage_select::kClockStart, 1);
+    wr16(m, stage_select::kStoppedFrames, 0xFF00);
+    CHECK(!run.update(m));
+
+    // A hundred frames of play.
+    wr32(m, stage_select::kFrameCounter, 1100);
+    CHECK(!run.update(m));
+    CHECK_EQ(run.time, 100);
+
+    // Six hundred frames during which the game was stopped: the counter moves
+    // and so does the count of stopped frames, which wraps past 65535 on the
+    // way (it starts near the top).
+    wr32(m, stage_select::kFrameCounter, 1700);
+    wr16(m, stage_select::kStoppedFrames, uint16_t(0xFF00 + 600));
+    CHECK(!run.update(m));
+    CHECK_EQ(run.time, 100);
+
+    // And playing again.
+    wr32(m, stage_select::kFrameCounter, 1750);
+    CHECK(!run.update(m));
+    CHECK_EQ(run.time, 150);
 }
 
 TEST(time_attack, a_run_ends_when_the_game_moves_the_player_on) {
@@ -83,14 +120,14 @@ TEST(time_attack, a_run_ends_when_the_game_moves_the_player_on) {
     CHECK(!run.update(m));
     wr32(m, stage_select::kFrameCounter, 1600);
     CHECK(!run.update(m));
-    CHECK_EQ(run.time, 601);
+    CHECK_EQ(run.time, 600);
 
     // The game sends the player to its lobby, which is how a run ends however
     // it ended.
     put_scene(m, stage_select::kLobbyPlace, 0);
     CHECK(run.update(m));
     CHECK(!run.running);
-    CHECK_EQ(run.time, 601);     // the time it had, not the lobby's
+    CHECK_EQ(run.time, 600);     // the time it had, not the lobby's
     CHECK(!run.timed_out());
     CHECK(!run.update(m));       // and it only ends once
 }

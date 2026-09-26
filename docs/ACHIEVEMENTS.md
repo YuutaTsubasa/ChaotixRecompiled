@@ -91,10 +91,22 @@ Checked against the HUD at five points in a run with a jump every two seconds:
 `0'18"10`, `0'26"43`, `0'31"43`, `0'41"43`, `0'51"43`, all exact, with the
 drawn time five frames behind the counter.
 
-The lesson is the one the attract-demo mistake taught as well: a variable that
-matches in every run you tried can still be the wrong variable, if every run
-you tried was the same kind of run. `src/frontend/time_attack.cpp` is where
-this now lives, and the frontend's TIME ATTACK records the result.
+That was still not the whole of it. `FFE002` keeps going while the game's own
+clock is stopped: pause a level and the HUD holds still while `FFE002` does
+not, so a recorded time included the pause — and, as a player reported, the
+twenty-five second tally at the end of a level, which is the same thing.
+
+The frames the game was stopped for are counted in `FFAEEC`. It does not move
+while a level is being played and advances by exactly the length of a pause
+across one; checked by pausing for 600 frames and watching it advance 600. So
+a run's clock steps by the counter's change less that one, frame by frame as
+differences, because `FFAEEC` starts near 65535 and wraps within a few seconds
+of stopped time.
+
+The lesson is the one the attract-demo mistake taught as well, twice over: a
+variable that matches in every run you tried can still be the wrong variable,
+if every run you tried was the same kind of run. `src/frontend/time_attack.cpp`
+is where this now lives, and the frontend's TIME ATTACK records the result.
 
 ## Game modes, and why nothing is earned by the demo
 

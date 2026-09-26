@@ -20,9 +20,10 @@ void Run::begin(const stage_select::Request& r) {
     running = true;
     request = r;
     time = 0;
-    base = 0;
     clock_started = false;
     started = false;
+    last_counter = 0;
+    last_stopped = 0;
 }
 
 bool Run::update(const Machine& m) {
@@ -31,14 +32,22 @@ bool Run::update(const Machine& m) {
     if (!running || m.stage_pending) return false;
     if (rd16(m, 0xDFF2) == request.place && rd16(m, 0xDFF4) == request.level) {
         started = true;
-        const unsigned since_start = rd16(m, stage_select::kClockStart);
+        const uint32_t counter = rd32(m, stage_select::kFrameCounter);
+        const unsigned stopped = rd16(m, stage_select::kStoppedFrames);
         if (!clock_started) {
             // Still in the level's entry sequence; the clock has not begun.
-            if (!since_start) return false;
+            if (!rd16(m, stage_select::kClockStart)) return false;
             clock_started = true;
-            base = rd32(m, stage_select::kFrameCounter) - since_start;
+        } else {
+            // Frame by frame, and as differences, so that the counter of
+            // stopped frames wrapping past 65535 does not matter -- it starts
+            // near the top, so it wraps within a few seconds of stopped time.
+            const uint32_t ran = counter - last_counter;
+            const unsigned held = uint16_t(stopped - last_stopped);
+            if (ran > held) time += int(ran - held);
         }
-        time = int(rd32(m, stage_select::kFrameCounter) - base);
+        last_counter = counter;
+        last_stopped = stopped;
         return false;
     }
     if (!started) return false;   // still on its way in

@@ -88,6 +88,13 @@ struct Request {
 // taken on the first frame FFE052 is non-zero and FFE052 is not used again.
 inline constexpr uint32_t kFrameCounter = 0xE002;   // long
 inline constexpr uint32_t kClockStart = 0xE052;     // word, zero until play begins
+// FFE002 keeps going while the game's clock is stopped -- pause it and the HUD
+// holds still while FFE002 does not. The frames it was stopped for are counted
+// in FFAEEC: it does not move while a level is being played and advances by
+// exactly the length of a pause across one (measured: +600 for a pause of 600
+// frames). So the clock is the difference of the two, and it also stops for
+// whatever else stops the game, which is what an end-of-level tally does.
+inline constexpr uint32_t kStoppedFrames = 0xAEEC;  // word, wraps
 // The HUD draws the time five frames behind the counter (measured against the
 // screen at several points), so the same offset is applied when a time is
 // written out and the two agree to within a hundredth of a second.

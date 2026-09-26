@@ -24,10 +24,12 @@ struct Run {
     stage_select::Request request;
     // Elapsed level-clock frames at the last moment the run was still going.
     int time = 0;
-    // The level engine's frame counter when this run's clock started, and
-    // whether that moment has been seen (see stage_select.h).
-    uint32_t base = 0;
+    // Whether the clock has begun, and the two readings it is stepped from:
+    // the level engine's frame counter and the count of frames the clock was
+    // stopped for (see stage_select.h).
     bool clock_started = false;
+    uint32_t last_counter = 0;
+    unsigned last_stopped = 0;
     // The level has been reached at least once. Until then a mismatch only
     // means the game has not arrived yet.
     bool started = false;
