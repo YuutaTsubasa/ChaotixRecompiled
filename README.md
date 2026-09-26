@@ -82,8 +82,8 @@ A ROM given on the command line still wins over the installed copy.
 
 Useful flags: `--user-dir DIR` keeps settings, saves and the installed ROM in
 `DIR` (a portable install), `--install FILE` installs a ROM without showing
-the setup page (for packaging scripts), and `--show-achievements` opens the
-achievement list at startup (so the page can be captured without a keyboard).
+the setup page (for packaging scripts), and `--menu main|options|awards`
+opens a menu page at startup (so it can be captured without a keyboard).
 
 Settings live in the user data directory (`Config/chaotix.ini`), saves in
 `SaveData/`, the installed ROM in `Game/`.
@@ -94,21 +94,23 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | Z / X / C | A / B / C |
 | A / S / D | X / Y / Z |
 | Enter | Start |
+| Esc | Menu (left stick click on a pad) |
 | F1 / F5 | Debug overlay / overlay page |
 | F2 | Aspect ratio (Auto, 4:3, 16:9, 16:10, 21:9) |
 | F3 / F4 | Filter / scaling mode |
 | F6 | True widescreen on/off (extra columns apply from the next level load) |
-| F7 | Achievement list (or click the left stick on a pad) |
+| F7 | Achievements (the menu's Awards page) |
 | F11, Alt+Enter | Borderless fullscreen |
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
-Gamepads work through SDL (Xbox, PlayStation and Nintendo layouts):
-West/South/East = A/B/C, LB/North/RB = X/Y/Z, Back = Mode. Every other
-button belongs to the emulated 6-button pad, so the achievement list is on
-the left stick click; B closes it again. On touch devices virtual controls
-appear over the game, and the unlock counter in the top corner opens the
-list.
+The in-game menu (Esc) holds the settings and the achievement list, drawn
+over the running game in the style of the era. Gamepads work through SDL
+(Xbox, PlayStation and Nintendo layouts): West/South/East = A/B/C,
+LB/North/RB = X/Y/Z, Back = Mode. Every other button belongs to the emulated
+6-button pad, so the menu is on the left stick click; B backs out of it. On
+touch devices virtual controls appear over the game, and the unlock counter
+in the top corner opens the menu.
 
 ## Achievements
 

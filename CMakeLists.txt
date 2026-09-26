@@ -122,6 +122,7 @@ if(CHAOTIX_BUILD_FRONTEND)
     set(_embedded "")
     foreach(asset fonts/Inter-Regular.ttf:font_regular
                   fonts/Inter-SemiBold.ttf:font_semibold
+                  fonts/PressStart2P-Regular.ttf:font_pixel
                   achievements.ini:achievements_ini)
         string(REPLACE ":" ";" asset ${asset})
         list(GET asset 0 _rel)
@@ -136,10 +137,13 @@ if(CHAOTIX_BUILD_FRONTEND)
             COMMENT "Embedding ${_rel}")
         list(APPEND _embedded ${_out})
     endforeach()
+    # The tests link the same embedded data.
+    set(CHAOTIX_EMBEDDED_SOURCES ${_embedded})
 
     set(_frontend_sources
         src/platform/sdl_main.cpp
         src/platform/sdl_setup.cpp
+        src/platform/menu.cpp
         src/platform/ui.cpp
         src/frontend/config.cpp
         src/frontend/debug_overlay.cpp

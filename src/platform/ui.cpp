@@ -15,13 +15,17 @@ extern const unsigned char font_regular[];
 extern const size_t font_regular_len;
 extern const unsigned char font_semibold[];
 extern const size_t font_semibold_len;
+extern const unsigned char font_pixel[];
+extern const size_t font_pixel_len;
 
 namespace ui {
 
 namespace {
 
-// Point sizes at scale 1, i.e. in a 720-pixel-tall window.
-constexpr float kSizes[size_t(Font::Count_)] = {13.0f, 16.0f, 20.0f, 30.0f};
+// Point sizes at scale 1, i.e. in a 720-pixel-tall window. The pixel face is
+// an 8x8 design, so its sizes are multiples of 8 and get snapped again after
+// scaling.
+constexpr float kSizes[size_t(Font::Count_)] = {13.0f, 16.0f, 20.0f, 30.0f, 16.0f, 32.0f};
 
 // Text that has not been drawn for this many frames is released. The screens
 // redraw the same strings every frame, so anything still in use is refreshed
@@ -75,9 +79,10 @@ bool Ui::init(SDL_Renderer* renderer) {
         return false;
     }
     for (size_t i = 0; i < size_t(Font::Count_); ++i) {
-        const bool bold = i >= size_t(Font::Subtitle);
-        const unsigned char* data = bold ? font_semibold : font_regular;
-        const size_t len = bold ? font_semibold_len : font_regular_len;
+        const Font f = Font(i);
+        const bool bold = f == Font::Subtitle || f == Font::Title;
+        const unsigned char* data = is_pixel(f) ? font_pixel : bold ? font_semibold : font_regular;
+        const size_t len = is_pixel(f) ? font_pixel_len : bold ? font_semibold_len : font_regular_len;
         // The stream must stay open for the lifetime of the font; the data is
         // static, so SDL_ttf can keep reading it.
         SDL_IOStream* io = SDL_IOFromConstMem(data, len);
@@ -87,7 +92,9 @@ bool Ui::init(SDL_Renderer* renderer) {
             LOGW("ui", "TTF_OpenFontIO: %s", SDL_GetError());
             break;
         }
-        TTF_SetFontHinting(fonts_[i], TTF_HINTING_LIGHT);
+        // A pixel face grid-fits to whole pixels or it turns to mush; the
+        // text faces look better with light hinting.
+        TTF_SetFontHinting(fonts_[i], is_pixel(f) ? TTF_HINTING_MONO : TTF_HINTING_LIGHT);
     }
     for (size_t i = 0; i < size_t(Font::Count_); ++i) {
         if (!fonts_[i]) { shutdown(); return false; }
@@ -116,7 +123,12 @@ void Ui::drop_cache() {
 
 void Ui::set_sizes() {
     for (size_t i = 0; i < size_t(Font::Count_); ++i) {
-        if (fonts_[i]) TTF_SetFontSize(fonts_[i], kSizes[i] * scale_);
+        if (!fonts_[i]) continue;
+        float size = kSizes[i] * scale_;
+        // Snap the pixel face to a whole multiple of its 8-pixel design grid,
+        // so every glyph pixel lands on a screen pixel.
+        if (is_pixel(Font(i))) size = std::max(8.0f, std::round(size / 8.0f) * 8.0f);
+        TTF_SetFontSize(fonts_[i], size);
     }
     drop_cache();  // the cached textures were rendered at the old size
 }

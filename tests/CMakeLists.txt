@@ -8,6 +8,19 @@ add_executable(chaotix_tests
     test_achievements.cpp
 )
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime)
+
+# The in-game menu is part of the frontend, so its test only exists where SDL
+# is available. It drives the menu with key presses; nothing is drawn.
+if(CHAOTIX_BUILD_FRONTEND)
+    target_sources(chaotix_tests PRIVATE
+        test_menu.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/ui.cpp
+        ${CMAKE_SOURCE_DIR}/src/frontend/config.cpp
+        ${CHAOTIX_EMBEDDED_SOURCES})
+    target_link_libraries(chaotix_tests PRIVATE SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+endif()
+
 chaotix_set_warnings(chaotix_tests)
 add_test(NAME unit COMMAND chaotix_tests)
 

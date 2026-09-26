@@ -74,6 +74,11 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      # This is the only job with SDL, so it is the only one that can run the
+      # menu tests.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --build-config Release
+
   hygiene:
     name: No game data
     runs-on: ubuntu-latest

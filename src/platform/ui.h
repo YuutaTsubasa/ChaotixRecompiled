@@ -45,12 +45,18 @@ constexpr Color bad{238, 120, 120};
 } // namespace theme
 
 enum class Font {
-    Small,     // captions, paths
-    Body,      // list rows, buttons
-    Subtitle,  // section headings
-    Title,     // the one heading at the top of a page
+    Small,      // captions, paths
+    Body,       // list rows, buttons
+    Subtitle,   // section headings
+    Title,      // the one heading at the top of a page
+    Pixel,      // in-game menu labels
+    PixelBig,   // in-game menu headings
     Count_
 };
+
+// True for the fonts drawn from the bitmap-style face, whose sizes are
+// snapped to whole pixels so the glyphs stay sharp.
+constexpr bool is_pixel(Font f) { return f == Font::Pixel || f == Font::PixelBig; }
 
 class Ui {
 public:

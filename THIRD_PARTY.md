@@ -10,16 +10,27 @@ is game data; see [LEGAL.md](LEGAL.md) for that.
 - Files: `assets/fonts/Inter-Regular.ttf`, `assets/fonts/Inter-SemiBold.ttf`
 - Copyright (c) 2016 The Inter Project Authors, <https://github.com/rsms/inter>
 - Licence: SIL Open Font License 1.1 — the full text is in
-  [`assets/fonts/OFL.txt`](assets/fonts/OFL.txt)
+  [`assets/fonts/OFL-Inter.txt`](assets/fonts/OFL-Inter.txt)
 
-Inter draws the first-run setup screen and the achievement list. The build
-compiles both weights into the executable (see `cmake/embed_file.cmake`),
-because those screens have to work before any asset folder has been found —
-the setup screen is what runs when nothing is installed yet.
+Inter draws the first-run setup screen.
+
+### Press Start 2P (font)
+
+- File: `assets/fonts/PressStart2P-Regular.ttf`
+- Copyright (c) 2012 The Press Start 2P Project Authors, <https://zone38.net>
+- Licence: SIL Open Font License 1.1 — the full text is in
+  [`assets/fonts/OFL-PressStart2P.txt`](assets/fonts/OFL-PressStart2P.txt)
+
+Press Start 2P draws the in-game menu, where a pixel face suits the game it
+is drawn over.
+
+Both are compiled into the executable (see `cmake/embed_file.cmake`), because
+those screens have to work before any asset folder has been found — the setup
+screen is what runs when nothing is installed yet.
 
 The OFL permits redistribution, bundled or embedded, as long as the licence
-travels with it and the font is not sold on its own. Both weights are the
-unmodified released files.
+travels with it and the font is not sold on its own. All three files are the
+unmodified released ones.
 
 ## Required, not included
 

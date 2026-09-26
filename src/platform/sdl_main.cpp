@@ -11,6 +11,7 @@
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
+#include "platform/menu.h"
 #include "platform/ui.h"
 #include "game/achievements.h"
 #include "game/recomp_dispatch.h"
@@ -79,15 +80,10 @@ struct App {
     achievements::Tracker achievements;
     ui::Ui ui;
     bool achievements_on = false;
-    bool show_achievement_list = false;
-    int achievement_scroll = 0;   // first row drawn, when the list is longer than the window
-    int achievement_rows = 0;     // rows the last layout had room for
-    // Touch devices have neither F7 nor a stick to click, so the progress
+    Menu menu;
+    // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
-    float achievement_row_h = 0;  // for turning a drag into whole-row scrolling
-    float achievement_drag_y = 0; // last finger position while dragging the list
-    float achievement_drag_total = 0;  // how far it has moved, to tell a drag from a tap
     struct Toast { std::string title, description; Uint64 until_ms = 0; };
     std::vector<Toast> toasts;
 };
@@ -156,7 +152,7 @@ std::vector<std::string> rom_search_dirs(const App& app) {
 // not confused with one of them.
 bool option_takes_value(const std::string& a) {
     static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
-                                       "--press", "--user-dir", "--install"};
+                                       "--press", "--user-dir", "--install", "--menu"};
     for (const char* o : with_value)
         if (a == o) return true;
     return false;
@@ -233,76 +229,14 @@ uint16_t gamepad_buttons(SDL_Gamepad* g) {
 }
 
 // Unlock notifications, newest at the bottom, and the full list on F7.
-void draw_achievements(App& app) {
+// The unlock counter (a way into the menu on a touch screen) and the
+// notifications. The list itself is a page of the menu.
+void draw_toasts(App& app) {
     ui::Ui& g = app.ui;
     if (!g.ready()) return;
-    g.begin_frame();
-
-    if (app.show_achievement_list) {
-        // Dim the game rather than hide it: this is an overlay, not a screen.
-        g.rect({0, 0, g.width(), g.height()}, ui::theme::background.alpha(246));
-
-        const float column = std::min(g.width() - g.px(32), g.px(680));
-        const float x = (g.width() - column) * 0.5f;
-        float y = std::max(g.px(20), g.height() * 0.05f);
-
-        g.text(ui::Font::Subtitle, x, y, "Achievements", ui::theme::text);
-        char head[96];
-        std::snprintf(head, sizeof head, "%d of %zu    %d / %d points",
-                      app.achievements.unlocked_count(), app.achievements.list().size(),
-                      app.achievements.points_earned(), app.achievements.points_total());
-        const float head_w = g.text_width(ui::Font::Small, head);
-        g.text(ui::Font::Small, x + column - head_w, y + g.px(8), head, ui::theme::text_dim);
-        y += g.line_height(ui::Font::Subtitle) + g.px(8);
-
-        // Progress bar: how much of the point total has been earned.
-        const float bar_h = g.px(6);
-        const int total = app.achievements.points_total();
-        const float done = total > 0 ? float(app.achievements.points_earned()) / float(total) : 0.0f;
-        g.rect({x, y, column, bar_h}, ui::theme::surface_raised, bar_h * 0.5f);
-        if (done > 0) g.rect({x, y, column * done, bar_h}, ui::theme::accent, bar_h * 0.5f);
-        y += bar_h + g.px(14);
-
-        const float row_h = g.line_height(ui::Font::Body) + g.line_height(ui::Font::Small) + g.px(16);
-        const float gap = g.px(6);
-        const float bottom = g.height() - g.line_height(ui::Font::Small) - g.px(20);
-        const auto& all = app.achievements.list();
-        app.achievement_rows = std::max(1, int((bottom - y) / (row_h + gap)));
-        app.achievement_row_h = row_h + gap;
-        app.achievement_scroll =
-            std::clamp(app.achievement_scroll, 0, std::max(0, int(all.size()) - app.achievement_rows));
-        const int last = std::min(int(all.size()), app.achievement_scroll + app.achievement_rows);
-        for (int ai = app.achievement_scroll; ai < last; ++ai) {
-            const auto& a = all[size_t(ai)];
-            const SDL_FRect row{x, y, column, row_h};
-            g.panel(row, a.unlocked ? ui::theme::surface_raised : ui::theme::surface,
-                    a.unlocked ? ui::theme::accent_dim : ui::theme::outline, g.px(9));
-
-            char pts[16];
-            std::snprintf(pts, sizeof pts, "%d", a.points);
-            const float pts_w = g.text_width(ui::Font::Small, pts) + g.px(14);
-            g.pill(x + column - g.px(12) - pts_w, y + g.px(11), pts,
-                   a.unlocked ? ui::theme::accent : ui::theme::text_faint,
-                   (a.unlocked ? ui::theme::accent : ui::theme::text_faint).alpha(34));
-
-            const float text_w = column - g.px(32) - pts_w;
-            g.text_fit(ui::Font::Body, x + g.px(14), y + g.px(7), text_w, a.title,
-                       a.unlocked ? ui::theme::text : ui::theme::text_dim);
-            g.text_fit(ui::Font::Small, x + g.px(14), y + g.px(7) + g.line_height(ui::Font::Body),
-                       text_w, a.description,
-                       a.unlocked ? ui::theme::text_dim : ui::theme::text_faint);
-            y += row_h + gap;
-        }
-        const bool scrollable = int(all.size()) > app.achievement_rows;
-        const std::string hint =
-            app.touch_enabled ? (scrollable ? "Tap to close    Drag to scroll" : "Tap to close")
-                              : (scrollable ? "F7 or (B) close    Up/Down scroll" : "F7 or (B) close");
-        g.text(ui::Font::Small, x, g.height() - g.line_height(ui::Font::Small) - g.px(10), hint,
-               ui::theme::text_faint);
-    }
 
     app.achievement_tap = {0, 0, 0, 0};
-    if (app.touch_enabled && !app.show_achievement_list) {
+    if (app.touch_enabled && !app.menu.open()) {
         char label[32];
         std::snprintf(label, sizeof label, "%d/%zu", app.achievements.unlocked_count(),
                       app.achievements.list().size());
@@ -333,7 +267,6 @@ void draw_achievements(App& app) {
                    toast_w - g.px(28), t.title, ui::theme::text);
         ty += toast_h + g.px(8);
     }
-    g.end_frame();
 }
 
 void save_screenshot(App& app) {
@@ -347,35 +280,20 @@ void save_screenshot(App& app) {
 }
 
 // Every face and shoulder button is taken by the emulated 6-button pad (and
-// Back is its Mode button), so the achievement list is on the left stick
-// click, which nothing else uses. While the list is open the pad drives it
-// instead of the game.
+// Back is its Mode button), so the menu is on the left stick click, which
+// nothing else uses. While the menu is open it drives the menu, not the game.
 void handle_pad_button(App& app, Uint8 button) {
-    if (!app.achievements_on) return;
-    switch (button) {
-    case SDL_GAMEPAD_BUTTON_LEFT_STICK:
-        app.show_achievement_list = !app.show_achievement_list;
-        app.achievement_scroll = 0;
-        break;
-    case SDL_GAMEPAD_BUTTON_EAST:
-    case SDL_GAMEPAD_BUTTON_SOUTH:
-        if (app.show_achievement_list) app.show_achievement_list = false;
-        break;
-    case SDL_GAMEPAD_BUTTON_DPAD_UP:
-        if (app.show_achievement_list) --app.achievement_scroll;
-        break;
-    case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
-        if (app.show_achievement_list) ++app.achievement_scroll;
-        break;
-    default:
-        break;
-    }
+    if (app.menu.on_pad(button)) return;
+    if (button == SDL_GAMEPAD_BUTTON_LEFT_STICK) app.menu.toggle();
 }
 
 void handle_key(App& app, const SDL_KeyboardEvent& k) {
     if (k.repeat) return;
+    // An open menu owns the keyboard, so the function keys below cannot be
+    // triggered from underneath it.
+    if (app.menu.on_key(k.key)) return;
     switch (k.key) {
-    case SDLK_ESCAPE: app.running = false; break;
+    case SDLK_ESCAPE: app.menu.toggle(); break;
     case SDLK_F1: app.cfg.debug_overlay = !app.cfg.debug_overlay; break;
     case SDLK_F2: {
         static const AspectMode order[] = {AspectMode::Auto, AspectMode::R4_3, AspectMode::R16_9, AspectMode::R16_10, AspectMode::R21_9};
@@ -394,18 +312,7 @@ void handle_key(App& app, const SDL_KeyboardEvent& k) {
         break;
     case SDLK_F5: app.overlay_page = (app.overlay_page + 1) % 4; break;
     case SDLK_F6: app.cfg.widescreen = !app.cfg.widescreen; break;
-    case SDLK_F7:
-        app.show_achievement_list = !app.show_achievement_list;
-        app.achievement_scroll = 0;
-        break;
-    // While the list is open the arrow keys scroll it instead of reaching the
-    // game (the input gathering below drops the pad for the same reason).
-    case SDLK_UP:
-        if (app.show_achievement_list) --app.achievement_scroll;
-        break;
-    case SDLK_DOWN:
-        if (app.show_achievement_list) ++app.achievement_scroll;
-        break;
+    case SDLK_F7: app.menu.show_achievements(); break;
     case SDLK_F11:
         app.cfg.window_mode = app.cfg.window_mode == WindowMode::Windowed ? WindowMode::Borderless : WindowMode::Windowed;
         apply_window_mode(app);
@@ -495,6 +402,7 @@ int main(int argc, char** argv) {
     }
 
     bool force_interp = false;
+    std::string menu_page;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--interp") force_interp = true;
@@ -508,9 +416,10 @@ int main(int argc, char** argv) {
         else if (a == "--debug") app.cfg.debug_overlay = true;
         else if (a == "--autotest" && i + 1 < argc) app.autotest_frames = std::strtoull(argv[++i], nullptr, 10);
         else if (a == "--autotest-shot" && i + 1 < argc) app.autotest_shot = argv[++i];
-        // Opens the achievement list straight away, so the page can be
-        // captured without a keyboard (the same reason --autotest exists).
-        else if (a == "--show-achievements") app.show_achievement_list = true;
+        // Opens a menu page straight away, so it can be captured without a
+        // keyboard (the same reason --autotest exists).
+        else if (a == "--menu" && i + 1 < argc) menu_page = argv[++i];
+        else if (a == "--show-achievements") menu_page = "awards";
         else if (a == "--window-size" && i + 1 < argc) {
             int w = 0, h = 0;
             if (std::sscanf(argv[++i], "%dx%d", &w, &h) == 2) { app.cfg.raw["cli.w"] = std::to_string(w); app.cfg.raw["cli.h"] = std::to_string(h); }
@@ -542,7 +451,20 @@ int main(int argc, char** argv) {
     if (!app.renderer) { std::fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError()); return 1; }
     SDL_SetRenderVSync(app.renderer, app.cfg.vsync ? 1 : 0);
     LOGI("app", "renderer: %s", SDL_GetRendererName(app.renderer));
-    if (!app.ui.init(app.renderer)) LOGW("app", "no UI font; the achievement list is unavailable");
+    if (!app.ui.init(app.renderer)) LOGW("app", "no UI font; the menu is unavailable");
+    app.menu.bind(app.cfg);
+    app.menu.set_hooks({
+        [&app] {
+            SDL_SetRenderVSync(app.renderer, app.cfg.vsync ? 1 : 0);
+            if (app.texture)
+                SDL_SetTextureScaleMode(app.texture, app.cfg.linear_filter ? SDL_SCALEMODE_LINEAR
+                                                                           : SDL_SCALEMODE_NEAREST);
+            apply_window_mode(app);
+        },
+        [&app] { app.running = false; },
+    });
+    if (!menu_page.empty() && !app.menu.show_page(menu_page))
+        LOGW("app", "--menu: unknown page '%s' (main, options, awards)", menu_page.c_str());
 
     // Where to get the ROM, in order: the command line, the copy installed
     // by a previous run, then the config or the usual folders.
@@ -662,32 +584,14 @@ int main(int argc, char** argv) {
                 int w = 0, h = 0;
                 SDL_GetRenderOutputSize(app.renderer, &w, &h);
                 const float tx = e.tfinger.x * float(w), ty = e.tfinger.y * float(h);
-                if (app.achievements_on && app.show_achievement_list) {
-                    // The open list owns the whole screen: dragging scrolls it
-                    // by whole rows, and a touch that does not move is a tap,
-                    // which closes it (handled on finger up).
-                    if (e.type == SDL_EVENT_FINGER_DOWN) {
-                        app.achievement_drag_y = ty;
-                        app.achievement_drag_total = 0;
-                    } else if (app.achievement_row_h > 0) {
-                        const float dy = ty - app.achievement_drag_y;
-                        app.achievement_drag_total += std::fabs(dy);
-                        const int rows = int(dy / app.achievement_row_h);
-                        if (rows != 0) {
-                            app.achievement_scroll -= rows;
-                            app.achievement_drag_y += float(rows) * app.achievement_row_h;
-                        }
-                    }
+                if (app.menu.open()) {
+                    if (e.type == SDL_EVENT_FINGER_DOWN) app.menu.on_touch_down(tx, ty);
                     break;
                 }
                 if (e.type == SDL_EVENT_FINGER_DOWN && app.achievements_on) {
                     const SDL_FRect& r = app.achievement_tap;
                     if (r.w > 0 && tx >= r.x && tx <= r.x + r.w && ty >= r.y && ty <= r.y + r.h) {
-                        app.show_achievement_list = true;
-                        app.achievement_scroll = 0;
-                        // The finger that opened the list is still down; its
-                        // release must not be read as the tap that closes it.
-                        app.achievement_drag_total = kNotATap;
+                        app.menu.show_achievements();
                         break;
                     }
                 }
@@ -695,14 +599,7 @@ int main(int argc, char** argv) {
                 break;
             }
             case SDL_EVENT_FINGER_UP: case SDL_EVENT_FINGER_CANCELED:
-                if (app.show_achievement_list) {
-                    int oh = 0;
-                    SDL_GetRenderOutputSize(app.renderer, nullptr, &oh);
-                    // A tap, not a drag: anything under about 2% of the screen.
-                    if (app.achievement_drag_total < float(oh) * 0.02f)
-                        app.show_achievement_list = false;
-                    break;
-                }
+                if (app.menu.open()) { app.menu.on_touch_up(); break; }
                 app.fingers.erase(e.tfinger.fingerID);
                 break;
             case SDL_EVENT_WINDOW_FOCUS_LOST: case SDL_EVENT_DID_ENTER_BACKGROUND:
@@ -715,12 +612,12 @@ int main(int argc, char** argv) {
         app.fast_forward = ks[SDL_SCANCODE_TAB];
 
         // Unified input: keyboard | gamepads | touch -> InputState. While the
-        // achievement list is open it takes the controls, so scrolling it does
-        // not also move the character.
+        // menu is open it takes the controls, so driving it does not also move
+        // the character.
         uint16_t touch_held = 0;
         for (const auto& [id, b] : app.fingers) touch_held |= b;
         uint16_t buttons = 0;
-        if (!app.show_achievement_list) {
+        if (!app.menu.open()) {
             buttons = keyboard_buttons(app) | touch_held;
             for (SDL_Gamepad* g : app.pads) buttons |= gamepad_buttons(g);
         }
@@ -811,7 +708,12 @@ int main(int argc, char** argv) {
             app.touch.layout(ow, oh);
             draw_touch_controls(app, touch_held);
         }
-        if (app.achievements_on) draw_achievements(app);
+        if (app.ui.ready()) {
+            app.ui.begin_frame();
+            app.menu.draw(app.ui, app.achievements);
+            if (app.achievements_on) draw_toasts(app);
+            app.ui.end_frame();
+        }
         if (app.cfg.debug_overlay) {
             const SDL_DisplayMode* dm = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(app.window));
             app.timing.refresh_hz = dm ? unsigned(dm->refresh_rate + 0.5f) : 0;

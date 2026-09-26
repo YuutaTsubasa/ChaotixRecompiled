@@ -59,3 +59,15 @@ inline void fail(const char* file, int line, const std::string& msg) {
             tf::fail(__FILE__, __LINE__, buf_);                                                     \
         }                                                                                           \
     } while (0)
+
+// CHECK_EQ prints its values as integers, so strings need their own form.
+#define CHECK_STR(a, b)                                                                             \
+    do {                                                                                            \
+        const std::string va_ = (a); const std::string vb_ = (b);                                   \
+        if (va_ != vb_) {                                                                           \
+            char buf_[512];                                                                         \
+            std::snprintf(buf_, sizeof buf_, "%s == %s  (\"%s\" vs \"%s\")", #a, #b,                \
+                          va_.c_str(), vb_.c_str());                                                \
+            tf::fail(__FILE__, __LINE__, buf_);                                                     \
+        }                                                                                           \
+    } while (0)
