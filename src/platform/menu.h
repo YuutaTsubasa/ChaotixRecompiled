@@ -31,6 +31,8 @@ public:
         std::function<int()> pad_count;
         // The controller's own name, so the page can say which one it means.
         std::function<std::string(int index)> pad_name;
+        // Locks every achievement again and forgets the saved progress.
+        std::function<void()> reset_awards;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -93,6 +95,7 @@ private:
     Page return_to_ = Page::Main;
     int keys_player_ = 0;          // which player the key page is editing
     std::string awaiting_;         // button being rebound, empty when not capturing
+    bool confirm_reset_ = false;   // the reset row is asking a second time
     std::vector<Item> items_;
     int selected_ = 0;
     int scroll_ = 0;          // achievements page

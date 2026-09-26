@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <algorithm>
 #include <cstdlib>
 #include <cstdio>
 #include <string>
@@ -46,6 +47,7 @@ void Menu::set_page(Page p) {
     scroll_ = 0;
     anim_ = 0;
     awaiting_.clear();
+    confirm_reset_ = false;
     if (p == Page::Front) build_front();
     else if (p == Page::Main) build_main();
     else if (p == Page::Options) build_options();
@@ -169,7 +171,7 @@ void Menu::build_controls() {
                           }});
     }
     for (int p = 0; p < 2; ++p) {
-        items_.push_back({std::to_string(p + 1) + "P KEYS", {},
+        items_.push_back({std::to_string(p + 1) + "P KEYBOARD", {},
                           [this, p](int) { keys_player_ = p; set_page(Page::Keys); }});
     }
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
@@ -237,10 +239,22 @@ void Menu::build_options() {
     items_.push_back({"AWARDS",
                       [c] { return on_off(c->achievements); },
                       [c](int s) { if (s) c->achievements = !c->achievements; }});
+    items_.push_back({"RESET AWARDS",
+                      [this] { return confirm_reset_ ? std::string("SURE? PRESS AGAIN")
+                                                     : std::string("..."); },
+                      [this](int step) {
+                          // A value row, so that the confirmation can be shown
+                          // in place; left and right must not trip it.
+                          if (step != 0) return;
+                          if (!confirm_reset_) { confirm_reset_ = true; return; }
+                          confirm_reset_ = false;
+                          if (hooks_.reset_awards) hooks_.reset_awards();
+                      }});
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
 void Menu::move(int delta) {
+    confirm_reset_ = false;
     if (items_.empty()) return;
     const int n = int(items_.size());
     selected_ = (selected_ + delta % n + n) % n;
@@ -415,7 +429,19 @@ void Menu::draw_options(ui::Ui& g) {
     const float row_h = g.line_height(ui::Font::Pixel) + g.px(16);
     const float head_h = g.line_height(ui::Font::PixelBig) + g.px(22);
     const float hint_h = g.line_height(ui::Font::Small);
-    const float body = head_h + row_h * float(items_.size()) + g.px(12) + hint_h;
+    // A value too wide to sit beside its label - a controller's own name, say
+    // - gets a line of its own rather than running into it.
+    std::vector<bool> wrapped(items_.size(), false);
+    float rows_h = 0;
+    for (size_t i = 0; i < items_.size(); ++i) {
+        if (items_[i].value) {
+            const float need = g.text_width(ui::Font::Pixel, items_[i].label) +
+                               g.text_width(ui::Font::Pixel, items_[i].value()) + g.px(60);
+            wrapped[i] = need > column;
+        }
+        rows_h += wrapped[i] ? row_h * 2 : row_h;
+    }
+    const float body = head_h + rows_h + g.px(12) + hint_h;
     const float total = body + g.px(30);
     float y = std::max(g.px(14), (g.height() - total) * 0.5f) + g.px(16);
     const float panel_top = y - g.px(16);
@@ -437,20 +463,28 @@ void Menu::draw_options(ui::Ui& g) {
             g.text(ui::Font::Pixel, x - g.px(24) + bob, y, ">", ui::theme::accent);
         }
         g.text(ui::Font::Pixel, x, y, it.label, sel ? ui::theme::text : ui::theme::text_dim);
+        const float this_h = wrapped[i] ? row_h * 2 : row_h;
         if (it.value) {
             const std::string v = it.value();
             const float vw = g.text_width(ui::Font::Pixel, v);
-            const float vx = x + column - vw;
-            g.text(ui::Font::Pixel, vx, y, v, sel ? ui::theme::accent : ui::theme::text_dim);
+            // Wrapped values sit on the next line, indented, and are shortened
+            // if even a whole line cannot hold them.
+            const float vy = wrapped[i] ? y + row_h : y;
+            const float vx = wrapped[i] ? x + g.px(16) : x + column - vw;
+            const float room = wrapped[i] ? column - g.px(46) : column;
+            g.text_fit(ui::Font::Pixel, vx, vy, room, v,
+                       sel ? ui::theme::accent : ui::theme::text_dim);
             // Arrows only where left/right actually does something: on the
             // key page the value changes by capturing a press instead.
             if (sel && page_ != Page::Keys) {
-                g.text(ui::Font::Pixel, vx - g.px(22), y, "<", ui::theme::accent);
-                g.text(ui::Font::Pixel, x + column + g.px(8), y, ">", ui::theme::accent);
+                const float aw = wrapped[i] ? std::min(vw, room) : vw;
+                const float ax = wrapped[i] ? vx : x + column - vw;
+                g.text(ui::Font::Pixel, ax - g.px(22), vy, "<", ui::theme::accent);
+                g.text(ui::Font::Pixel, ax + aw + g.px(10), vy, ">", ui::theme::accent);
             }
         }
-        hits_.push_back({{x - g.px(24), y - g.px(4), column + g.px(48), row_h}, int(i)});
-        y += row_h;
+        hits_.push_back({{x - g.px(24), y - g.px(4), column + g.px(48), this_h}, int(i)});
+        y += this_h;
     }
 
     const char* hint = page_ == Page::Keys

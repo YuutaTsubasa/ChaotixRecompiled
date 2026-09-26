@@ -194,6 +194,14 @@ bool Tracker::load_progress(const std::string& path) {
     return true;
 }
 
+void Tracker::reset_progress() {
+    for (Achievement& a : achievements_) {
+        a.unlocked = false;
+        a.unlocked_at = 0;
+    }
+    LOGI("achievements", "progress reset");
+}
+
 bool Tracker::save_progress(const std::string& path) const {
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) return false;

@@ -81,6 +81,8 @@ public:
     bool load_definitions_text(const std::string& text, std::string* error);
     // Restores/stores unlocks (ini: one "id = unix_time" line per unlock).
     bool load_progress(const std::string& path);
+    // Locks everything again. The caller saves, or deletes, the file.
+    void reset_progress();
     bool save_progress(const std::string& path) const;
 
     // Call once per emulated frame. `unlocked` is invoked for each newly

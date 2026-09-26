@@ -125,7 +125,9 @@ TEST(menu, selection_wraps_both_ways) {
     bool quit = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, [&quit] { quit = true; }, nullptr, nullptr, nullptr});
+    Menu::Hooks h;
+    h.quit = [&quit] { quit = true; };
+    m.set_hooks(h);
     m.toggle();
     // QUIT is the last entry, so one step left from the first reaches it.
     CHECK(m.on_key(SDLK_LEFT));
@@ -154,7 +156,9 @@ TEST(menu, front_page_starts_the_game) {
     bool started = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, nullptr, [&started] { started = true; }, nullptr, nullptr});
+    Menu::Hooks h;
+    h.start_game = [&started] { started = true; };
+    m.set_hooks(h);
     m.open_front();
     CHECK_STR(m.page_name(), "front");
     CHECK_STR(m.selected_label(), "START GAME");
@@ -193,7 +197,9 @@ TEST(menu, controls_assigns_a_device_per_player) {
     Menu m;
     m.bind(cfg);
     // Two pads plugged in, so the choices are keyboard, pad1, pad2, none.
-    m.set_hooks({nullptr, nullptr, nullptr, [] { return 2; }, nullptr});
+    Menu::Hooks h;
+    h.pad_count = [] { return 2; };
+    m.set_hooks(h);
     m.open_front();
     CHECK(select_row(m, "CONTROLS"));
     CHECK(m.on_key(SDLK_RETURN));
@@ -219,11 +225,13 @@ TEST(menu, rebinding_a_key_takes_the_next_press) {
     cfg.set_defaults();
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, nullptr, nullptr, [] { return 0; }, nullptr});
+    Menu::Hooks h;
+    h.pad_count = [] { return 0; };
+    m.set_hooks(h);
     m.open_front();
     CHECK(select_row(m, "CONTROLS"));
     CHECK(m.on_key(SDLK_RETURN));
-    CHECK(select_row(m, "2P KEYS"));
+    CHECK(select_row(m, "2P KEYBOARD"));
     CHECK(m.on_key(SDLK_RETURN));
     CHECK_STR(m.page_name(), "keys");
 
@@ -239,6 +247,31 @@ TEST(menu, rebinding_a_key_takes_the_next_press) {
     CHECK(m.on_key(SDLK_ESCAPE));
     CHECK_STR(cfg.keys2["a"], "K");
     CHECK_STR(m.page_name(), "keys");      // and does not navigate away
+}
+
+TEST(menu, resetting_awards_asks_twice) {
+    Config cfg;
+    cfg.set_defaults();
+    int resets = 0;
+    Menu m;
+    m.bind(cfg);
+    Menu::Hooks h;
+    h.reset_awards = [&resets] { ++resets; };
+    m.set_hooks(h);
+    open_options(m);
+    CHECK(select_row(m, "RESET AWARDS"));
+
+    CHECK(m.on_key(SDLK_RETURN));   // asks for confirmation
+    CHECK_EQ(resets, 0);
+    CHECK(m.on_key(SDLK_RETURN));   // and only then does it
+    CHECK_EQ(resets, 1);
+
+    // Moving away cancels rather than leaving it armed.
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(m.on_key(SDLK_DOWN));
+    CHECK(select_row(m, "RESET AWARDS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_EQ(resets, 1);
 }
 
 TEST(menu, awards_page_is_reachable_and_returns) {

@@ -605,6 +605,11 @@ int main(int argc, char** argv) {
             const char* n = SDL_GetGamepadName(app.pads[size_t(i)]);
             return n ? n : "";
         },
+        [&app] {  // reset_awards
+            app.achievements.reset_progress();
+            std::error_code ec;
+            std::filesystem::remove(achievements_progress_path(app), ec);
+        },
     });
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
         LOGW("app", "--menu: unknown page '%s' (main, options, awards)", menu_page.c_str());
@@ -695,11 +700,10 @@ int main(int argc, char** argv) {
             LOGW("audio", "cannot open audio device: %s", SDL_GetError());
         }
     }
-#if defined(SDL_PLATFORM_ANDROID) || defined(SDL_PLATFORM_IOS)
-    app.touch_enabled = app.cfg.touch != TouchMode::Off;
-#else
+    // On: always drawn. Auto: only once the screen has actually been touched,
+    // so a phone plugged into a controller is not covered in buttons nobody
+    // is using. Off: never.
     app.touch_enabled = app.cfg.touch == TouchMode::On;
-#endif
 
     const uint64_t freq = SDL_GetPerformanceFrequency();
     const double frame_ticks = double(freq) / kNtscFrameRate;
@@ -808,7 +812,12 @@ int main(int argc, char** argv) {
         const int max_steps = app.fast_forward ? 8 : 3;
         uint64_t emu_t0 = SDL_GetPerformanceCounter();
         const bool autotest = app.autotest_frames != 0;
-        while ((accumulator >= frame_ticks || app.fast_forward || autotest) && steps < (autotest ? 64 : max_steps)) {
+        // With scripted host input the loop runs one emulated frame per pass,
+        // so a "hold for N frames" means N frames rather than N batches of up
+        // to 64 - the difference between a tap and holding the button down.
+        const int autotest_batch = app.host_script.empty() ? 64 : 1;
+        while ((accumulator >= frame_ticks || app.fast_forward || autotest) &&
+               steps < (autotest ? autotest_batch : max_steps)) {
             if (autotest && app.m->frame_count >= app.autotest_frames) break;
             // Scripted keys are pushed as events and handled on the next pass
             // round the event loop, exactly like a key someone pressed.
