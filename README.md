@@ -104,7 +104,8 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
-Pressing Start on the title screen opens the front end: START GAME, OPTIONS,
+Start during the opening animation skips it, as it always did. Pressing it
+again, once the title screen is up, opens the front end: START GAME, OPTIONS,
 CONTROLS, AWARDS and QUIT, drawn over the title screen in the style of the
 era. START GAME hands over to the game's own menus, so nothing the original
 offers is lost. Esc opens it again outside a level, and opens the same menu
@@ -118,9 +119,11 @@ instead.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
 gamepad, which is the default for player 1), the keyboard alone, one gamepad
-by name, or nothing. Each player also has its own keyboard set, so two people
-can share one keyboard — player 2 starts on the keypad. Select a button and
-press Enter to rebind it; Escape leaves it alone. OPTIONS has RESET AWARDS,
+by name, or nothing. Each player has its own keyboard set *and* its own
+gamepad set, so two people can share one keyboard (player 2 starts on the
+keypad) or two controllers can be laid out differently. Choose a button and
+press Enter, then press the key or the gamepad button to bind it; Escape
+leaves it alone. OPTIONS has RESET AWARDS,
 which asks twice before locking everything again.
 
 On-screen touch controls appear once the screen is touched (`TouchControls =
