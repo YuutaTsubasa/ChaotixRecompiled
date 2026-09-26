@@ -33,6 +33,11 @@ enum : uint32_t {
     kRingCullHi = 0x881052,      // cmpi.w #$1D0,d2
     kRingCullDone = 0x881058,    // both passed
     kRingCullExit = 0x881074,    // rts (rejected paths land here)
+    // The game mode dispatcher (ROM 0x3262): reads the mode from $FFDFDE and
+    // jumps to its handler, which then runs its own loop. This is the only
+    // point the game passes through between scenes, so it is where a stage the
+    // host asked for (runtime/stage_select.h) can be started.
+    kModeDispatch = 0x883262,
     kFullRedrawA = 0x8897AC,     // redraw 16 rows (unmasked X); latches W
     kFullRedrawB = 0x889810,     // redraw 16 rows (X masked by plane width); latches W
     kRowsA_X = 0x8897BE,         // after d0 = plane.x (full redraw A)
@@ -69,7 +74,7 @@ constexpr uint32_t kPlaneAStruct = 0xC1DE;
 
 // Sorted: the interpreter binary-searches this list.
 inline constexpr uint32_t kM68kHooks[] = {
-    kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit,
+    kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit, kModeDispatch,
     kFullRedrawA, kRowsA_X, kFullRedrawB, kRowsB_X, kPlaneUpdateA, kRowUpA_X, kRowDownA_X,
     kColLeftA_X, kColRightA_X, kPlaneUpdateB, kColLeftB_X, kColRightB_X, kRowUpB_X, kRowDownB_X,
     kCamClampMax, kCamClampMin, kCamClampBottom, kFillSplitX,

@@ -14,6 +14,7 @@
 #include "audio/ym2612.h"
 #include "input/input.h"
 #include "runtime/rom.h"
+#include "runtime/stage_select.h"
 #include "runtime/vdp.h"
 #include <cstdint>
 #include <functional>
@@ -156,6 +157,11 @@ public:
     bool clip_overridden = false;      // 32X clip rect widened by the patch
     int cull_shift = 0;                // pending d2 offset inside the ring cull patch
     bool plane_fill_clamped = true;    // last plane fill used the unmasked (clamped) form
+    // A stage the host has asked the game to start (TIME ATTACK). A game mode
+    // runs its own loop, so this is applied by the patch hook at the mode
+    // dispatcher, the one place the game passes through between scenes.
+    stage_select::Request stage_request;
+    bool stage_pending = false;
     // Host-side shadow of the 32X frame buffers for widescreen margins: while
     // wide_active, sprite (overwrite image) writes outside native columns land
     // here instead of in the line padding, which the game uses as storage.

@@ -73,11 +73,9 @@ void write_program_report(const Program& p, const std::string& dir, const char* 
     }
 }
 
-// Every instruction that touches one of these addresses, with a few
-// instructions either side, so the code can be read rather than guessed at.
-void report_refs_to(const Program& p, const std::vector<uint32_t>& targets) {
-    // Runtime addresses are not ROM offsets: the 68K sees the cartridge
-    // through windows, so each fetch goes back through the code spaces.
+// Runtime addresses are not ROM offsets: the 68K sees the cartridge through
+// windows, so a fetch goes back through the code spaces to find the bytes.
+std::string disasm_one(const Program& p, uint32_t addr, uint32_t* len = nullptr) {
     struct Ctx { const Program* p; };
     Ctx ctx{&p};
     auto fetch = [](void* user, uint32_t a) -> uint16_t {
@@ -89,11 +87,16 @@ void report_refs_to(const Program& p, const std::vector<uint32_t>& targets) {
         }
         return 0;
     };
-    auto disasm_at = [&](uint32_t addr) {
-        m68k::Insn in;
-        if (!m68k::decode(addr, fetch, &ctx, in)) return std::string("???");
-        return m68k::disassemble(in);
-    };
+    m68k::Insn in;
+    if (!m68k::decode(addr, fetch, &ctx, in)) return "???";
+    if (len) *len = in.len;
+    return m68k::disassemble(in);
+}
+
+// Every instruction that touches one of these addresses, with a few
+// instructions either side, so the code can be read rather than guessed at.
+void report_refs_to(const Program& p, const std::vector<uint32_t>& targets) {
+
 
     for (uint32_t t : targets) {
         std::printf("\n=== instructions touching %06X ===\n", t);
@@ -117,11 +120,28 @@ void report_refs_to(const Program& p, const std::vector<uint32_t>& targets) {
             for (int i = 0; i < 9; ++i) {
                 auto it = p.insns.find(a);
                 if (it == p.insns.end()) break;
-                std::printf("   %s%06X  %s\n", a == r.from ? "->" : "  ", a, disasm_at(a).c_str());
+                std::printf("   %s%06X  %s\n", a == r.from ? "->" : "  ", a, disasm_one(p, a).c_str());
                 a += it->second.len;
             }
         }
         if (!n) std::printf("  (no references found)\n");
+    }
+}
+
+// A straight listing from an address, for reading a routine.
+void report_disasm(const Program& p, const std::vector<std::pair<uint32_t, int>>& what) {
+    for (const auto& [start, count] : what) {
+        std::printf("\n=== %06X ===\n", start);
+        // Decoded straight from the ROM rather than from the traced set, so
+        // that code the analysis never reached can still be read.
+        uint32_t a = start;
+        for (int i = 0; i < count; ++i) {
+            uint32_t len = 0;
+            const std::string text = disasm_one(p, a, &len);
+            std::printf("   %06X  %s\n", a, text.c_str());
+            if (!len) break;
+            a += len;
+        }
     }
 }
 
@@ -133,6 +153,8 @@ int main(int argc, char** argv) {
     // --refs-to: the instructions that touch one address, with the code around
     // each, which is where following a variable back into the game starts.
     std::vector<uint32_t> refs_to;
+    // --disasm: a straight listing from one address, for reading a routine.
+    std::vector<std::pair<uint32_t, int>> disasm_at_args;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         if (a == "--rom" && i + 1 < argc) rom_path = argv[++i];
@@ -140,9 +162,15 @@ int main(int argc, char** argv) {
         else if (a == "--out" && i + 1 < argc) out_dir = argv[++i];
         else if (a == "--refs-to" && i + 1 < argc)
             refs_to.push_back(uint32_t(std::strtoul(argv[++i], nullptr, 16)));
-        else { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir] [--refs-to <hex addr>]\n"); return 2; }
+        else if (a == "--disasm" && i + 1 < argc) {
+            const std::string spec = argv[++i];
+            const size_t comma = spec.find(',');
+            disasm_at_args.push_back({uint32_t(std::strtoul(spec.c_str(), nullptr, 16)),
+                                      comma == std::string::npos ? 40 : std::atoi(spec.c_str() + comma + 1)});
+        }
+        else { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir] [--refs-to <hex addr>] [--disasm <hex addr>[,count]]\n"); return 2; }
     }
-    if (rom_path.empty()) { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir]\n"); return 2; }
+    if (rom_path.empty()) { std::fprintf(stderr, "usage: rom_analyzer --rom <file> [--coverage f.cov] [--out dir] [--refs-to <hex addr>] [--disasm <hex addr>[,count]]\n"); return 2; }
     Rom rom;
     std::string err;
     if (!rom.load(rom_path, &err)) { std::fprintf(stderr, "error: %s\n", err.c_str()); return 1; }
@@ -169,6 +197,7 @@ int main(int argc, char** argv) {
         p.add_coverage(cov);
         p.analyze();
         if (!refs_to.empty() && cpu == Cpu::M68K) report_refs_to(p, refs_to);
+        if (!disasm_at_args.empty() && cpu == Cpu::M68K) report_disasm(p, disasm_at_args);
         size_t bytes = 0;
         for (const auto& [k, b] : p.blocks) bytes += b.end - b.start;
         const char* tag = cpu == Cpu::M68K ? "m68k" : "sh2";

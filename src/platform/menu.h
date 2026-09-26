@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "platform/ui.h"
+#include "runtime/stage_select.h"
 
 namespace chaotix {
 
@@ -35,6 +36,9 @@ public:
         std::function<std::string(int index)> pad_name;
         // Locks every achievement again and forgets the saved progress.
         std::function<void()> reset_awards;
+        // Starts a level straight away, the way the game's own stage select
+        // would: TIME ATTACK.
+        std::function<void(const stage_select::Request&)> start_stage;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -67,7 +71,7 @@ public:
     void draw_backdrop_dim(ui::Ui& g) const;
 
 private:
-    enum class Page { Closed, Front, Main, Options, Controls, Keys, Achievements };
+    enum class Page { Closed, Front, Main, Options, Controls, Keys, TimeAttack, Achievements };
 
     struct Item {
         std::string label;
@@ -86,6 +90,7 @@ private:
     void build_main();
     void build_options();
     void build_controls();
+    void build_time_attack();
     void build_keys();
     void move(int delta);
     void activate(int step);

@@ -240,11 +240,37 @@ Machine（simulation）                                   Platform（SDL3）
 | 場景判斷 | 關卡每幀呼叫 plane 更新 `0x984E`/`0x98C4`。 | 最近 8 幀內有執行 → 寬螢幕；否則（標題、選單、特殊關卡、過場）4:3 + 黑邊。 |
 | 關卡邊界 | 鏡頭夾制（上）讓邊界通常落在關卡內。房間比畫面窄時鏡頭置中，邊界會超出該房間的鏡頭範圍，但那裡仍是引擎從關卡配置串流進來的圖塊（實測：選關大廳等窄房間看起來是連續的場景）。 | `patches::margin_cut` 只把「關卡原點左側」（沒有配置資料）的部分塗黑。 |
 | HUD | 由 32X 繪於固定位置 | 保持在原生 4:3 區域內（未移動）。 |
+| 遊戲模式分派器（68K `0x3262`） | `move.w $FFDFDE,d0; andi.w #$78,d0; jsr $883270(pc,d0.w)` — 16 個模式各一格 `jmp`。每個模式處理常式自己跑迴圈，只有在該場景結束時才回到這裡，因此這是遊戲在兩個場景之間唯一會經過的點。 | 不改變執行；只在此處套用 host 要求的關卡（TIME ATTACK，見 §8.3）。因為直譯器與生成碼在同一條指令前呼叫同一個 hook，lockstep 仍 bit-identical（測試 `stage_select_starts_the_chosen_level`）。 |
 
 **限制 / 已知差異**
 - E 上限 64（plane 環狀緩衝兩側至少保留 16 px 餘裕）。21:9 以上會在外側 pillarbox。
 - 關卡進行中才開啟寬螢幕時，W 要到下次載入關卡才鎖定，在那之前顯示黑邊。
 - camera clamp 改變會影響依 camera 決定的物件啟動時機；寬螢幕模式下 attract demo 的重播結果與原版不同（E = 0 完全相同）。
+
+### 8.3 遊戲自帶的 STAGE SELECT（TIME ATTACK 的來源）
+
+Knuckles' Chaotix 內含一個**完整但出貨版到不了**的關卡選擇畫面：遊戲模式 `0x30`（分派表 `0x883270` 第 6 格 → `$8F6F6C`）。
+它提供的欄位剛好就是 time attack 需要的全部，而且它自己的「按下 Start 開始」常式（`$8F72C8`，內含 `$8F7352`）就是遊戲正規的進入關卡路徑。
+以下全部由 ROM 分析取得，非推測（`rom_analyzer --disasm` / `--refs-to`）：
+
+| 畫面欄位 | 變數 | ROM 證據 |
+|---|---|---|
+| PLACE | `$FFFBC0`，開始時抄進 `$FFDFF2`（zone） | 名稱表 `$8F739E`（11 筆，每筆 0x15 bytes）；`$8F72F2 move.w $FFFBC0,$FFDFF2` |
+| LEVEL | `$FFDFF4` | 合法性表 `$8F738A`：每個 place 一個 byte，bit N = 有第 N 關（五個遊樂設施 = `0x3E` → 1–5；TRAINING = `0x1F` → 0–4；INTRODUCTION = `0x3F` → 0–5）。`$8F7378` 就是用 `btst` 查這張表，不合法時只播「不行」的音效 |
+| AT-TIME | `$FFDFF6`，只取 `and #6` | 名稱表 `$8F74B1`：MORNING / DAY / SUNSET / NIGHT |
+| PLAYER / COMBI | `$FFE038` / `$FFE03A` | 名稱表 `$8F74E8`：MIGHTY、`**********`、KNUCKLES、CHARMY BEE、VECTOR、BOMB、HEAVY、ESPIO。開始時各 `lsl` 兩次（`$8F7352`），成為 `$8818E4` 那張角色美術指標表的 byte 位移；`$8818AE` 依此載入兩名角色的圖 |
+| PLAYERS | `$FFE04C` | `$8F7362` 以 `$FFE04C` 查 `$8F739A` 的 2-byte 表，寫回 `$FFE04C` 與 **`$FFE05C`**（`0xFE` 或 `0x10`）。`$FFE05C` 是「某位玩家要讀哪一個手把緩衝」的位移：`$8A8778 lea $FFC138,a0; move.b $FFE05C,d0; addq.b #5,d0; adda.w d0,a0`，`0x10` 指到第二個手把的資料 |
+
+最後 `$8F731A move.w #$18,$FFDFDE`，也就是關卡模式。
+
+**驗證**：把 `$FFE038` 掃過 0/4/8/…/28 逐一截圖，得到的七個角色與上表名稱一一對應（slot 1 如其名是壞的，載入的是 MIGHTY 的圖卻配錯 mapping）；把 PLAYERS 設為 2 之後，第二個手把按住右鍵會讓 SDRAM（SH-2 的遊戲狀態）出現 1423 bytes 差異且夥伴實際分離，設為 1 時則是 0 bytes——**這個 ROM 確實有雙人模式**，只是出貨版沒有入口。
+只把 `$FFE04C` 或 `$FFE05C` 在關卡中途改掉沒有作用；必須走 `$8F72C8` 的順序（`src/runtime/stage_select.cpp` 即為該常式的轉錄）。
+
+**實作**：`runtime/stage_select.{h,cpp}` 是這些表與那段常式；`Machine::stage_request` / `stage_pending` 由前端寫入，
+由 `patches.cpp` 在模式分派器 hook 套用（關卡處理常式自己跑迴圈，前端在幀邊界寫 `$FFDFDE` 不會生效）。
+前端的 TIME ATTACK 頁只提供 place 0–6（七組真正可以跑的關卡）；`NOT USED` / `BONUS STAGE` / `SPECIAL STAGE` 走別的模式，未納入。
+
+**尚未解決**：如何辨認「這一輪跑完了」（而不是死掉）。腳本輸入無法跑到終點，所以最佳成績的記錄還沒有做——計時仍然是遊戲自己 HUD 上的 `$FFE052`。
 
 ## 9. 共用 build 架構
 
@@ -314,3 +340,5 @@ CMakeLists.txt
 | Camera / 物件啟動視窗 / culling 的資料結構（寬螢幕所需） | UNKNOWN — requires ROM analysis |
 | 音效驅動與 68K 的握手是否要求 Z80 實際執行 | ✅ Z80 已執行；流程不受阻，關卡載入時序與 Z80 互動略有變化（golden hash 已更新） |
 | 6 按鍵手把在本作中的用途 | UNKNOWN |
+| 遊戲自帶的 STAGE SELECT（模式 `0x30`）與其全部變數 | ✅ 已驗證（見 §8.3；含雙人模式 `$FFE05C`） |
+| 關卡「跑完」的訊號（用於記錄最佳成績） | UNKNOWN — requires ROM analysis |

@@ -312,3 +312,66 @@ TEST(menu, awards_page_is_reachable_and_returns) {
     CHECK(m.on_key(SDLK_RETURN));
     CHECK_STR(m.page_name(), "main");
 }
+
+TEST(menu, time_attack_page_carries_the_choices_into_the_request) {
+    // The front end's TIME ATTACK page collects the same fields the game's own
+    // stage select offers; START must hand them over unchanged.
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    bool started = false;
+    stage_select::Request got;
+    Menu::Hooks h;
+    h.start_stage = [&](const stage_select::Request& r) { started = true; got = r; };
+    m.set_hooks(h);
+
+    m.open_front();
+    CHECK(select_row(m, "TIME ATTACK"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "timeattack");
+
+    CHECK(select_row(m, "PLACE"));
+    m.on_key(SDLK_RIGHT);             // BOTANIC BASE -> SPEED SLIDER
+    CHECK(select_row(m, "AT-TIME"));
+    m.on_key(SDLK_RIGHT);             // MORNING -> DAY
+    CHECK(select_row(m, "PLAYERS"));
+    m.on_key(SDLK_RIGHT);             // 1 PLAYER -> 2 PLAYERS
+
+    CHECK(select_row(m, "START"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(started);
+    CHECK_EQ(got.place, 1);
+    CHECK_EQ(got.attime, 2);
+    CHECK(got.two_players);
+    CHECK(stage_select::valid(got));
+    CHECK(!m.open());                 // and it gets out of the way of the game
+}
+
+TEST(menu, time_attack_level_follows_what_the_place_has) {
+    // The places do not all offer the same levels: the attractions start at 1,
+    // TRAINING at 0. Changing the place must not leave a level behind that the
+    // place has no such thing as.
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    m.open_front();
+    CHECK(select_row(m, "TIME ATTACK"));
+    CHECK(m.on_key(SDLK_RETURN));
+
+    CHECK(select_row(m, "LEVEL"));
+    CHECK_STR(m.selected_label(), "LEVEL");
+    for (int i = 0; i < 8; ++i) {
+        // Every level the page will step to must be one BOTANIC BASE has.
+        CHECK(stage_select::has_level(cfg.ta_place, cfg.ta_level));
+        m.on_key(SDLK_RIGHT);
+    }
+    // TRAINING has level 0 and not level 5; BOTANIC BASE is the other way
+    // round, so walking between them must move the level.
+    cfg.ta_level = 5;
+    CHECK(select_row(m, "PLACE"));
+    for (int i = 0; i < 5; ++i) m.on_key(SDLK_RIGHT);   // -> TRAINING
+    CHECK_STR(stage_select::kPlaces[cfg.ta_place].name, "TRAINING");
+    CHECK(stage_select::has_level(cfg.ta_place, cfg.ta_level));
+}

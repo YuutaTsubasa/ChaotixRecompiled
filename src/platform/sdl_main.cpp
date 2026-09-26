@@ -345,6 +345,8 @@ bool return_to_title(App& app) {
     // The Start handed over at START GAME may still be in flight; leaving it
     // running would walk the game straight back out of the title.
     app.inject_start = 0;
+    // A stage asked for but not yet started would fire on the way back in.
+    app.m->stage_pending = false;
     app.m->remap_m68k();
     app.m->remap_sh2();
     app.handed_over = false;
@@ -582,6 +584,20 @@ int main(int argc, char** argv) {
             if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
             *app.title_snapshot = *app.m;
             app.handed_over = true;
+            app.inject_start = 8;
+        };
+        hooks.start_stage = [&app](const stage_select::Request& r) {
+            // Same hand-over as START GAME, but from the title screen rather
+            // than wherever the game happens to be: the request is applied at
+            // the game's mode dispatcher, which a running level never reaches.
+            if (app.handed_over) return_to_title(app);
+            if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
+            *app.title_snapshot = *app.m;
+            app.m->stage_request = r;
+            app.m->stage_pending = true;
+            app.handed_over = true;
+            // The title screen is waiting on Start; the dispatcher is reached
+            // once its handler is done with it, and the stage starts there.
             app.inject_start = 8;
         };
         hooks.back_to_title = [&app] {

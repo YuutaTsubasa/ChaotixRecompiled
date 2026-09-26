@@ -41,6 +41,15 @@ struct Config {
     std::map<std::string, std::string> keys2;
     std::map<std::string, std::string> pads;
     std::map<std::string, std::string> pads2;
+    // [TimeAttack] The selection the front end offers next time, so a run can
+    // be repeated without setting it all up again. Values are the game's own
+    // (runtime/stage_select.h).
+    int ta_place = 0;
+    int ta_level = 1;
+    int ta_time = 0;      // 0, 2, 4 or 6
+    int ta_player = 2;    // KNUCKLES
+    int ta_combi = 7;     // ESPIO
+    bool ta_two_players = false;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

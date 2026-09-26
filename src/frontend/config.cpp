@@ -94,6 +94,13 @@ bool Config::load(const std::string& path) {
             else if (k.rfind("Key2.", 0) == 0) keys2[k.substr(5)] = v;
             else if (k.rfind("Pad2.", 0) == 0) pads2[k.substr(5)] = v;
             else if (k.rfind("Pad.", 0) == 0) pads[k.substr(4)] = v;
+        } else if (section == "TimeAttack") {
+            if (k == "Place") ta_place = std::atoi(v.c_str());
+            else if (k == "Level") ta_level = std::atoi(v.c_str());
+            else if (k == "Time") ta_time = std::atoi(v.c_str());
+            else if (k == "Player") ta_player = std::atoi(v.c_str());
+            else if (k == "Combi") ta_combi = std::atoi(v.c_str());
+            else if (k == "TwoPlayers") ta_two_players = parse_bool(v, ta_two_players);
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
             else if (k == "UseRecompiledCode") use_recompiled = parse_bool(v, use_recompiled);
@@ -132,6 +139,9 @@ bool Config::save(const std::string& path) const {
     for (const auto& [b, k] : keys2) std::fprintf(f, "Key2.%s = %s\n", b.c_str(), k.c_str());
     for (const auto& [b, k] : pads) std::fprintf(f, "Pad.%s = %s\n", b.c_str(), k.c_str());
     for (const auto& [b, k] : pads2) std::fprintf(f, "Pad2.%s = %s\n", b.c_str(), k.c_str());
+    std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
+    std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
+                 ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");
     std::fclose(f);
     return true;

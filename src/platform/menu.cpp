@@ -37,7 +37,8 @@ void cycle(T& value, int count, int step) {
 bool Menu::is_row_page(Page p) { return p == Page::Main; }
 
 bool Menu::is_list_page(Page p) {
-    return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys;
+    return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys ||
+           p == Page::TimeAttack;
 }
 
 void Menu::set_page(Page p) {
@@ -53,6 +54,7 @@ void Menu::set_page(Page p) {
     else if (p == Page::Options) build_options();
     else if (p == Page::Controls) build_controls();
     else if (p == Page::Keys) build_keys();
+    else if (p == Page::TimeAttack) build_time_attack();
     else items_.clear();
 }
 
@@ -66,6 +68,7 @@ void Menu::show_achievements() { set_page(Page::Achievements); }
 
 bool Menu::show_page(const std::string& name) {
     if (name == "front") set_page(Page::Front);
+    else if (name == "timeattack") set_page(Page::TimeAttack);
     else if (name == "controls") set_page(Page::Controls);
     else if (name == "keys1" || name == "keys2" || name == "pad1" || name == "pad2") {
         keys_pad_ = name.rfind("pad", 0) == 0;
@@ -86,6 +89,7 @@ std::string Menu::page_name() const {
     case Page::Options: return "options";
     case Page::Controls: return "controls";
     case Page::Keys: return "keys";
+    case Page::TimeAttack: return "timeattack";
     case Page::Achievements: return "awards";
     default: return "";
     }
@@ -104,6 +108,7 @@ void Menu::build_front() {
         close();
         if (hooks_.start_game) hooks_.start_game();
     }});
+    items_.push_back({"TIME ATTACK", {}, [this](int) { set_page(Page::TimeAttack); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
@@ -183,6 +188,74 @@ void Menu::build_controls() {
         items_.push_back({std::to_string(p + 1) + "P GAMEPAD", {},
                           [this, p](int) { keys_player_ = p; keys_pad_ = true; set_page(Page::Keys); }});
     }
+    items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
+}
+
+// TIME ATTACK: the fields the game's own stage select offers, in its order, so
+// the choices are the game's rather than an invention of ours. Everything is
+// kept in the settings file, so the same run can be set up again in one go.
+void Menu::build_time_attack() {
+    using namespace stage_select;
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+
+    // A place only has certain levels, so changing the place pulls the level
+    // to one it actually has.
+    auto fix_level = [c] {
+        if (!has_level(c->ta_place, c->ta_level)) c->ta_level = first_level(c->ta_place);
+    };
+    fix_level();
+
+    items_.push_back({"PLACE",
+                      [c] { return std::string(kPlaces[c->ta_place].name); },
+                      [c, fix_level](int s) {
+                          if (!s) return;
+                          c->ta_place = (c->ta_place + s + kPlayablePlaces) % kPlayablePlaces;
+                          fix_level();
+                      }});
+    items_.push_back({"LEVEL",
+                      [c] { return std::to_string(c->ta_level); },
+                      [c](int s) {
+                          if (!s) return;
+                          // Step to the next level this place has, wrapping.
+                          for (int i = 0; i < 8; ++i) {
+                              c->ta_level = (c->ta_level + s + 8) % 8;
+                              if (has_level(c->ta_place, c->ta_level)) return;
+                          }
+                      }});
+    items_.push_back({"AT-TIME",
+                      [c] { return std::string(kTimes[(c->ta_time >> 1) & 3]); },
+                      [c](int s) { if (s) c->ta_time = ((c->ta_time / 2 + s + 4) % 4) * 2; }});
+    // The two character rows skip the gap in the game's table, which loads
+    // broken art.
+    auto step_character = [](int& who, int s) {
+        for (int i = 0; i < kCharacterCount; ++i) {
+            who = (who + s + kCharacterCount) % kCharacterCount;
+            if (who != kBrokenCharacter) return;
+        }
+    };
+    items_.push_back({"PLAYER",
+                      [c] { return std::string(kCharacters[c->ta_player]); },
+                      [c, step_character](int s) { if (s) step_character(c->ta_player, s); }});
+    items_.push_back({"COMBI",
+                      [c] { return std::string(kCharacters[c->ta_combi]); },
+                      [c, step_character](int s) { if (s) step_character(c->ta_combi, s); }});
+    items_.push_back({"PLAYERS",
+                      [c] { return std::string(c->ta_two_players ? "2 PLAYERS" : "1 PLAYER"); },
+                      [c](int s) { if (s) c->ta_two_players = !c->ta_two_players; }});
+    items_.push_back({"START", {}, [this, c](int) {
+        Request r;
+        r.place = uint16_t(c->ta_place);
+        r.level = uint16_t(c->ta_level);
+        r.attime = uint16_t(c->ta_time);
+        r.player = uint16_t(c->ta_player);
+        r.combi = uint16_t(c->ta_combi);
+        r.two_players = c->ta_two_players;
+        if (!valid(r)) return;
+        close();
+        if (hooks_.start_stage) hooks_.start_stage(r);
+    }});
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
@@ -411,7 +484,8 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
         draw_front(g);
     else if (page_ == Page::Main)
         draw_row_page(g, "Left/Right choose    Enter select    Esc close");
-    else if (page_ == Page::Options || page_ == Page::Controls || page_ == Page::Keys)
+    else if (page_ == Page::Options || page_ == Page::Controls || page_ == Page::Keys ||
+             page_ == Page::TimeAttack)
         draw_options(g);
     else
         draw_achievements(g, ach);
@@ -538,7 +612,8 @@ void Menu::draw_options(ui::Ui& g) {
     g.panel({x - pad, panel_top, column + pad * 2, total},
             ui::theme::background.alpha(240), ui::theme::accent, g.px(4), g.px(3));
 
-    const char* heading = page_ == Page::Controls ? "CONTROLS"
+    const char* heading = page_ == Page::TimeAttack ? "TIME ATTACK"
+                        : page_ == Page::Controls ? "CONTROLS"
                         : page_ == Page::Keys
                               ? (keys_player_ == 0 ? (keys_pad_ ? "1P GAMEPAD" : "1P KEYBOARD")
                                                    : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))

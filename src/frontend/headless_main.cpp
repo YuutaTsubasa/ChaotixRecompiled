@@ -176,6 +176,11 @@ int main(int argc, char** argv) {
     int break_cpu = -1;
     uint64_t trace_from = 0, trace_to = 0;
     uint32_t break_pc = 0;
+    // --stage FRAME:PLACE:LEVEL:TIME:PLAYER:COMBI:PLAYERS -- ask the game to
+    // start a stage the way the front end's TIME ATTACK does.
+    uint64_t stage_frame = 0;
+    bool stage_set = false;
+    stage_select::Request stage;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -258,6 +263,18 @@ int main(int argc, char** argv) {
             auto parts = split(next(), ':');
             break_cpu = std::atoi(parts[0].c_str());
             break_pc = uint32_t(std::strtoul(parts[1].c_str(), nullptr, 16));
+        }
+        else if (a == "--stage") {
+            auto parts = split(next(), ':');
+            if (parts.size() < 7) { std::fprintf(stderr, "bad --stage\n"); return 2; }
+            stage_frame = std::strtoull(parts[0].c_str(), nullptr, 10);
+            stage.place = uint16_t(std::atoi(parts[1].c_str()));
+            stage.level = uint16_t(std::atoi(parts[2].c_str()));
+            stage.attime = uint16_t(std::atoi(parts[3].c_str()));
+            stage.player = uint16_t(std::atoi(parts[4].c_str()));
+            stage.combi = uint16_t(std::atoi(parts[5].c_str()));
+            stage.two_players = std::atoi(parts[6].c_str()) != 0;
+            stage_set = true;
         }
         else { std::fprintf(stderr, "unknown argument %s\n", a.c_str()); return 2; }
     }
@@ -353,6 +370,12 @@ int main(int argc, char** argv) {
             if (f >= p.frame && f < p.frame + p.duration) btn |= p.buttons;
         m->input.pad[0] = btn;
         if (ref) ref->input.pad[0] = btn;
+        if (stage_set && f == stage_frame) {
+            // Both machines, so lockstep still compares like with like.
+            m->stage_request = stage;
+            m->stage_pending = true;
+            if (ref) { ref->stage_request = stage; ref->stage_pending = true; }
+        }
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
         if (m->audio_enabled) { wav.insert(wav.end(), m->audio_out.begin(), m->audio_out.end()); m->audio_out.clear(); }
@@ -436,6 +459,12 @@ int main(int argc, char** argv) {
     if (ref) std::printf("lockstep: %llu frames bit-identical between interpreter and recompiled execution\n", (unsigned long long)lockstep_ok_frames);
     if (!coverage_path.empty()) {
         if (cov.save(coverage_path)) std::printf("coverage written to %s (%zu entries)\n", coverage_path.c_str(), cov.size());
+    }
+    if (stage_set) {
+        const auto w16 = [&m](uint32_t o) { return unsigned(m->wram[o] << 8 | m->wram[o + 1]); };
+        std::printf("stage: pending=%d mode=%04X zone=%u level=%u player=%u combi=%u padoff=%02X time=%u\n",
+                    int(m->stage_pending), w16(0xDFDE), w16(0xDFF2), w16(0xDFF4), w16(0xE038),
+                    w16(0xE03A), m->wram[0xE05C], w16(0xE052));
     }
     dump_state(*m);
     return hash_failures ? 4 : 0;

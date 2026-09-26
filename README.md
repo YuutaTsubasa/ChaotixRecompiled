@@ -83,7 +83,8 @@ A ROM given on the command line still wins over the installed copy.
 Useful flags: `--user-dir DIR` keeps settings, saves and the installed ROM in
 `DIR` (a portable install), `--install FILE` installs a ROM without showing
 the setup page (for packaging scripts), and `--menu main|options|awards`
-opens a menu page at startup (so it can be captured without a keyboard).
+opens a menu page at startup (so it can be captured without a keyboard;
+`timeattack` is one of them).
 
 Settings live in the user data directory (`Config/chaotix.ini`), saves in
 `SaveData/`, the installed ROM in `Game/`.
@@ -106,7 +107,7 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 
 The menu is the front end: it is up as soon as the program starts, a screen of
 its own with the game's title art framed on the left and the list beside it —
-START GAME, OPTIONS, CONTROLS, AWARDS, QUIT — over the same picture enlarged
+START GAME, TIME ATTACK, OPTIONS, CONTROLS, AWARDS, QUIT — over the same picture enlarged
 and dimmed. The art is the game drawing its own title screen, from your ROM,
 so nothing is extracted or shipped.
 
@@ -117,6 +118,25 @@ adds BACK TO TITLE. The game has no way back to its title screen, so the
 title is copied when control is handed over and put back on the way out;
 anything chosen inside the game's menus is discarded, as it would be by
 turning the console off.
+
+TIME ATTACK drops you straight into any level. Knuckles' Chaotix carries a
+complete stage-select screen that the shipped game never reaches (game mode
+0x30), and the page offers exactly what that screen does, in its order:
+
+| Field | What it chooses |
+| --- | --- |
+| PLACE | Botanic Base, Speed Slider, Amazing Arena, Techno Tower, Marina Madness, Training, Introduction |
+| LEVEL | which of that place's levels — the attractions have 1-5, Training 0-4 |
+| AT-TIME | Morning, Day, Sunset, Night |
+| PLAYER | the character you play: Mighty, Knuckles, Charmy Bee, Vector, Bomb, Heavy or Espio |
+| COMBI | the partner on the other end of the tether, from the same seven |
+| PLAYERS | 1 PLAYER, or 2 PLAYERS to give the partner to the second controller |
+
+The names, the levels each place has, and the two-player switch are all read
+out of the game's own tables rather than invented here, and START uses the
+game's own route into a level, so a run behaves exactly as the console would.
+The game's HUD keeps the time. Two players needs a device for player 2 under
+CONTROLS, which starts as NONE.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
 gamepad, which is the default for player 1), the keyboard alone, one gamepad
@@ -146,14 +166,19 @@ account is involved. `F7` shows the list; see
 
 ## Tools
 
-- `rom_analyzer --rom <rom> [--coverage f.cov] --out dir [--refs-to ADDR]` —
+- `rom_analyzer --rom <rom> [--coverage f.cov] --out dir [--refs-to ADDR]
+  [--disasm ADDR[,COUNT]]` —
   verification and reports (code spaces, functions, xrefs, hardware register
   usage). `--refs-to` prints every instruction that touches one address, with
   the code around it, which is how a variable is followed back into the game.
+  `--disasm` lists a routine from one address, decoding straight from the ROM,
+  so code the traces never reached can still be read.
 - `chaotix_recomp --rom <rom> --coverage f.cov --out generated` — the recompiler.
 - `chaotix_headless --rom <rom> --frames N [--wide E] [--wide-bottom R]
   [--lockstep] [--compare-native] [--shot F] [--press F:btn:dur] [--coverage f]
-  [--trace ...]` — deterministic headless execution and validation.
+  [--stage F:PLACE:LEVEL:TIME:PLAYER:COMBI:PLAYERS] [--trace ...]` — deterministic
+  headless execution and validation. `--stage` asks the game to start a level
+  the way the front end's TIME ATTACK does.
 
 ## Tests
 

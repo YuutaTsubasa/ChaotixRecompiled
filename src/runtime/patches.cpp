@@ -21,6 +21,13 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     case kPlaneUpdateB:
         m->level_seen_frame = m->frame_count;
         return;
+    case kModeDispatch:
+        // The game is between scenes: a stage the host asked for can start.
+        if (m->stage_pending) {
+            m->stage_pending = false;
+            stage_select::apply(*m, m->stage_request);
+        }
+        return;
     case kRingCullLo:
     case kRingCullHi:
     case kRingCullDone:
