@@ -182,12 +182,25 @@ int main(int argc, char** argv) {
     uint64_t stage_frame = 0;
     bool stage_set = false;
     stage_select::Request stage;
+    // -1 leaves the machine's own default ({true, false}); a replay or the
+    // command line can say otherwise. Setting it changes how the game reads
+    // the pad, which changes the run.
+    int six_button = -1;
+    std::string sram_path;            // --sram FILE: the save the session ran with
+    bool want_audio = false;          // --audio: the frontend runs with it on
     int stage_kick = -1;              // frames since the request, while it waits
     time_attack::Run ta;              // the same run tracking the frontend uses
     // --replay-input FILE: a session recorded by the frontend, so that what a
     // person did can be studied here, deterministically, as often as needed.
     std::vector<uint32_t> replay;
-    std::map<uint64_t, stage_select::Request> replay_stages;
+    struct ReplayStage {
+        stage_select::Request request;
+        int wide = 0, wide_bottom = 0;
+        bool six_button = false;
+        bool has_video = false;   // older recordings do not carry these
+    };
+    std::map<uint64_t, ReplayStage> replay_stages;
+    int replay_result = -1;           // what the session it came from produced
     uint64_t stage_started = 0;       // the frame the game took it
     bool stage_pending_last = false;
     for (int i = 1; i < argc; ++i) {
@@ -273,6 +286,10 @@ int main(int argc, char** argv) {
             break_cpu = std::atoi(parts[0].c_str());
             break_pc = uint32_t(std::strtoul(parts[1].c_str(), nullptr, 16));
         }
+        else if (a == "--six-button") six_button = 1;
+        else if (a == "--three-button") six_button = 0;
+        else if (a == "--audio") { want_audio = true; }
+        else if (a == "--sram") sram_path = next();
         else if (a == "--replay-input") {
             const std::string path = next();
             FILE* rf = std::fopen(path.c_str(), "r");
@@ -280,18 +297,27 @@ int main(int argc, char** argv) {
             char line[256];
             while (std::fgets(line, sizeof line, rf)) {
                 if (!std::strncmp(line, "chaotix-input", 13)) continue;
+                if (!std::strncmp(line, "result ", 7)) {
+                    replay_result = std::atoi(line + 7);
+                    continue;
+                }
                 unsigned long long fr = 0;
                 unsigned pl = 0, lv = 0, at = 0, py = 0, cb = 0;
-                int two = 0;
-                if (std::sscanf(line, "stage %llu %u %u %u %u %u %d", &fr, &pl, &lv, &at, &py, &cb,
-                                &two) == 7) {
-                    stage_select::Request q;
-                    q.place = uint16_t(pl);
-                    q.level = uint16_t(lv);
-                    q.attime = uint16_t(at);
-                    q.player = uint16_t(py);
-                    q.combi = uint16_t(cb);
-                    q.two_players = two != 0;
+                int two = 0, wd = 0, wdb = 0, six = 0;
+                if (std::sscanf(line, "stage %llu %u %u %u %u %u %d %d %d %d", &fr, &pl, &lv, &at,
+                                &py, &cb, &two, &wd, &wdb, &six) >= 7) {
+                    ReplayStage q;
+                    q.request.place = uint16_t(pl);
+                    q.request.level = uint16_t(lv);
+                    q.request.attime = uint16_t(at);
+                    q.request.player = uint16_t(py);
+                    q.request.combi = uint16_t(cb);
+                    q.request.two_players = two != 0;
+                    q.wide = wd;
+                    q.wide_bottom = wdb;
+                    q.six_button = six != 0;
+                    q.has_video = std::sscanf(line, "stage %llu %u %u %u %u %u %d %d %d %d", &fr,
+                                              &pl, &lv, &at, &py, &cb, &two, &wd, &wdb, &six) == 10;
                     replay_stages[fr] = q;
                     continue;
                 }
@@ -321,10 +347,23 @@ int main(int argc, char** argv) {
     std::string err;
     if (!m->load_rom(rom_path, &err)) { std::fprintf(stderr, "error: %s\n", err.c_str()); return 1; }
     m->reset();
-    m->audio_enabled = !wav_path.empty();
+    m->audio_enabled = !wav_path.empty() || want_audio;
     m->profile = profile;
     m->wide_extra = wide;
     m->wide_extra_bottom = wide_bottom;
+    if (six_button >= 0) m->input.six_button[0] = m->input.six_button[1] = six_button != 0;
+    if (!sram_path.empty()) {
+        // Cartridge saves change what the game does, so a replay of somebody
+        // else's session needs theirs.
+        if (FILE* sf = std::fopen(sram_path.c_str(), "rb")) {
+            const size_t n = std::fread(m->sram, 1, sizeof m->sram, sf);
+            std::fclose(sf);
+            std::printf("loaded %zu bytes of cartridge SRAM\n", n);
+        } else {
+            std::fprintf(stderr, "cannot open %s\n", sram_path.c_str());
+            return 2;
+        }
+    }
     std::vector<int16_t> wav;
     RecompStatus rs = install_recompiled_code(*m, !force_interp);
     std::printf("execution: %s\n", rs.description.c_str());
@@ -435,10 +474,27 @@ int main(int argc, char** argv) {
             // were made.
             auto it = replay_stages.find(f);
             if (it != replay_stages.end()) {
-                m->stage_request = it->second;
+                const ReplayStage& q = it->second;
+                // The same conditions the run was played under, or it
+                // diverges. A recording from before these were kept leaves
+                // whatever the command line asked for.
+                if (q.has_video) {
+                    m->wide_extra = q.wide;
+                    m->wide_extra_bottom = q.wide_bottom;
+                    m->input.six_button[0] = m->input.six_button[1] = q.six_button;
+                }
+                m->stage_request = q.request;
                 m->stage_pending = true;
-                if (ref) { ref->stage_request = it->second; ref->stage_pending = true; }
-                ta.begin(it->second);
+                if (ref) {
+                    if (q.has_video) {
+                        ref->wide_extra = q.wide;
+                        ref->wide_extra_bottom = q.wide_bottom;
+                        ref->input.six_button[0] = ref->input.six_button[1] = q.six_button;
+                    }
+                    ref->stage_request = q.request;
+                    ref->stage_pending = true;
+                }
+                ta.begin(q.request);
                 stage_set = true;
                 stage_frame = f;
             }
@@ -452,10 +508,14 @@ int main(int argc, char** argv) {
         if (ref) { ref->input.pad[0] = btn; ref->input.pad[1] = btn2; }
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
-        if (ta.update(*m))
+        if (ta.update(*m)) {
             std::printf("stage: the run ended after %d frames (%s)%s\n", ta.time,
                         stage_select::format_time(ta.time).c_str(),
                         ta.timed_out() ? " - the level's own limit" : "");
+            if (replay_result >= 0)
+                std::printf("replay: %s -- the session this came from ended at %d frames\n",
+                            ta.time == replay_result ? "faithful" : "DRIFTED", replay_result);
+        }
         // The running clock, so a screenshot at the same frame can be held
         // against what the game's own HUD says.
         if (ta.running && ta.clock_started && shots.count(f))

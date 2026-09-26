@@ -118,7 +118,16 @@ struct App {
     std::vector<uint32_t> recorded;      // pad 1 in the low word, pad 2 in the high
     // Every stage asked for, and when: the request is applied by a patch hook
     // rather than through the pad, so a replay has to be told about it.
-    struct StageEvent { uint64_t frame; stage_select::Request request; };
+    // Alongside the request, the settings that change how the game runs:
+    // widescreen moves the camera clamp and what the engine streams, and a
+    // 6-button pad is detected differently. A replay that does not match these
+    // diverges partway through the level.
+    struct StageEvent {
+        uint64_t frame;
+        stage_select::Request request;
+        int wide = 0, wide_bottom = 0;
+        bool six_button = false;
+    };
     std::vector<StageEvent> recorded_stages;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
@@ -160,14 +169,18 @@ std::string achievements_progress_path(const App& app) {
 // One line of header, the stages that were asked for, then one pad word per
 // emulated frame: enough for chaotix_headless --replay-input to play the
 // session back exactly.
-void write_recording(const App& app, const std::string& path) {
+void write_recording(const App& app, const std::string& path, int result_frames = -1) {
     FILE* f = std::fopen(path.c_str(), "w");
     if (!f) { LOGW("app", "could not write %s", path.c_str()); return; }
     std::fprintf(f, "chaotix-input 1 frames=%zu\n", app.recorded.size());
+    // What this session produced, so a replay can say at once whether it
+    // reproduced the session or drifted off somewhere else.
+    if (result_frames >= 0) std::fprintf(f, "result %d\n", result_frames);
     for (const auto& e : app.recorded_stages)
-        std::fprintf(f, "stage %llu %u %u %u %u %u %d\n", (unsigned long long)e.frame,
+        std::fprintf(f, "stage %llu %u %u %u %u %u %d %d %d %d\n", (unsigned long long)e.frame,
                      e.request.place, e.request.level, e.request.attime, e.request.player,
-                     e.request.combi, int(e.request.two_players));
+                     e.request.combi, int(e.request.two_players), e.wide, e.wide_bottom,
+                     int(e.six_button));
     for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
     std::fclose(f);
     LOGI("app", "session recorded to %s (%zu frames)", path.c_str(), app.recorded.size());
@@ -458,7 +471,7 @@ void follow_time_attack(App& app) {
     // The run, as it was played. A recorded time that disagrees with what the
     // game showed can then be looked into without anyone having had to set up
     // a recording beforehand.
-    write_recording(app, app.store.save_dir() + "last_run.txt");
+    write_recording(app, app.store.save_dir() + "last_run.txt", frames);
     if (return_to_title(app)) app.menu.show_page("timeattack");
 }
 
@@ -707,7 +720,8 @@ int main(int argc, char** argv) {
             app.inject_start = 0;
             app.stage_kick = 0;
             app.ta.begin(r);
-            app.recorded_stages.push_back({app.m->frame_count, r});
+            app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
+                                           app.m->wide_extra_bottom, app.cfg.six_button});
         };
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
