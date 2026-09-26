@@ -14,7 +14,8 @@ namespace {
 // because one was added before it. The main page is a row (left/right), the
 // options page a column (up/down). Returns false if it is not there.
 bool select_row(Menu& m, const std::string& label) {
-    const SDL_Keycode step = m.page_name() == "main" ? SDLK_RIGHT : SDLK_DOWN;
+    const bool row = m.page_name() == "main" || m.page_name() == "front";
+    const SDL_Keycode step = row ? SDLK_RIGHT : SDLK_DOWN;
     const std::string first = m.selected_label();
     for (int i = 0; i < 64; ++i) {
         if (m.selected_label() == label) return true;
@@ -124,7 +125,7 @@ TEST(menu, selection_wraps_both_ways) {
     bool quit = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, [&quit] { quit = true; }});
+    m.set_hooks({nullptr, [&quit] { quit = true; }, nullptr});
     m.toggle();
     // QUIT is the last entry, so one step left from the first reaches it.
     CHECK(m.on_key(SDLK_LEFT));
@@ -143,6 +144,45 @@ TEST(menu, an_action_row_ignores_left_and_right) {
 
     CHECK(m.on_key(SDLK_LEFT));
     CHECK_STR(m.page_name(), "options");  // nothing happened
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "main");
+}
+
+TEST(menu, front_page_starts_the_game) {
+    Config cfg;
+    cfg.set_defaults();
+    bool started = false;
+    Menu m;
+    m.bind(cfg);
+    m.set_hooks({nullptr, nullptr, [&started] { started = true; }});
+    m.open_front();
+    CHECK_STR(m.page_name(), "front");
+    CHECK_STR(m.selected_label(), "START GAME");
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(started);
+    CHECK(!m.open());   // the menu gets out of the way
+}
+
+TEST(menu, sub_pages_return_to_the_page_that_opened_them) {
+    // Options reached from the title screen must go back to the title screen,
+    // not to the pause menu.
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    m.open_front();
+    CHECK(select_row(m, "OPTIONS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "options");
+    CHECK(m.on_key(SDLK_ESCAPE));
+    CHECK_STR(m.page_name(), "front");
+
+    m.toggle();          // close
+    m.toggle();          // reopen, this time as the pause menu
+    CHECK_STR(m.page_name(), "main");
+    CHECK(select_row(m, "OPTIONS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(select_row(m, "BACK"));
     CHECK(m.on_key(SDLK_RETURN));
     CHECK_STR(m.page_name(), "main");
 }

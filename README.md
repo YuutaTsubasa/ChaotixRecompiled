@@ -104,8 +104,11 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
-The in-game menu (Esc) holds the settings and the achievement list, drawn
-over the running game in the style of the era. Gamepads work through SDL
+Pressing Start on the title screen opens the front end: START GAME, OPTIONS,
+AWARDS and QUIT, drawn over the title screen in the style of the era. START
+GAME hands over to the game's own menus, so nothing the original offers is
+lost. Esc opens the same menu at any time as a pause menu, with the settings
+and the achievement list on it. Gamepads work through SDL
 (Xbox, PlayStation and Nintendo layouts): West/South/East = A/B/C,
 LB/North/RB = X/Y/Z, Back = Mode. Every other button belongs to the emulated
 6-button pad, so the menu is on the left stick click; B backs out of it. On

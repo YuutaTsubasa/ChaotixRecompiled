@@ -30,15 +30,21 @@ void cycle(T& value, int count, int step) {
 
 } // namespace
 
+bool Menu::is_row_page(Page p) { return p == Page::Front || p == Page::Main; }
+
 void Menu::set_page(Page p) {
+    if (is_row_page(p)) return_to_ = p;
     page_ = p;
     selected_ = 0;
     scroll_ = 0;
     anim_ = 0;
-    if (p == Page::Main) build_main();
+    if (p == Page::Front) build_front();
+    else if (p == Page::Main) build_main();
     else if (p == Page::Options) build_options();
     else items_.clear();
 }
+
+void Menu::open_front() { set_page(Page::Front); }
 
 void Menu::toggle() {
     if (open()) close(); else set_page(Page::Main);
@@ -47,7 +53,8 @@ void Menu::toggle() {
 void Menu::show_achievements() { set_page(Page::Achievements); }
 
 bool Menu::show_page(const std::string& name) {
-    if (name == "main") set_page(Page::Main);
+    if (name == "front") set_page(Page::Front);
+    else if (name == "main") set_page(Page::Main);
     else if (name == "options") set_page(Page::Options);
     else if (name == "awards") set_page(Page::Achievements);
     else return false;
@@ -56,6 +63,7 @@ bool Menu::show_page(const std::string& name) {
 
 std::string Menu::page_name() const {
     switch (page_) {
+    case Page::Front: return "front";
     case Page::Main: return "main";
     case Page::Options: return "options";
     case Page::Achievements: return "awards";
@@ -66,6 +74,19 @@ std::string Menu::page_name() const {
 std::string Menu::selected_label() const {
     if (selected_ < 0 || selected_ >= int(items_.size())) return "";
     return items_[size_t(selected_)].label;
+}
+
+// The front end: what pressing Start on the title screen reaches. START GAME
+// hands over to the game's own menus, so nothing the original offers is lost.
+void Menu::build_front() {
+    items_.clear();
+    items_.push_back({"START GAME", {}, [this](int) {
+        close();
+        if (hooks_.start_game) hooks_.start_game();
+    }});
+    items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
+    items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
+    items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
 }
 
 void Menu::build_main() {
@@ -115,7 +136,7 @@ void Menu::build_options() {
     items_.push_back({"AWARDS",
                       [c] { return on_off(c->achievements); },
                       [c](int s) { if (s) c->achievements = !c->achievements; }});
-    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Main); selected_ = 1; }});
+    items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
 void Menu::move(int delta) {
@@ -137,13 +158,13 @@ bool Menu::on_key(SDL_Keycode key) {
     if (!open()) return false;
     switch (key) {
     case SDLK_ESCAPE:
-        if (page_ == Page::Main) close(); else set_page(Page::Main);
+        if (is_row_page(page_)) close(); else set_page(return_to_);
         return true;
     case SDLK_LEFT:
-        if (page_ == Page::Main) move(-1); else activate(-1);
+        if (is_row_page(page_)) move(-1); else activate(-1);
         return true;
     case SDLK_RIGHT:
-        if (page_ == Page::Main) move(+1); else activate(+1);
+        if (is_row_page(page_)) move(+1); else activate(+1);
         return true;
     case SDLK_UP:
         if (page_ == Page::Achievements) --scroll_; else if (page_ == Page::Options) move(-1);
@@ -154,7 +175,7 @@ bool Menu::on_key(SDL_Keycode key) {
     case SDLK_RETURN:
     case SDLK_KP_ENTER:
     case SDLK_SPACE:
-        if (page_ == Page::Achievements) set_page(Page::Main); else activate(0);
+        if (page_ == Page::Achievements) set_page(return_to_); else activate(0);
         return true;
     default:
         return true;  // the menu swallows everything else while it is open
@@ -165,10 +186,10 @@ bool Menu::on_pad(Uint8 button) {
     if (!open()) return false;
     switch (button) {
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-        if (page_ == Page::Main) move(-1); else activate(-1);
+        if (is_row_page(page_)) move(-1); else activate(-1);
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-        if (page_ == Page::Main) move(+1); else activate(+1);
+        if (is_row_page(page_)) move(+1); else activate(+1);
         return true;
     case SDL_GAMEPAD_BUTTON_DPAD_UP:
         if (page_ == Page::Achievements) --scroll_; else if (page_ == Page::Options) move(-1);
@@ -177,10 +198,10 @@ bool Menu::on_pad(Uint8 button) {
         if (page_ == Page::Achievements) ++scroll_; else if (page_ == Page::Options) move(+1);
         return true;
     case SDL_GAMEPAD_BUTTON_SOUTH:
-        if (page_ == Page::Achievements) set_page(Page::Main); else activate(0);
+        if (page_ == Page::Achievements) set_page(return_to_); else activate(0);
         return true;
     case SDL_GAMEPAD_BUTTON_EAST:
-        if (page_ == Page::Main) close(); else set_page(Page::Main);
+        if (is_row_page(page_)) close(); else set_page(return_to_);
         return true;
     default:
         return true;
@@ -204,7 +225,7 @@ bool Menu::on_touch_down(float x, float y) {
 
 bool Menu::on_touch_up() {
     if (!open()) return false;
-    if (page_ == Page::Achievements && drag_total_ < 1e8f) set_page(Page::Main);
+    if (page_ == Page::Achievements && drag_total_ < 1e8f) set_page(return_to_);
     return true;
 }
 
@@ -217,19 +238,26 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     // are the backdrop.
     g.rect({0, 0, g.width(), g.height()}, ui::theme::background.alpha(150));
 
-    if (page_ == Page::Main) draw_main(g);
-    else if (page_ == Page::Options) draw_options(g);
-    else draw_achievements(g, ach);
+    if (page_ == Page::Front)
+        draw_row_page(g, "Left/Right choose    Enter select");
+    else if (page_ == Page::Main)
+        draw_row_page(g, "Left/Right choose    Enter select    Esc close");
+    else if (page_ == Page::Options)
+        draw_options(g);
+    else
+        draw_achievements(g, ach);
 }
 
-void Menu::draw_main(ui::Ui& g) {
+void Menu::draw_row_page(ui::Ui& g, const char* hint) {
     const float item_h = g.line_height(ui::Font::Pixel);
     const float hint_h = g.line_height(ui::Font::Small);
     // A band across the lower part, tall enough to hold the row and the hint,
     // so the art above it stays visible.
     const float band_h = g.px(26) + item_h + g.px(14) + hint_h + g.px(16);
     const float band_y = g.height() - band_h - g.px(24);
-    g.rect({0, band_y, g.width(), band_h}, ui::theme::background.alpha(215));
+    // Solid: the title screen behind it is bright, and a bar across the
+    // bottom is what these menus looked like anyway.
+    g.rect({0, band_y, g.width(), band_h}, ui::theme::background);
     g.rect({0, band_y, g.width(), g.px(3)}, ui::theme::accent);
     g.rect({0, band_y + band_h - g.px(3), g.width(), g.px(3)}, ui::theme::accent);
 
@@ -260,7 +288,6 @@ void Menu::draw_main(ui::Ui& g) {
         x += w + gap;
     }
 
-    const char* hint = "Left/Right choose    Enter select    Esc close";
     g.text(ui::Font::Small, (g.width() - g.text_width(ui::Font::Small, hint)) * 0.5f,
            band_y + band_h - g.px(16) - hint_h, hint, ui::theme::text_faint);
 }

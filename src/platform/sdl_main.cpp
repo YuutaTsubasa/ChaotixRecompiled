@@ -81,6 +81,12 @@ struct App {
     ui::Ui ui;
     bool achievements_on = false;
     Menu menu;
+    // The game boots to its title screen; until the player chooses START GAME
+    // there, Start opens our front end instead of reaching the game. After
+    // that the game's own menus get Start as normal.
+    bool front_end = true;
+    int inject_start = 0;   // frames of Start to hand the game on the way out
+    uint16_t prev_buttons = 0;
     // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
@@ -462,6 +468,13 @@ int main(int argc, char** argv) {
             apply_window_mode(app);
         },
         [&app] { app.running = false; },
+        [&app] {  // start_game
+            app.front_end = false;
+            // The game is still on its title screen waiting for Start, so give
+            // it one: it then proceeds into its own menus exactly as it would
+            // have without us in the way.
+            app.inject_start = 8;
+        },
     });
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
         LOGW("app", "--menu: unknown page '%s' (main, options, awards)", menu_page.c_str());
@@ -616,11 +629,21 @@ int main(int argc, char** argv) {
         // the character.
         uint16_t touch_held = 0;
         for (const auto& [id, b] : app.fingers) touch_held |= b;
-        uint16_t buttons = 0;
+        uint16_t raw = 0;
         if (!app.menu.open()) {
-            buttons = keyboard_buttons(app) | touch_held;
-            for (SDL_Gamepad* g : app.pads) buttons |= gamepad_buttons(g);
+            raw = keyboard_buttons(app) | touch_held;
+            for (SDL_Gamepad* g : app.pads) raw |= gamepad_buttons(g);
         }
+        uint16_t buttons = raw;
+        // On the title screen Start belongs to our front end. The edge is
+        // taken from the unmasked buttons, or holding Start would re-open the
+        // page every frame and never let the selection move.
+        if (app.front_end && (raw & PAD_START)) {
+            buttons &= uint16_t(~PAD_START);
+            if (!(app.prev_buttons & PAD_START)) app.menu.open_front();
+        }
+        app.prev_buttons = raw;
+        if (app.inject_start > 0) { buttons |= PAD_START; --app.inject_start; }
         app.m->input.pad[0] = buttons;
 
         // Fixed-timestep simulation at the original frame rate, independent of

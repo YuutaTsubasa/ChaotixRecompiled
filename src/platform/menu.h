@@ -23,6 +23,9 @@ public:
     struct Hooks {
         std::function<void()> apply_video;  // window mode / filter changed
         std::function<void()> quit;
+        // Hands control to the game's own front end, as pressing Start on the
+        // title screen would have done.
+        std::function<void()> start_game;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -30,6 +33,8 @@ public:
     void bind(Config& cfg) { cfg_ = &cfg; }
 
     bool open() const { return page_ != Page::Closed; }
+    // The menu the title screen leads to, with the game still running behind.
+    void open_front();
     void toggle();
     void show_achievements();
     // For screenshots and tests: "main", "options" or "awards".
@@ -48,7 +53,7 @@ public:
     void draw(ui::Ui& g, achievements::Tracker& ach);
 
 private:
-    enum class Page { Closed, Main, Options, Achievements };
+    enum class Page { Closed, Front, Main, Options, Achievements };
 
     struct Item {
         std::string label;
@@ -60,18 +65,23 @@ private:
 
     // Pages are built when they are opened, not when they are drawn, so the
     // first key press after opening has something to act on.
+    static bool is_row_page(Page p);
     void set_page(Page p);
+    void build_front();
     void build_main();
     void build_options();
     void move(int delta);
     void activate(int step);
-    void draw_main(ui::Ui& g);
+    void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);
     void draw_achievements(ui::Ui& g, achievements::Tracker& ach);
 
     Hooks hooks_;
     Config* cfg_ = nullptr;
     Page page_ = Page::Closed;
+    // Sub-pages return to whichever page opened them, so Options reached from
+    // the title screen goes back there rather than to the pause menu.
+    Page return_to_ = Page::Main;
     std::vector<Item> items_;
     int selected_ = 0;
     int scroll_ = 0;          // achievements page
