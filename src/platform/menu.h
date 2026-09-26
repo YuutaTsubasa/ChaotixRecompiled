@@ -26,6 +26,8 @@ public:
         // Hands control to the game's own front end, as pressing Start on the
         // title screen would have done.
         std::function<void()> start_game;
+        // Puts the title screen back and returns the front end to us.
+        std::function<void()> back_to_title;
         // How many gamepads are plugged in, so the controls page can offer
         // them by number.
         std::function<int()> pad_count;

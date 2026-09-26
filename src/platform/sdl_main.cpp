@@ -96,20 +96,13 @@ struct App {
     Menu menu;
     int inject_start = 0;   // frames of Start to hand the game on the way out
     uint16_t prev_buttons = 0;
-    // Where the game is, read from its own state once a frame (see
-    // read_game_state). These decide what Start and Escape mean.
-    bool at_title = false;      // the "PUSH START" screen
-    bool in_game_menu = false;  // the game's own SCENARIO QUEST / TRAINING menu
-    bool in_level = false;
-    // The title screen, kept so Escape can leave the game's menu: the game
-    // itself has no way back to the title from there.
+    // The menu is the front end: it owns the screen until the player chooses
+    // START GAME, and the game owns it afterwards. Nothing about where the
+    // game is has to be guessed from its memory.
+    bool handed_over = false;
+    // The title screen as it was when we handed over, so BACK TO TITLE can
+    // return: the game itself offers no way back.
     std::unique_ptr<Machine> title_snapshot;
-    uint8_t last_title_tick = 0;   // FFADAD, which flips while the title is up
-    int title_tick_still = 0;      // frames since it last flipped
-    // Start at the title goes to the game first, because during the opening
-    // animation that is what skips it. If the game answers by opening its own
-    // menu, the title was already waiting and the press was meant for us.
-    int title_start_pending = 0;
     // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
@@ -343,53 +336,26 @@ void save_screenshot(App& app) {
 // Every face and shoulder button is taken by the emulated 6-button pad (and
 // Back is its Mode button), so the menu is on the left stick click, which
 // nothing else uses. While the menu is open it drives the menu, not the game.
-// Where the game is, from its own memory. FFDFDE is 0008 both on the title
-// screen and in the game's own menu, and something else once a level runs.
-//
-// FFAD2E only says whether Start has ever been pressed - it is set just the
-// same when Start skipped the opening animation - so it cannot separate the
-// title from the menu. FFADAD can: it flips every couple of frames while the
-// title sequence is on screen and stops dead once the menu is up.
-void read_game_state(App& app) {
-    const uint8_t* w = app.m->wram;
-    const uint16_t mode = uint16_t(w[0xDFDE] << 8 | w[0xDFDF]);
-    const bool front = mode == 0x0008;
-    if (w[0xADAD] != app.last_title_tick) {
-        app.last_title_tick = w[0xADAD];
-        app.title_tick_still = 0;
-    } else if (app.title_tick_still < 1000) {
-        ++app.title_tick_still;
-    }
-    // Two frames is the flip rate; a handful of frames without one is the
-    // game's menu rather than a slow frame.
-    app.in_game_menu = front && app.title_tick_still >= 8;
-    app.at_title = front && !app.in_game_menu;
-    app.in_level = !front && mode != 0x0000;
-}
-
-// Leaving the game's own menu. It has no way back to the title - none of the
-// seven buttons does anything there - so the title screen we kept when
-// handing over is put back instead. The copy carries pointers into the
+// Back to the title screen. The game has no way there itself, so the copy
+// taken when we handed over is put back. That copy carries pointers into the
 // machine it came from, so the buses are re-pointed afterwards.
 bool return_to_title(App& app) {
     if (!app.title_snapshot) return false;
     *app.m = *app.title_snapshot;
     // The Start handed over at START GAME may still be in flight; leaving it
-    // running would walk the game straight back into the menu we just left.
+    // running would walk the game straight back out of the title.
     app.inject_start = 0;
     app.m->remap_m68k();
     app.m->remap_sh2();
-    read_game_state(app);
+    app.handed_over = false;
     return true;
 }
 
-// Escape, and the pad button standing in for it, mean different things
-// depending on where the game is.
+// Escape, and the pad button standing in for it. Before the game has been
+// handed control this is the front end; afterwards it is the pause menu.
 void menu_back(App& app) {
     if (app.menu.open()) { app.menu.close(); return; }
-    if (app.at_title) { app.menu.open_front(); return; }
-    if (app.in_game_menu && return_to_title(app)) { app.menu.open_front(); return; }
-    app.menu.toggle();   // in a level: the pause menu
+    if (app.handed_over) app.menu.toggle(); else app.menu.open_front();
 }
 
 void handle_pad_button(App& app, Uint8 button) {
@@ -597,37 +563,49 @@ int main(int argc, char** argv) {
     LOGI("app", "renderer: %s", SDL_GetRendererName(app.renderer));
     if (!app.ui.init(app.renderer)) LOGW("app", "no UI font; the menu is unavailable");
     app.menu.bind(app.cfg);
-    app.menu.set_hooks({
-        [&app] {
+    {
+        // Set field by field: a positional list silently shifts every hook
+        // along when one is added in the middle.
+        Menu::Hooks hooks;
+        hooks.apply_video = [&app] {
             SDL_SetRenderVSync(app.renderer, app.cfg.vsync ? 1 : 0);
             if (app.texture)
                 SDL_SetTextureScaleMode(app.texture, app.cfg.linear_filter ? SDL_SCALEMODE_LINEAR
                                                                            : SDL_SCALEMODE_NEAREST);
             apply_window_mode(app);
-        },
-        [&app] { app.running = false; },
-        [&app] {  // start_game
-            // Keep the title screen so Escape can come back to it later, then
+        };
+        hooks.quit = [&app] { app.running = false; };
+        hooks.start_game = [&app] {
+            // Keep the title screen so BACK TO TITLE can return to it, then
             // give the game the Start it is waiting for: it proceeds into its
             // own menus exactly as it would have without us in the way.
             if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
             *app.title_snapshot = *app.m;
+            app.handed_over = true;
             app.inject_start = 8;
-        },
-        [&app] { return int(app.pads.size()); },  // pad_count
-        [&app](int i) -> std::string {            // pad_name
+        };
+        hooks.back_to_title = [&app] {
+            if (return_to_title(app)) app.menu.open_front();
+        };
+        hooks.pad_count = [&app] { return int(app.pads.size()); };
+        hooks.pad_name = [&app](int i) -> std::string {
             if (i < 0 || size_t(i) >= app.pads.size()) return "";
             const char* n = SDL_GetGamepadName(app.pads[size_t(i)]);
             return n ? n : "";
-        },
-        [&app] {  // reset_awards
+        };
+        hooks.reset_awards = [&app] {
             app.achievements.reset_progress();
             std::error_code ec;
             std::filesystem::remove(achievements_progress_path(app), ec);
-        },
-    });
+        };
+        app.menu.set_hooks(std::move(hooks));
+    }
+    // The menu is the front end, so it is up from the start: the game boots
+    // behind it and its title screen and attract demo are the backdrop.
+    app.menu.open_front();
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
-        LOGW("app", "--menu: unknown page '%s' (main, options, awards)", menu_page.c_str());
+        LOGW("app", "--menu: unknown page '%s' (front, main, options, controls, awards)",
+             menu_page.c_str());
 
     // Where to get the ROM, in order: the command line, the copy installed
     // by a previous run, then the config or the usual folders.
@@ -780,19 +758,6 @@ int main(int argc, char** argv) {
         // the character.
         uint16_t touch_held = 0;
         for (const auto& [id, b] : app.fingers) touch_held |= b;
-        read_game_state(app);
-        // The game answered that Start by opening its menu, so the title had
-        // already finished appearing and the press was for our front end.
-        // Otherwise the press skipped the opening animation, which is what it
-        // was for, and nothing needs undoing.
-        if (app.title_start_pending > 0) {
-            if (app.in_game_menu) {
-                app.title_start_pending = 0;
-                if (return_to_title(app)) app.menu.open_front();
-            } else {
-                --app.title_start_pending;
-            }
-        }
         uint16_t raw = 0, raw2 = 0;
         // Emulated frames advance in batches, so a window of frame numbers can
         // be stepped straight over: arm on reaching the frame, then hold for a
@@ -807,14 +772,6 @@ int main(int argc, char** argv) {
             raw2 = device_buttons(app, 1);
         }
         uint16_t buttons = raw;
-        // Hand a title-screen Start to the game and keep the title, so that
-        // it can be put back if the game answers with its own menu.
-        if (app.at_title && (raw & PAD_START) && !(app.prev_buttons & PAD_START) &&
-            app.inject_start == 0 && app.title_start_pending == 0) {
-            if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
-            *app.title_snapshot = *app.m;
-            app.title_start_pending = 30;
-        }
         app.prev_buttons = raw;
         if (app.inject_start > 0) { buttons |= PAD_START; --app.inject_start; }
         app.m->input.pad[0] = buttons;

@@ -104,18 +104,17 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
-Start during the opening animation skips it, as it always did. Pressing it
-again, once the title screen is up, opens the front end: START GAME, OPTIONS,
-CONTROLS, AWARDS and QUIT, drawn over the title screen in the style of the
-era. START GAME hands over to the game's own menus, so nothing the original
-offers is lost. Esc opens it again outside a level, and opens the same menu
-as a pause menu inside one.
+The menu is the front end: it is up as soon as the program starts, with the
+game booting behind it and its title screen and attract demo as the backdrop.
+START GAME, OPTIONS, CONTROLS, AWARDS and QUIT.
 
-Escape leaves the game's own menu and returns to the title screen. The game
-has no way back there itself, so the title screen is kept when handing over
-and put back; anything chosen inside the game's menus is discarded, as it
-would be by turning the console off. Inside a level Escape is the pause menu
-instead.
+START GAME hands the game control, and it proceeds into its own menus exactly
+as it would have on the console, so nothing the original offers is out of
+reach. Escape (or the left stick click) then brings up a pause menu, which
+adds BACK TO TITLE. The game has no way back to its title screen, so the
+title is copied when control is handed over and put back on the way out;
+anything chosen inside the game's menus is discarded, as it would be by
+turning the console off.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
 gamepad, which is the default for player 1), the keyboard alone, one gamepad

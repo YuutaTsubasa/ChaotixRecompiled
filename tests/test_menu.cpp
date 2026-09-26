@@ -274,6 +274,32 @@ TEST(menu, resetting_awards_asks_twice) {
     CHECK_EQ(resets, 1);
 }
 
+TEST(menu, the_pause_menu_can_hand_the_title_back) {
+    // The game has no way back to its title screen, so the pause menu carries
+    // the only route there.
+    Config cfg;
+    cfg.set_defaults();
+    bool back = false;
+    Menu m;
+    m.bind(cfg);
+    Menu::Hooks h;
+    h.back_to_title = [&back] { back = true; };
+    m.set_hooks(h);
+
+    m.toggle();                       // the pause menu, not the front end
+    CHECK_STR(m.page_name(), "main");
+    CHECK(select_row(m, "BACK TO TITLE"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(back);
+    CHECK(!m.open());                 // and it gets out of the way
+
+    // The front end has no such entry: there is nothing to go back to.
+    Menu f;
+    f.bind(cfg);
+    f.open_front();
+    CHECK(!select_row(f, "BACK TO TITLE"));
+}
+
 TEST(menu, awards_page_is_reachable_and_returns) {
     Config cfg;
     cfg.set_defaults();

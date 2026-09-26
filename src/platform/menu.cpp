@@ -110,12 +110,18 @@ void Menu::build_front() {
     items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
 }
 
+// The pause menu: the game has been handed control, so this can give it back
+// or take it away again.
 void Menu::build_main() {
     items_.clear();
     items_.push_back({"RESUME", {}, [this](int) { close(); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
+    items_.push_back({"BACK TO TITLE", {}, [this](int) {
+        close();
+        if (hooks_.back_to_title) hooks_.back_to_title();
+    }});
     items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
 }
 
