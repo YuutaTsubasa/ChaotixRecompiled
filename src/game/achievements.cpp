@@ -79,8 +79,23 @@ bool parse_condition(const std::string& text, const std::map<std::string, Var>& 
 
 } // namespace
 
+// "a == b and c >= d" -> a list of conditions that must all hold.
+bool parse_conditions(const std::string& value, const std::map<std::string, Var>& vars,
+                      std::vector<Condition>* out, std::string* error) {
+    std::string rest = value;
+    for (;;) {
+        const size_t p = lower(rest).find(" and ");
+        const std::string part = p == std::string::npos ? rest : rest.substr(0, p);
+        Condition c;
+        if (!parse_condition(part, vars, &c, error)) return false;
+        out->push_back(c);
+        if (p == std::string::npos) return true;
+        rest = rest.substr(p + 5);
+    }
+}
+
 bool parse(const std::string& text, std::map<std::string, Var>& vars,
-           std::vector<Achievement>& out, std::string* error) {
+           std::vector<Achievement>& out, std::vector<Condition>& require, std::string* error) {
     std::istringstream in(text);
     std::string line, section;
     bool ok = true;
@@ -107,7 +122,11 @@ bool parse(const std::string& text, std::map<std::string, Var>& vars,
         const size_t eq = line.find('=');
         if (eq == std::string::npos) { fail("expected key = value: " + line); continue; }
         const std::string key = trim(line.substr(0, eq)), value = trim(line.substr(eq + 1));
-        if (lower(section) == "vars") {
+        if (lower(section) == "rules") {
+            if (lower(key) != "require") { fail("unknown key '" + key + "' in [rules]"); continue; }
+            std::string err;
+            if (!parse_conditions(value, vars, &require, &err)) fail("require: " + err);
+        } else if (lower(section) == "vars") {
             auto w = split_words(value);
             Var v;
             if (w.size() != 2) { fail("expected '<byte|word|long> <address>' for " + key); continue; }
@@ -123,18 +142,8 @@ bool parse(const std::string& text, std::map<std::string, Var>& vars,
             else if (k == "id") a.id = value;
             else if (k == "points") a.points = std::atoi(value.c_str());
             else if (k == "when") {
-                // Conditions joined by "and".
-                std::string rest = value;
-                for (;;) {
-                    const size_t p = lower(rest).find(" and ");
-                    const std::string part = p == std::string::npos ? rest : rest.substr(0, p);
-                    Condition c;
-                    std::string err;
-                    if (!parse_condition(part, vars, &c, &err)) fail(a.title + ": " + err);
-                    else a.when.push_back(c);
-                    if (p == std::string::npos) break;
-                    rest = rest.substr(p + 5);
-                }
+                std::string err;
+                if (!parse_conditions(value, vars, &a.when, &err)) fail(a.title + ": " + err);
             } else {
                 fail("unknown key '" + key + "'");
             }
@@ -152,7 +161,8 @@ bool Tracker::load_definitions_text(const std::string& text, std::string* error)
     achievements_.clear();
     previous_.clear();
     have_previous_ = false;
-    return parse(text, vars_, achievements_, error);
+    require_.clear();
+    return parse(text, vars_, achievements_, require_, error);
 }
 
 bool Tracker::load_definitions(const std::string& path, std::string* error) {
@@ -220,24 +230,30 @@ void Tracker::update_memory(const uint8_t* wram, size_t size, const std::functio
         return it == now.end() ? 0u : it->second;
     };
 
-    // A "previous" comparison needs one frame of history before it can hold.
-    if (have_previous_) {
-        for (Achievement& a : achievements_) {
-            if (a.unlocked) continue;
-            bool all = true;
-            for (const Condition& c : a.when) {
-                const uint32_t l = value_of(c.lhs), r = value_of(c.rhs);
-                switch (c.cmp) {
-                case Cmp::Eq: all = l == r; break;
-                case Cmp::Ne: all = l != r; break;
-                case Cmp::Lt: all = l < r; break;
-                case Cmp::Le: all = l <= r; break;
-                case Cmp::Gt: all = l > r; break;
-                case Cmp::Ge: all = l >= r; break;
-                }
-                if (!all) break;
+    auto holds = [&](const std::vector<Condition>& conds) {
+        for (const Condition& c : conds) {
+            const uint32_t l = value_of(c.lhs), r = value_of(c.rhs);
+            bool ok = false;
+            switch (c.cmp) {
+            case Cmp::Eq: ok = l == r; break;
+            case Cmp::Ne: ok = l != r; break;
+            case Cmp::Lt: ok = l < r; break;
+            case Cmp::Le: ok = l <= r; break;
+            case Cmp::Gt: ok = l > r; break;
+            case Cmp::Ge: ok = l >= r; break;
             }
-            if (!all) continue;
+            if (!ok) return false;
+        }
+        return true;
+    };
+
+    // A "previous" comparison needs one frame of history before it can hold.
+    // Nothing unlocks unless the definitions' [rules] require line holds: that
+    // is what keeps the attract demo, which plays the game by itself, from
+    // earning anything.
+    if (have_previous_ && holds(require_)) {
+        for (Achievement& a : achievements_) {
+            if (a.unlocked || !holds(a.when)) continue;
             a.unlocked = true;
             a.unlocked_at = uint64_t(std::time(nullptr));
             LOGI("achievements", "unlocked: %s (%d points)", a.title.c_str(), a.points);

@@ -75,6 +75,9 @@ class Tracker {
 public:
     // Loads definitions; returns false if the file cannot be read or parsed.
     bool load_definitions(const std::string& path, std::string* error);
+    // Conditions every achievement is additionally subject to, from the
+    // definitions' [rules] require line. Exposed for tests.
+    const std::vector<Condition>& require() const { return require_; }
     bool load_definitions_text(const std::string& text, std::string* error);
     // Restores/stores unlocks (ini: one "id = unix_time" line per unlock).
     bool load_progress(const std::string& path);
@@ -97,6 +100,7 @@ private:
     std::map<std::string, uint32_t> previous_;   // last frame's values
     bool have_previous_ = false;
     std::vector<Achievement> achievements_;
+    std::vector<Condition> require_;
 };
 
 } // namespace achievements

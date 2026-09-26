@@ -51,7 +51,7 @@ the method is described below).
 
 | Address | Width | Meaning |
 |---|---|---|
-| `FFDFDE` | word | game mode: `0x0008` on the title and menus, `0x0038` while an attraction runs |
+| `FFDFDE` | word | game mode, see below |
 | `FFDFF2` | word | attraction id: 0 Botanic Base, 1 Speed Slider*, 2 Amazing Arena, 3 Techno Tower, 4 Marina Madness, 6 Isolated Island, 7 = not in a level |
 | `FFDFF4` | word | level number shown on the title card (1-5) |
 | `FFE008` | word | ring count; reset to 0 when a level starts |
@@ -74,6 +74,34 @@ never unlocks.
 
 The level timer is *not* a plain RAM counter (no encoding of the displayed
 time matched), so time-based achievements are not defined yet.
+
+## Game modes, and why nothing is earned by the demo
+
+`FFDFDE` takes more values than it first appeared to, and getting this wrong
+meant every achievement fired during the attract demo and none of them while
+anyone was playing:
+
+| Mode | What is on screen |
+|---|---|
+| `0x00` | boot |
+| `0x08` | the title screen and the game's own menus |
+| `0x38` | **the attract demo** - the game playing itself |
+| `0x48`, `0x60`, `0x68` | the selection screens behind Scenario Quest and Training |
+| `0x18`, `0x58` | a level, with the player in control |
+
+Each value was checked against a screenshot taken at that moment rather than
+guessed. The `[rules] require` line excludes the modes that are not play,
+which is safer than listing the ones that are: an unlisted play mode would
+silently earn nothing, while an unlisted non-play mode at worst lets a
+level's own title card count as starting that level.
+
+```ini
+[rules]
+require = mode != 0x00 and mode != 0x08 and mode != 0x38 and ...
+```
+
+`require` is checked before any achievement, so an individual `when` only has
+to say what the achievement itself is about.
 
 ## Adding achievements
 

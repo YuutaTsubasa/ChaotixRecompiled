@@ -125,7 +125,7 @@ TEST(menu, selection_wraps_both_ways) {
     bool quit = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, [&quit] { quit = true; }, nullptr, nullptr});
+    m.set_hooks({nullptr, [&quit] { quit = true; }, nullptr, nullptr, nullptr});
     m.toggle();
     // QUIT is the last entry, so one step left from the first reaches it.
     CHECK(m.on_key(SDLK_LEFT));
@@ -154,7 +154,7 @@ TEST(menu, front_page_starts_the_game) {
     bool started = false;
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, nullptr, [&started] { started = true; }, nullptr});
+    m.set_hooks({nullptr, nullptr, [&started] { started = true; }, nullptr, nullptr});
     m.open_front();
     CHECK_STR(m.page_name(), "front");
     CHECK_STR(m.selected_label(), "START GAME");
@@ -193,7 +193,7 @@ TEST(menu, controls_assigns_a_device_per_player) {
     Menu m;
     m.bind(cfg);
     // Two pads plugged in, so the choices are keyboard, pad1, pad2, none.
-    m.set_hooks({nullptr, nullptr, nullptr, [] { return 2; }});
+    m.set_hooks({nullptr, nullptr, nullptr, [] { return 2; }, nullptr});
     m.open_front();
     CHECK(select_row(m, "CONTROLS"));
     CHECK(m.on_key(SDLK_RETURN));
@@ -219,7 +219,7 @@ TEST(menu, rebinding_a_key_takes_the_next_press) {
     cfg.set_defaults();
     Menu m;
     m.bind(cfg);
-    m.set_hooks({nullptr, nullptr, nullptr, [] { return 0; }});
+    m.set_hooks({nullptr, nullptr, nullptr, [] { return 0; }, nullptr});
     m.open_front();
     CHECK(select_row(m, "CONTROLS"));
     CHECK(m.on_key(SDLK_RETURN));

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <string>
 
@@ -125,11 +126,20 @@ std::string upper(std::string v) {
     return v;
 }
 
-std::string device_label(const std::string& dev) {
+std::string device_label(const Menu::Hooks& hooks, const std::string& dev) {
     if (dev == "auto") return "AUTO";
     if (dev == "keyboard") return "KEYBOARD";
     if (dev == "none") return "NONE";
-    if (dev.rfind("pad", 0) == 0) return "PAD " + dev.substr(3);
+    if (dev.rfind("pad", 0) == 0) {
+        // "PAD 2" says nothing about which controller that is, so show the
+        // name the system reports and fall back to the number.
+        const int i = std::atoi(dev.c_str() + 3);
+        if (hooks.pad_name) {
+            const std::string name = hooks.pad_name(i - 1);
+            if (!name.empty()) return upper(name);
+        }
+        return "PAD " + dev.substr(3);
+    }
     return upper(dev);
 }
 
@@ -147,7 +157,7 @@ void Menu::build_controls() {
     if (!c) return;
     for (int p = 0; p < 2; ++p) {
         items_.push_back({std::to_string(p + 1) + "P DEVICE",
-                          [c, p] { return device_label(c->device[p]); },
+                          [this, c, p] { return device_label(hooks_, c->device[p]); },
                           [this, c, p](int step) {
                               if (!step) return;
                               const std::vector<std::string> all = device_choices();

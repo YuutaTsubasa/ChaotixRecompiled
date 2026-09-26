@@ -600,6 +600,11 @@ int main(int argc, char** argv) {
             app.inject_start = 8;
         },
         [&app] { return int(app.pads.size()); },  // pad_count
+        [&app](int i) -> std::string {            // pad_name
+            if (i < 0 || size_t(i) >= app.pads.size()) return "";
+            const char* n = SDL_GetGamepadName(app.pads[size_t(i)]);
+            return n ? n : "";
+        },
     });
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
         LOGW("app", "--menu: unknown page '%s' (main, options, awards)", menu_page.c_str());

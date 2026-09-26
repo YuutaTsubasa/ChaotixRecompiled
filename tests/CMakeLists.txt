@@ -57,11 +57,22 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
 
     # The shipped achievement definitions must still unlock while the attract
     # demos play (a definition that never fires is silent otherwise).
-    add_test(NAME achievements_attract
+    # The attract demo plays the game by itself, so it must earn nothing. This
+    # test used to assert the opposite and passed for exactly that reason.
+    add_test(NAME achievements_not_earned_by_the_demo
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 12000
                 --achievements ${CMAKE_SOURCE_DIR}/assets/achievements.ini)
-    set_tests_properties(achievements_attract PROPERTIES TIMEOUT 300
-        PASS_REGULAR_EXPRESSION "unlocked First Ring")
+    set_tests_properties(achievements_not_earned_by_the_demo PROPERTIES TIMEOUT 300
+        FAIL_REGULAR_EXPRESSION "unlocked")
+
+    # ... and playing must earn something, or the conditions are simply dead.
+    add_test(NAME achievements_earned_by_playing
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4200
+                --achievements ${CMAKE_SOURCE_DIR}/assets/achievements.ini
+                --press 1750:start:5 --press 1950:start:5 --press 2300:start:5
+                --press 2600:right:400)
+    set_tests_properties(achievements_earned_by_playing PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "unlocked")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)

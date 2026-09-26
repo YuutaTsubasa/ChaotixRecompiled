@@ -29,6 +29,8 @@ public:
         // How many gamepads are plugged in, so the controls page can offer
         // them by number.
         std::function<int()> pad_count;
+        // The controller's own name, so the page can say which one it means.
+        std::function<std::string(int index)> pad_name;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
