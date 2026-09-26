@@ -360,9 +360,17 @@ void menu_back(App& app) {
     if (app.handed_over) app.menu.toggle(); else app.menu.open_front();
 }
 
+// Escape's counterpart on a controller. Which button that is comes from the
+// settings (CONTROLS -> MENU BUTTON); the left stick click stands in when the
+// name there is not one SDL knows.
+SDL_GamepadButton menu_pad_button(const App& app) {
+    const SDL_GamepadButton b = SDL_GetGamepadButtonFromString(app.cfg.menu_button.c_str());
+    return b == SDL_GAMEPAD_BUTTON_INVALID ? SDL_GAMEPAD_BUTTON_LEFT_STICK : b;
+}
+
 void handle_pad_button(App& app, Uint8 button) {
     if (app.menu.on_pad(button)) return;
-    if (button == SDL_GAMEPAD_BUTTON_LEFT_STICK) menu_back(app);
+    if (SDL_GamepadButton(button) == menu_pad_button(app)) menu_back(app);
 }
 
 void handle_key(App& app, const SDL_KeyboardEvent& k) {

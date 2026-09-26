@@ -34,6 +34,10 @@ struct Config {
     // What drives each player: "auto" (the keyboard and every gamepad the
     // other player has not claimed), "keyboard", "pad1".."padN", or "none".
     std::string device[2] = {"auto", "none"};
+    // The gamepad button that opens this menu (Escape's counterpart). Only
+    // buttons the emulated 6-button pad does not use are offered, so binding
+    // one never costs the game a button. SDL gamepad button name.
+    std::string menu_button = "leftstick";
     // Mega Drive button name -> what produces it, one set per player so two
     // people can share a keyboard or two controllers behave differently.
     // keys*: SDL key names. pads*: SDL gamepad button names.

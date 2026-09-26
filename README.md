@@ -95,7 +95,7 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | Z / X / C | A / B / C |
 | A / S / D | X / Y / Z |
 | Enter | Start |
-| Esc | Menu (left stick click on a pad) |
+| Esc | Menu (on a pad, the button set under CONTROLS - left stick click to start with) |
 | F1 / F5 | Debug overlay / overlay page |
 | F2 | Aspect ratio (Auto, 4:3, 16:9, 16:10, 21:9) |
 | F3 / F4 | Filter / scaling mode |
@@ -113,7 +113,7 @@ so nothing is extracted or shipped.
 
 START GAME hands the game control, and it proceeds into its own menus exactly
 as it would have on the console, so nothing the original offers is out of
-reach. Escape (or the left stick click) then brings up a pause menu, which
+reach. Escape (or the pad's menu button) then brings up a pause menu, which
 adds BACK TO TITLE. The game has no way back to its title screen, so the
 title is copied when control is handed over and put back on the way out;
 anything chosen inside the game's menus is discarded, as it would be by
@@ -135,7 +135,9 @@ complete stage-select screen that the shipped game never reaches (game mode
 The names, the levels each place has, and the two-player switch are all read
 out of the game's own tables rather than invented here, and START uses the
 game's own route into a level, so a run behaves exactly as the console would.
-The game's HUD keeps the time. Two players needs a device for player 2 under
+START goes straight there: none of the game's own menus are passed through,
+only its level entry (the ball wipe and the BOTANIC BASE ticket), about five
+seconds. The game's HUD keeps the time. Two players needs a device for player 2 under
 CONTROLS, which starts as NONE.
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
@@ -144,16 +146,20 @@ by name, or nothing. Each player has its own keyboard set *and* its own
 gamepad set, so two people can share one keyboard (player 2 starts on the
 keypad) or two controllers can be laid out differently. Choose a button and
 press Enter, then press the key or the gamepad button to bind it; Escape
-leaves it alone. OPTIONS has RESET AWARDS,
+leaves it alone. MENU BUTTON is Escape's counterpart on a controller: the
+emulated 6-button pad takes every face and shoulder button, so the choice is
+among the ones it leaves alone - left stick click (the default), right stick
+click, Guide/Home/PS, the touchpad click, or Share/Capture. The same button
+backs out of the menu again. OPTIONS has RESET AWARDS,
 which asks twice before locking everything again.
 
 On-screen touch controls appear once the screen is touched (`TouchControls =
 Auto`), always (`On`), or never (`Off`). Gamepads work through SDL
 (Xbox, PlayStation and Nintendo layouts): West/South/East = A/B/C,
 LB/North/RB = X/Y/Z, Back = Mode. Every other button belongs to the emulated
-6-button pad, so the menu is on the left stick click; B backs out of it. On
-touch devices virtual controls appear over the game, and the unlock counter
-in the top corner opens the menu.
+6-button pad, so the menu is on one of the spare buttons (see MENU BUTTON
+above); East/B backs out of it too. On touch devices virtual controls appear
+over the game, and the unlock counter in the top corner opens the menu.
 
 ## Achievements
 

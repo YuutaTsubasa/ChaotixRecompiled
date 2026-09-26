@@ -375,3 +375,53 @@ TEST(menu, time_attack_level_follows_what_the_place_has) {
     CHECK_STR(stage_select::kPlaces[cfg.ta_place].name, "TRAINING");
     CHECK(stage_select::has_level(cfg.ta_place, cfg.ta_level));
 }
+
+TEST(menu, the_gamepad_button_that_opens_the_menu_also_backs_out_of_it) {
+    // Escape's counterpart on a controller. It is a setting, because which
+    // spare button a pad has depends on the pad.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK_STR(cfg.menu_button, "leftstick");
+    Menu m;
+    m.bind(cfg);
+
+    m.toggle();                       // the pause menu
+    CHECK_STR(m.page_name(), "main");
+    CHECK(select_row(m, "OPTIONS"));
+    CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_SOUTH));
+    CHECK_STR(m.page_name(), "options");
+    CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_LEFT_STICK));
+    CHECK_STR(m.page_name(), "main");  // one page back
+    CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_LEFT_STICK));
+    CHECK(!m.open());                  // then out
+
+    // Choose another button and the old one goes back to being the game's.
+    cfg.menu_button = "rightstick";
+    m.toggle();
+    CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_RIGHT_STICK));
+    CHECK(!m.open());
+}
+
+TEST(menu, the_menu_button_can_be_chosen_on_the_controls_page) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    m.toggle();
+    CHECK(select_row(m, "CONTROLS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(select_row(m, "MENU BUTTON"));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(cfg.menu_button, "rightstick");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(cfg.menu_button, "leftstick");
+    // Every offered button must be one SDL knows and the emulated pad does
+    // not use, or choosing it would either do nothing or cost the game a
+    // button.
+    for (int i = 0; i < 8; ++i) {
+        m.on_key(SDLK_RIGHT);
+        CHECK(SDL_GetGamepadButtonFromString(cfg.menu_button.c_str()) != SDL_GAMEPAD_BUTTON_INVALID);
+        for (const auto& [button, bound] : cfg.pads) CHECK(bound != cfg.menu_button);
+        for (const auto& [button, bound] : cfg.pads2) CHECK(bound != cfg.menu_button);
+    }
+}

@@ -90,6 +90,7 @@ bool Config::load(const std::string& path) {
             else if (k == "SixButtonPad") six_button = parse_bool(v, six_button);
             else if (k == "Device1") device[0] = v;
             else if (k == "Device2") device[1] = v;
+            else if (k == "MenuButton") menu_button = v;
             else if (k.rfind("Key.", 0) == 0) keys[k.substr(4)] = v;
             else if (k.rfind("Key2.", 0) == 0) keys2[k.substr(5)] = v;
             else if (k.rfind("Pad2.", 0) == 0) pads2[k.substr(5)] = v;
@@ -135,6 +136,9 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "SixButtonPad = %s\n", six_button ? "true" : "false");
     std::fprintf(f, "# Who drives each player: keyboard | pad1..padN | none\n");
     std::fprintf(f, "Device1 = %s\nDevice2 = %s\n", device[0].c_str(), device[1].c_str());
+    std::fprintf(f, "# Gamepad button that opens this menu (the emulated pad uses every other one):\n");
+    std::fprintf(f, "# leftstick | rightstick | guide | touchpad | misc1\n");
+    std::fprintf(f, "MenuButton = %s\n", menu_button.c_str());
     for (const auto& [b, k] : keys) std::fprintf(f, "Key.%s = %s\n", b.c_str(), k.c_str());
     for (const auto& [b, k] : keys2) std::fprintf(f, "Key2.%s = %s\n", b.c_str(), k.c_str());
     for (const auto& [b, k] : pads) std::fprintf(f, "Pad.%s = %s\n", b.c_str(), k.c_str());

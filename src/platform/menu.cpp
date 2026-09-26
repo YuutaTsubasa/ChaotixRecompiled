@@ -135,6 +135,19 @@ void Menu::build_main() {
 const char* const kPadButtons[] = {"up", "down", "left", "right",
                                    "a", "b", "c", "x", "y", "z", "start", "mode"};
 
+// The buttons the emulated 6-button pad leaves alone, so opening the menu
+// never costs the game one. SDL's own names, with what they are called on the
+// controllers people actually have.
+struct MenuButtonChoice { const char* name; const char* label; };
+const MenuButtonChoice kMenuButtons[] = {
+    {"leftstick", "LEFT STICK CLICK"},
+    {"rightstick", "RIGHT STICK CLICK"},
+    {"guide", "GUIDE / HOME / PS"},
+    {"touchpad", "TOUCHPAD CLICK"},
+    {"misc1", "SHARE / CAPTURE"},
+};
+constexpr int kMenuButtonCount = int(sizeof kMenuButtons / sizeof kMenuButtons[0]);
+
 std::string upper(std::string v) {
     for (char& c : v) c = char(std::toupper((unsigned char)c));
     return v;
@@ -188,6 +201,22 @@ void Menu::build_controls() {
         items_.push_back({std::to_string(p + 1) + "P GAMEPAD", {},
                           [this, p](int) { keys_player_ = p; keys_pad_ = true; set_page(Page::Keys); }});
     }
+    // Escape opens this menu on a keyboard; on a pad it is whichever of the
+    // buttons the game does not use is chosen here.
+    items_.push_back({"MENU BUTTON",
+                      [c] {
+                          for (const MenuButtonChoice& b : kMenuButtons)
+                              if (c->menu_button == b.name) return std::string(b.label);
+                          return upper(c->menu_button);
+                      },
+                      [c](int step) {
+                          if (!step) return;
+                          int i = 0;
+                          for (int k = 0; k < kMenuButtonCount; ++k)
+                              if (c->menu_button == kMenuButtons[k].name) i = k;
+                          i = (i + step + kMenuButtonCount) % kMenuButtonCount;
+                          c->menu_button = kMenuButtons[i].name;
+                      }});
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
@@ -409,6 +438,11 @@ bool Menu::on_pad(Uint8 button) {
                 awaiting_.clear();
             }
         }
+        return true;
+    }
+    // The button that opened the menu closes it again, the way Escape does.
+    if (cfg_ && SDL_GetGamepadButtonFromString(cfg_->menu_button.c_str()) == SDL_GamepadButton(button)) {
+        if (is_row_page(page_) || page_ == Page::Front) close(); else set_page(return_to_);
         return true;
     }
     switch (button) {
