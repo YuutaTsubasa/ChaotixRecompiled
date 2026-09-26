@@ -108,10 +108,12 @@ struct App {
     // ones it asked for the run is over -- and the level clock at that moment
     // is the time.
     time_attack::Run ta;
-    // --record-input FILE: every frame's pad, so a session can be replayed
-    // exactly, headless, and looked at afterwards. What the game does when a
-    // run is finished at the goal is not something a script can reach, so the
-    // only way to study it is to record somebody reaching it.
+    // Every frame's pad is kept, so a session can be replayed exactly, headless,
+    // and looked at afterwards. What the game does when a run is finished at
+    // the goal is not something a script can reach, so the only way to study it
+    // is to record somebody reaching it -- which means recording without their
+    // having to arrange anything. A whole run is about 150 KB.
+    // --record-input FILE writes it somewhere particular instead.
     std::string record_path;
     std::vector<uint32_t> recorded;      // pad 1 in the low word, pad 2 in the high
     // Every stage asked for, and when: the request is applied by a patch hook
@@ -153,6 +155,22 @@ std::string find_asset(const App& app, const std::string& name) {
 
 std::string achievements_progress_path(const App& app) {
     return app.store.save_dir() + "achievements.ini";
+}
+
+// One line of header, the stages that were asked for, then one pad word per
+// emulated frame: enough for chaotix_headless --replay-input to play the
+// session back exactly.
+void write_recording(const App& app, const std::string& path) {
+    FILE* f = std::fopen(path.c_str(), "w");
+    if (!f) { LOGW("app", "could not write %s", path.c_str()); return; }
+    std::fprintf(f, "chaotix-input 1 frames=%zu\n", app.recorded.size());
+    for (const auto& e : app.recorded_stages)
+        std::fprintf(f, "stage %llu %u %u %u %u %u %d\n", (unsigned long long)e.frame,
+                     e.request.place, e.request.level, e.request.attime, e.request.player,
+                     e.request.combi, int(e.request.two_players));
+    for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
+    std::fclose(f);
+    LOGI("app", "session recorded to %s (%zu frames)", path.c_str(), app.recorded.size());
 }
 
 void capture_output(App& app) {
@@ -427,6 +445,9 @@ void follow_time_attack(App& app) {
     const bool ran_out = app.ta.timed_out();
     const bool best = !ran_out && record_best(app.cfg, app.ta.request.place,
                                               app.ta.request.level, frames);
+    // Straight to disk, the way an unlocked achievement is. Waiting for a
+    // clean exit loses the record if the program does not get one.
+    if (best) app.cfg.save(app.store.config_file());
     LOGI("stage", "time attack: over after %d frames%s", frames,
          ran_out ? " (the level's own limit)" : best ? " - a new best" : "");
     app.toasts.push_back({ran_out ? std::string("OUT OF TIME")
@@ -434,6 +455,10 @@ void follow_time_attack(App& app) {
                           ran_out ? "The level's own limit ran out."
                                   : (best ? "A new best for this stage." : "Not a new best."),
                           SDL_GetTicks() + 6000});
+    // The run, as it was played. A recorded time that disagrees with what the
+    // game showed can then be looked into without anyone having had to set up
+    // a recording beforehand.
+    write_recording(app, app.store.save_dir() + "last_run.txt");
     if (return_to_title(app)) app.menu.show_page("timeattack");
 }
 
@@ -682,7 +707,7 @@ int main(int argc, char** argv) {
             app.inject_start = 0;
             app.stage_kick = 0;
             app.ta.begin(r);
-            if (!app.record_path.empty()) app.recorded_stages.push_back({app.m->frame_count, r});
+            app.recorded_stages.push_back({app.m->frame_count, r});
         };
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
@@ -925,9 +950,7 @@ int main(int argc, char** argv) {
             // that simulates several would stretch a tap into a hold.
             scripted |= stage_kick_button(app);
             app.m->input.pad[0] = uint16_t(buttons | scripted);
-            if (!app.record_path.empty())
-                app.recorded.push_back(uint32_t(uint16_t(buttons | scripted)) |
-                                       uint32_t(raw2) << 16);
+            app.recorded.push_back(uint32_t(uint16_t(buttons | scripted)) | uint32_t(raw2) << 16);
             app.m->input.pad[1] = raw2;
             app.m->run_frame();
             follow_time_attack(app);
@@ -1058,23 +1081,7 @@ int main(int argc, char** argv) {
         if (app.m->sram_dirty) app.store.store_sram(*app.m);
         app.cfg.save(app.store.config_file());
     }
-    if (!app.record_path.empty()) {
-        // One line of header, then one pad word per emulated frame, so that
-        // chaotix_headless can play the session back exactly.
-        if (FILE* f = std::fopen(app.record_path.c_str(), "w")) {
-            std::fprintf(f, "chaotix-input 1 frames=%zu\n", app.recorded.size());
-            for (const auto& e : app.recorded_stages)
-                std::fprintf(f, "stage %llu %u %u %u %u %u %d\n", (unsigned long long)e.frame,
-                             e.request.place, e.request.level, e.request.attime, e.request.player,
-                             e.request.combi, int(e.request.two_players));
-            for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
-            std::fclose(f);
-            LOGI("app", "input recorded to %s (%zu frames)", app.record_path.c_str(),
-                 app.recorded.size());
-        } else {
-            LOGW("app", "could not write %s", app.record_path.c_str());
-        }
-    }
+    if (!app.record_path.empty()) write_recording(app, app.record_path);
     if (app.audio) SDL_DestroyAudioStream(app.audio);
     for (SDL_Gamepad* g : app.pads) SDL_CloseGamepad(g);
     SDL_DestroyTexture(app.texture);

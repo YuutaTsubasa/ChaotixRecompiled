@@ -139,6 +139,12 @@ START goes straight there, in about a second: none of the game's own screens
 are passed through, only its level entry (the ball wipe and the BOTANIC BASE
 ticket).
 
+Every run is recorded, frame by frame, to `SaveData/last_run.txt`, and
+`chaotix_headless --replay-input` plays one back exactly. It is there because
+what the game does when a level is finished at the goal is not something a
+script can reach, so the only way to study it is to record somebody reaching
+it. A whole run is about 150 KB and holds nothing but pad readings.
+
 BEST TIME shows the record for whichever stage is selected. When a run ends
 the game would send you to its lobby, so the front end takes the time and
 brings you back to this page instead, with what you managed. A run that used
