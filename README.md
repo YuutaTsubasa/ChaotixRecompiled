@@ -202,9 +202,12 @@ was checked by driving the game to it rather than by reading the conditions.
 - `chaotix_recomp --rom <rom> --coverage f.cov --out generated` — the recompiler.
 - `chaotix_headless --rom <rom> --frames N [--wide E] [--wide-bottom R]
   [--lockstep] [--compare-native] [--shot F] [--press F:btn:dur] [--coverage f]
-  [--stage F:PLACE:LEVEL:TIME:PLAYER:COMBI:PLAYERS] [--trace ...]` — deterministic
-  headless execution and validation. `--stage` asks the game to start a level
-  the way the front end's TIME ATTACK does.
+  [--stage F:PLACE:LEVEL:TIME:PLAYER:COMBI:PLAYERS] [--replay-input f]
+  [--trace ...]` — deterministic headless execution and validation. `--stage`
+  asks the game to start a level the way the front end's TIME ATTACK does, and
+  `--replay-input` plays back a session the program recorded with
+  `--record-input`, so that something only a person can do — finishing a level,
+  say — can be studied here as often as needed.
 
 ## Tests
 

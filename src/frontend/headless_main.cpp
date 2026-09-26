@@ -184,7 +184,12 @@ int main(int argc, char** argv) {
     stage_select::Request stage;
     int stage_kick = -1;              // frames since the request, while it waits
     time_attack::Run ta;              // the same run tracking the frontend uses
+    // --replay-input FILE: a session recorded by the frontend, so that what a
+    // person did can be studied here, deterministically, as often as needed.
+    std::vector<uint32_t> replay;
+    std::map<uint64_t, stage_select::Request> replay_stages;
     uint64_t stage_started = 0;       // the frame the game took it
+    bool stage_pending_last = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -267,6 +272,34 @@ int main(int argc, char** argv) {
             auto parts = split(next(), ':');
             break_cpu = std::atoi(parts[0].c_str());
             break_pc = uint32_t(std::strtoul(parts[1].c_str(), nullptr, 16));
+        }
+        else if (a == "--replay-input") {
+            const std::string path = next();
+            FILE* rf = std::fopen(path.c_str(), "r");
+            if (!rf) { std::fprintf(stderr, "cannot open %s\n", path.c_str()); return 2; }
+            char line[256];
+            while (std::fgets(line, sizeof line, rf)) {
+                if (!std::strncmp(line, "chaotix-input", 13)) continue;
+                unsigned long long fr = 0;
+                unsigned pl = 0, lv = 0, at = 0, py = 0, cb = 0;
+                int two = 0;
+                if (std::sscanf(line, "stage %llu %u %u %u %u %u %d", &fr, &pl, &lv, &at, &py, &cb,
+                                &two) == 7) {
+                    stage_select::Request q;
+                    q.place = uint16_t(pl);
+                    q.level = uint16_t(lv);
+                    q.attime = uint16_t(at);
+                    q.player = uint16_t(py);
+                    q.combi = uint16_t(cb);
+                    q.two_players = two != 0;
+                    replay_stages[fr] = q;
+                    continue;
+                }
+                replay.push_back(uint32_t(std::strtoul(line, nullptr, 16)));
+            }
+            std::fclose(rf);
+            std::printf("replay: %zu frames, %zu stage requests\n", replay.size(),
+                        replay_stages.size());
         }
         else if (a == "--stage") {
             auto parts = split(next(), ':');
@@ -384,17 +417,39 @@ int main(int argc, char** argv) {
         // title screen needs one press to get past its animation and another
         // to leave, and only then does the game come back to the dispatcher
         // where the request is taken.
+        // However the request got in, note the frame the game took it.
+        if (stage_set && stage_pending_last && !m->stage_pending) stage_started = f;
+        stage_pending_last = m->stage_pending;
         if (stage_kick >= 0) {
             if (!m->stage_pending) {
                 stage_kick = -1;
-                stage_started = f;
             } else {
                 if (stage_kick % 24 < 6) btn |= PAD_START;
                 ++stage_kick;
             }
         }
+        uint16_t btn2 = 0;
+        if (!replay.empty()) {
+            // A recorded session drives everything: its pads replace the
+            // scripted ones, and its stage requests are applied where they
+            // were made.
+            auto it = replay_stages.find(f);
+            if (it != replay_stages.end()) {
+                m->stage_request = it->second;
+                m->stage_pending = true;
+                if (ref) { ref->stage_request = it->second; ref->stage_pending = true; }
+                ta.begin(it->second);
+                stage_set = true;
+                stage_frame = f;
+            }
+            if (f < replay.size()) {
+                btn = uint16_t(replay[size_t(f)] & 0xFFFF);
+                btn2 = uint16_t(replay[size_t(f)] >> 16);
+            }
+        }
         m->input.pad[0] = btn;
-        if (ref) ref->input.pad[0] = btn;
+        m->input.pad[1] = btn2;
+        if (ref) { ref->input.pad[0] = btn; ref->input.pad[1] = btn2; }
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
         if (ta.update(*m))

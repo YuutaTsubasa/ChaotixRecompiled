@@ -108,6 +108,16 @@ struct App {
     // ones it asked for the run is over -- and the level clock at that moment
     // is the time.
     time_attack::Run ta;
+    // --record-input FILE: every frame's pad, so a session can be replayed
+    // exactly, headless, and looked at afterwards. What the game does when a
+    // run is finished at the goal is not something a script can reach, so the
+    // only way to study it is to record somebody reaching it.
+    std::string record_path;
+    std::vector<uint32_t> recorded;      // pad 1 in the low word, pad 2 in the high
+    // Every stage asked for, and when: the request is applied by a patch hook
+    // rather than through the pad, so a replay has to be told about it.
+    struct StageEvent { uint64_t frame; stage_select::Request request; };
+    std::vector<StageEvent> recorded_stages;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
@@ -187,7 +197,7 @@ std::vector<std::string> rom_search_dirs(const App& app) {
 // not confused with one of them.
 bool option_takes_value(const std::string& a) {
     static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
-                                       "--press", "--user-dir", "--install", "--menu", "--keys", "--shots", "--hold"};
+                                       "--press", "--user-dir", "--install", "--menu", "--keys", "--shots", "--hold", "--record-input"};
     for (const char* o : with_value)
         if (a == o) return true;
     return false;
@@ -596,6 +606,7 @@ int main(int argc, char** argv) {
                 st = comma + 1;
             }
         }
+        else if (a == "--record-input" && i + 1 < argc) app.record_path = argv[++i];
         else if (a == "--show-achievements") menu_page = "awards";
         else if (a == "--window-size" && i + 1 < argc) {
             int w = 0, h = 0;
@@ -671,6 +682,7 @@ int main(int argc, char** argv) {
             app.inject_start = 0;
             app.stage_kick = 0;
             app.ta.begin(r);
+            if (!app.record_path.empty()) app.recorded_stages.push_back({app.m->frame_count, r});
         };
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
@@ -913,6 +925,9 @@ int main(int argc, char** argv) {
             // that simulates several would stretch a tap into a hold.
             scripted |= stage_kick_button(app);
             app.m->input.pad[0] = uint16_t(buttons | scripted);
+            if (!app.record_path.empty())
+                app.recorded.push_back(uint32_t(uint16_t(buttons | scripted)) |
+                                       uint32_t(raw2) << 16);
             app.m->input.pad[1] = raw2;
             app.m->run_frame();
             follow_time_attack(app);
@@ -1042,6 +1057,23 @@ int main(int argc, char** argv) {
     if (!app.autotest_frames) {
         if (app.m->sram_dirty) app.store.store_sram(*app.m);
         app.cfg.save(app.store.config_file());
+    }
+    if (!app.record_path.empty()) {
+        // One line of header, then one pad word per emulated frame, so that
+        // chaotix_headless can play the session back exactly.
+        if (FILE* f = std::fopen(app.record_path.c_str(), "w")) {
+            std::fprintf(f, "chaotix-input 1 frames=%zu\n", app.recorded.size());
+            for (const auto& e : app.recorded_stages)
+                std::fprintf(f, "stage %llu %u %u %u %u %u %d\n", (unsigned long long)e.frame,
+                             e.request.place, e.request.level, e.request.attime, e.request.player,
+                             e.request.combi, int(e.request.two_players));
+            for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
+            std::fclose(f);
+            LOGI("app", "input recorded to %s (%zu frames)", app.record_path.c_str(),
+                 app.recorded.size());
+        } else {
+            LOGW("app", "could not write %s", app.record_path.c_str());
+        }
     }
     if (app.audio) SDL_DestroyAudioStream(app.audio);
     for (SDL_Gamepad* g : app.pads) SDL_CloseGamepad(g);
