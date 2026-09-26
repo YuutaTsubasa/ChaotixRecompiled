@@ -14,8 +14,8 @@ namespace {
 // because one was added before it. The main page is a row (left/right), the
 // options page a column (up/down). Returns false if it is not there.
 bool select_row(Menu& m, const std::string& label) {
-    const bool row = m.page_name() == "main" || m.page_name() == "front";
-    const SDL_Keycode step = row ? SDLK_RIGHT : SDLK_DOWN;
+    // The pause menu is a row across the screen; every other page is a column.
+    const SDL_Keycode step = m.page_name() == "main" ? SDLK_RIGHT : SDLK_DOWN;
     const std::string first = m.selected_label();
     for (int i = 0; i < 64; ++i) {
         if (m.selected_label() == label) return true;

@@ -875,13 +875,26 @@ int main(int argc, char** argv) {
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
         SDL_FRect src{0, 0, float(app.m->fb_width), float(app.m->fb_height)};
         SDL_FRect dst{float(vp.image.x), float(vp.image.y), float(vp.image.w), float(vp.image.h)};
+        // The front end puts the game's own picture beside its list instead of
+        // behind it, and says where.
+        SDL_FRect art{};
+        bool panelled = false;
+        if (app.ui.ready()) {
+            app.ui.begin_frame();
+            panelled = app.menu.art_panel(app.ui, &art);
+        }
+        // With a panel the picture is drawn twice: once filling the window as
+        // a backdrop, which the menu then dims, and once in the panel itself.
         SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
+        if (panelled) {
+            app.menu.draw_backdrop_dim(app.ui);
+            SDL_RenderTexture(app.renderer, app.texture, &src, &art);
+        }
         if (app.touch_enabled) {
             app.touch.layout(ow, oh);
             draw_touch_controls(app, touch_held);
         }
         if (app.ui.ready()) {
-            app.ui.begin_frame();
             app.menu.draw(app.ui, app.achievements);
             if (app.achievements_on) draw_toasts(app);
             app.ui.end_frame();

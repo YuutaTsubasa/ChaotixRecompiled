@@ -60,6 +60,11 @@ public:
     bool on_touch_up();
 
     void draw(ui::Ui& g, achievements::Tracker& ach);
+    // The front end shows the game beside the list rather than behind it, so
+    // it says where the image goes. Returns false to fill the window as usual.
+    bool art_panel(ui::Ui& g, SDL_FRect* out) const;
+    // Damps the full-window backdrop before the panel is drawn over it.
+    void draw_backdrop_dim(ui::Ui& g) const;
 
 private:
     enum class Page { Closed, Front, Main, Options, Controls, Keys, Achievements };
@@ -84,6 +89,7 @@ private:
     void build_keys();
     void move(int delta);
     void activate(int step);
+    void draw_front(ui::Ui& g);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);
     std::vector<std::string> device_choices() const;

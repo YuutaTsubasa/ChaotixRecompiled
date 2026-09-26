@@ -34,14 +34,14 @@ void cycle(T& value, int count, int step) {
 
 } // namespace
 
-bool Menu::is_row_page(Page p) { return p == Page::Front || p == Page::Main; }
+bool Menu::is_row_page(Page p) { return p == Page::Main; }
 
 bool Menu::is_list_page(Page p) {
-    return p == Page::Options || p == Page::Controls || p == Page::Keys;
+    return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys;
 }
 
 void Menu::set_page(Page p) {
-    if (is_row_page(p)) return_to_ = p;
+    if (is_row_page(p) || p == Page::Front) return_to_ = p;
     page_ = p;
     selected_ = 0;
     scroll_ = 0;
@@ -300,7 +300,7 @@ bool Menu::on_key(SDL_Keycode key) {
     }
     switch (key) {
     case SDLK_ESCAPE:
-        if (is_row_page(page_)) close(); else set_page(return_to_);
+        if (is_row_page(page_) || page_ == Page::Front) close(); else set_page(return_to_);
         return true;
     case SDLK_LEFT:
         if (is_row_page(page_)) move(-1); else activate(-1);
@@ -355,7 +355,7 @@ bool Menu::on_pad(Uint8 button) {
         if (page_ == Page::Achievements) set_page(return_to_); else activate(0);
         return true;
     case SDL_GAMEPAD_BUTTON_EAST:
-        if (is_row_page(page_)) close(); else set_page(return_to_);
+        if (is_row_page(page_) || page_ == Page::Front) close(); else set_page(return_to_);
         return true;
     default:
         return true;
@@ -383,6 +383,21 @@ bool Menu::on_touch_up() {
     return true;
 }
 
+// The front end is a screen of its own: the game's own title art on the left,
+// the list on the right, in the manner of a modern re-release. Everywhere
+// else the menu sits over the game, so the image keeps the whole window.
+bool Menu::art_panel(ui::Ui& g, SDL_FRect* out) const {
+    if (page_ != Page::Front) return false;
+    const float margin = g.px(34);
+    // The 4:3 image gets the left side, as large as the height allows.
+    const float max_w = g.width() * 0.54f - margin * 2;
+    const float max_h = g.height() - margin * 2;
+    float w = max_w, h = w * 3.0f / 4.0f;
+    if (h > max_h) { h = max_h; w = h * 4.0f / 3.0f; }
+    *out = {margin + (max_w - w) * 0.5f, (g.height() - h) * 0.5f, w, h};
+    return true;
+}
+
 void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     if (!open()) return;
     hits_.clear();
@@ -393,13 +408,63 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     g.rect({0, 0, g.width(), g.height()}, ui::theme::background.alpha(150));
 
     if (page_ == Page::Front)
-        draw_row_page(g, "Left/Right choose    Enter select");
+        draw_front(g);
     else if (page_ == Page::Main)
         draw_row_page(g, "Left/Right choose    Enter select    Esc close");
     else if (page_ == Page::Options || page_ == Page::Controls || page_ == Page::Keys)
         draw_options(g);
     else
         draw_achievements(g, ach);
+}
+
+// A vertical list down the right-hand side, beside the art panel.
+void Menu::draw_backdrop_dim(ui::Ui& g) const {
+    g.rect({0, 0, g.width(), g.height()}, ui::theme::background.alpha(226));
+}
+
+void Menu::draw_front(ui::Ui& g) {
+    SDL_FRect art{};
+    art_panel(g, &art);
+
+    // A frame around the game's image, so it reads as a picture rather than
+    // as the game running underneath.
+    g.outline({art.x - g.px(3), art.y - g.px(3), art.w + g.px(6), art.h + g.px(6)},
+              ui::theme::accent, g.px(3), g.px(3));
+
+    const float left = art.x + art.w + g.px(40);
+    const float right = g.width() - g.px(28);
+    const float column = std::max(g.px(120), right - left);
+
+    const float row_h = g.line_height(ui::Font::PixelBig) + g.px(14);
+    const float title_h = g.line_height(ui::Font::PixelBig) + g.px(26);
+    const float total = title_h + row_h * float(items_.size());
+    float y = std::max(g.px(24), (g.height() - total) * 0.5f);
+
+    g.text(ui::Font::Pixel, left, y, "KNUCKLES", ui::theme::text_dim);
+    y += g.line_height(ui::Font::Pixel) + g.px(2);
+    g.text(ui::Font::PixelBig, left, y, "CHAOTIX", ui::theme::accent);
+    y += title_h;
+
+    for (size_t i = 0; i < items_.size(); ++i) {
+        const bool sel = int(i) == selected_;
+        const float w = g.text_width(ui::Font::PixelBig, items_[i].label);
+        if (sel) {
+            // The selected entry sits on a bar, the way these menus mark a
+            // choice, with a marker that bobs.
+            const float bob = std::sin(anim_ * 3.0f) * g.px(2);
+            g.rect({left - g.px(12), y - g.px(6), std::min(column, w + g.px(36)),
+                    g.line_height(ui::Font::PixelBig) + g.px(12)},
+                   ui::theme::accent_dim, g.px(4));
+            g.text(ui::Font::PixelBig, left + bob, y, items_[i].label, ui::theme::text);
+        } else {
+            g.text(ui::Font::PixelBig, left, y, items_[i].label, ui::theme::text_faint);
+        }
+        hits_.push_back({{left - g.px(12), y - g.px(6), column, row_h}, int(i)});
+        y += row_h;
+    }
+
+    g.text(ui::Font::Small, left, g.height() - g.px(26),
+           "Up/Down choose    Enter select", ui::theme::text_faint);
 }
 
 void Menu::draw_row_page(ui::Ui& g, const char* hint) {

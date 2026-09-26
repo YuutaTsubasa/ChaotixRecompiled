@@ -104,9 +104,11 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | Tab (hold) | Fast-forward |
 | F12 | Screenshot |
 
-The menu is the front end: it is up as soon as the program starts, with the
-game booting behind it and its title screen and attract demo as the backdrop.
-START GAME, OPTIONS, CONTROLS, AWARDS and QUIT.
+The menu is the front end: it is up as soon as the program starts, a screen of
+its own with the game's title art framed on the left and the list beside it —
+START GAME, OPTIONS, CONTROLS, AWARDS, QUIT — over the same picture enlarged
+and dimmed. The art is the game drawing its own title screen, from your ROM,
+so nothing is extracted or shipped.
 
 START GAME hands the game control, and it proceeds into its own menus exactly
 as it would have on the console, so nothing the original offers is out of
