@@ -35,6 +35,15 @@ void Config::set_defaults() {
         {"a", "Z"}, {"b", "X"}, {"c", "C"}, {"start", "Return"},
         {"x", "A"}, {"y", "S"}, {"z", "D"}, {"mode", "Right Shift"},
     };
+    // The Mega Drive's six-button layout on a modern pad: bottom row A B C
+    // across the face buttons, top row X Y Z on shoulder-north-shoulder.
+    // Both players start here; assign them different controllers to split.
+    pads = {
+        {"up", "dpup"}, {"down", "dpdown"}, {"left", "dpleft"}, {"right", "dpright"},
+        {"a", "x"}, {"b", "a"}, {"c", "b"}, {"start", "start"},
+        {"x", "leftshoulder"}, {"y", "y"}, {"z", "rightshoulder"}, {"mode", "back"},
+    };
+    pads2 = pads;
     // Player 2 on the keypad: far enough from player 1 that two people can
     // share one keyboard, and nothing clashes with the set above.
     keys2 = {
@@ -83,6 +92,8 @@ bool Config::load(const std::string& path) {
             else if (k == "Device2") device[1] = v;
             else if (k.rfind("Key.", 0) == 0) keys[k.substr(4)] = v;
             else if (k.rfind("Key2.", 0) == 0) keys2[k.substr(5)] = v;
+            else if (k.rfind("Pad2.", 0) == 0) pads2[k.substr(5)] = v;
+            else if (k.rfind("Pad.", 0) == 0) pads[k.substr(4)] = v;
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
             else if (k == "UseRecompiledCode") use_recompiled = parse_bool(v, use_recompiled);
@@ -119,6 +130,8 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Device1 = %s\nDevice2 = %s\n", device[0].c_str(), device[1].c_str());
     for (const auto& [b, k] : keys) std::fprintf(f, "Key.%s = %s\n", b.c_str(), k.c_str());
     for (const auto& [b, k] : keys2) std::fprintf(f, "Key2.%s = %s\n", b.c_str(), k.c_str());
+    for (const auto& [b, k] : pads) std::fprintf(f, "Pad.%s = %s\n", b.c_str(), k.c_str());
+    for (const auto& [b, k] : pads2) std::fprintf(f, "Pad2.%s = %s\n", b.c_str(), k.c_str());
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");
     std::fclose(f);
     return true;

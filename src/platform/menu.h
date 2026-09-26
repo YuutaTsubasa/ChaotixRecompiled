@@ -93,7 +93,8 @@ private:
     // Sub-pages return to whichever page opened them, so Options reached from
     // the title screen goes back there rather than to the pause menu.
     Page return_to_ = Page::Main;
-    int keys_player_ = 0;          // which player the key page is editing
+    int keys_player_ = 0;          // which player the binding page is editing
+    bool keys_pad_ = false;        // and whether it is their gamepad or keyboard
     std::string awaiting_;         // button being rebound, empty when not capturing
     bool confirm_reset_ = false;   // the reset row is asking a second time
     std::vector<Item> items_;

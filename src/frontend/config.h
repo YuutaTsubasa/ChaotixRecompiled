@@ -34,10 +34,13 @@ struct Config {
     // What drives each player: "auto" (the keyboard and every gamepad the
     // other player has not claimed), "keyboard", "pad1".."padN", or "none".
     std::string device[2] = {"auto", "none"};
-    // pad button name -> key name, one set per player, so two people can
-    // share a keyboard.
+    // Mega Drive button name -> what produces it, one set per player so two
+    // people can share a keyboard or two controllers behave differently.
+    // keys*: SDL key names. pads*: SDL gamepad button names.
     std::map<std::string, std::string> keys;
     std::map<std::string, std::string> keys2;
+    std::map<std::string, std::string> pads;
+    std::map<std::string, std::string> pads2;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

@@ -104,6 +104,12 @@ struct App {
     // The title screen, kept so Escape can leave the game's menu: the game
     // itself has no way back to the title from there.
     std::unique_ptr<Machine> title_snapshot;
+    uint8_t last_title_tick = 0;   // FFADAD, which flips while the title is up
+    int title_tick_still = 0;      // frames since it last flipped
+    // Start at the title goes to the game first, because during the opening
+    // animation that is what skips it. If the game answers by opening its own
+    // menu, the title was already waiting and the press was meant for us.
+    int title_start_pending = 0;
     // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
@@ -239,24 +245,19 @@ void warn_about_dead_bindings(const App& app) {
     }
 }
 
-uint16_t gamepad_buttons(SDL_Gamepad* g) {
+// The Mega Drive pad the game sees, from whatever the player bound to it.
+// Defaults are in Config::set_defaults; anything here can be rebound.
+uint16_t gamepad_buttons(SDL_Gamepad* g, const std::map<std::string, std::string>& binds) {
     uint16_t out = 0;
-    auto b = [&](SDL_GamepadButton btn, uint16_t mask) { if (SDL_GetGamepadButton(g, btn)) out |= mask; };
-    // Layout follows the Mega Drive 6-button pad: bottom row A B C, top row X Y Z.
-    b(SDL_GAMEPAD_BUTTON_DPAD_UP, PAD_UP);
-    b(SDL_GAMEPAD_BUTTON_DPAD_DOWN, PAD_DOWN);
-    b(SDL_GAMEPAD_BUTTON_DPAD_LEFT, PAD_LEFT);
-    b(SDL_GAMEPAD_BUTTON_DPAD_RIGHT, PAD_RIGHT);
-    b(SDL_GAMEPAD_BUTTON_WEST, PAD_A);
-    b(SDL_GAMEPAD_BUTTON_SOUTH, PAD_B);
-    b(SDL_GAMEPAD_BUTTON_EAST, PAD_C);
-    b(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, PAD_X);
-    b(SDL_GAMEPAD_BUTTON_NORTH, PAD_Y);
-    b(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, PAD_Z);
-    b(SDL_GAMEPAD_BUTTON_START, PAD_START);
-    b(SDL_GAMEPAD_BUTTON_BACK, PAD_MODE);
+    for (const auto& [name, sdl_name] : binds) {
+        const SDL_GamepadButton b = SDL_GetGamepadButtonFromString(sdl_name.c_str());
+        if (b != SDL_GAMEPAD_BUTTON_INVALID && SDL_GetGamepadButton(g, b))
+            out |= pad_button_from_name(name.c_str());
+    }
+    // The sticks always steer, whatever the d-pad is bound to.
     const int dead = 12000;
-    int lx = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTX), ly = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTY);
+    const int lx = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTX);
+    const int ly = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTY);
     if (lx < -dead) out |= PAD_LEFT;
     if (lx > dead) out |= PAD_RIGHT;
     if (ly < -dead) out |= PAD_UP;
@@ -271,16 +272,18 @@ uint16_t device_buttons(const App& app, int player) {
     if (dev == "none") return 0;
     if (dev.rfind("pad", 0) == 0) {
         const size_t i = size_t(std::atoi(dev.c_str() + 3)) - 1;  // pad1 is the first
-        return i < app.pads.size() ? gamepad_buttons(app.pads[i]) : uint16_t(0);
+        const auto& binds = player == 0 ? app.cfg.pads : app.cfg.pads2;
+        return i < app.pads.size() ? gamepad_buttons(app.pads[i], binds) : uint16_t(0);
     }
     uint16_t out = keyboard_buttons(app, player);
     // "auto" also answers to every gamepad, which is what someone who has
     // never opened the controls page expects. A pad the other player has
     // claimed is left alone, so the two do not drive each other.
     if (dev == "auto") {
+        const auto& binds = player == 0 ? app.cfg.pads : app.cfg.pads2;
         for (size_t i = 0; i < app.pads.size(); ++i) {
             if (other == "pad" + std::to_string(i + 1)) continue;
-            out |= gamepad_buttons(app.pads[i]);
+            out |= gamepad_buttons(app.pads[i], binds);
         }
     }
     return out;
@@ -340,15 +343,27 @@ void save_screenshot(App& app) {
 // Every face and shoulder button is taken by the emulated 6-button pad (and
 // Back is its Mode button), so the menu is on the left stick click, which
 // nothing else uses. While the menu is open it drives the menu, not the game.
-// Where the game is, from its own memory. FFDFDE is 0008 on the title screen
-// and in the game's own menu and something else once a level is running;
-// FFAD2E tells those two apart, which nothing else in work RAM does.
+// Where the game is, from its own memory. FFDFDE is 0008 both on the title
+// screen and in the game's own menu, and something else once a level runs.
+//
+// FFAD2E only says whether Start has ever been pressed - it is set just the
+// same when Start skipped the opening animation - so it cannot separate the
+// title from the menu. FFADAD can: it flips every couple of frames while the
+// title sequence is on screen and stops dead once the menu is up.
 void read_game_state(App& app) {
     const uint8_t* w = app.m->wram;
     const uint16_t mode = uint16_t(w[0xDFDE] << 8 | w[0xDFDF]);
     const bool front = mode == 0x0008;
-    app.at_title = front && w[0xAD2E] == 0x00;
-    app.in_game_menu = front && w[0xAD2E] != 0x00;
+    if (w[0xADAD] != app.last_title_tick) {
+        app.last_title_tick = w[0xADAD];
+        app.title_tick_still = 0;
+    } else if (app.title_tick_still < 1000) {
+        ++app.title_tick_still;
+    }
+    // Two frames is the flip rate; a handful of frames without one is the
+    // game's menu rather than a slow frame.
+    app.in_game_menu = front && app.title_tick_still >= 8;
+    app.at_title = front && !app.in_game_menu;
     app.in_level = !front && mode != 0x0000;
 }
 
@@ -766,6 +781,18 @@ int main(int argc, char** argv) {
         uint16_t touch_held = 0;
         for (const auto& [id, b] : app.fingers) touch_held |= b;
         read_game_state(app);
+        // The game answered that Start by opening its menu, so the title had
+        // already finished appearing and the press was for our front end.
+        // Otherwise the press skipped the opening animation, which is what it
+        // was for, and nothing needs undoing.
+        if (app.title_start_pending > 0) {
+            if (app.in_game_menu) {
+                app.title_start_pending = 0;
+                if (return_to_title(app)) app.menu.open_front();
+            } else {
+                --app.title_start_pending;
+            }
+        }
         uint16_t raw = 0, raw2 = 0;
         // Emulated frames advance in batches, so a window of frame numbers can
         // be stepped straight over: arm on reaching the frame, then hold for a
@@ -780,12 +807,13 @@ int main(int argc, char** argv) {
             raw2 = device_buttons(app, 1);
         }
         uint16_t buttons = raw;
-        // On the title screen Start belongs to our front end. The edge is
-        // taken from the unmasked buttons, or holding Start would re-open the
-        // page every frame and never let the selection move.
-        if (app.at_title && (raw & PAD_START)) {
-            buttons &= uint16_t(~PAD_START);
-            if (!(app.prev_buttons & PAD_START)) app.menu.open_front();
+        // Hand a title-screen Start to the game and keep the title, so that
+        // it can be put back if the game answers with its own menu.
+        if (app.at_title && (raw & PAD_START) && !(app.prev_buttons & PAD_START) &&
+            app.inject_start == 0 && app.title_start_pending == 0) {
+            if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
+            *app.title_snapshot = *app.m;
+            app.title_start_pending = 30;
         }
         app.prev_buttons = raw;
         if (app.inject_start > 0) { buttons |= PAD_START; --app.inject_start; }

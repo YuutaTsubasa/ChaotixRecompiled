@@ -67,8 +67,9 @@ void Menu::show_achievements() { set_page(Page::Achievements); }
 bool Menu::show_page(const std::string& name) {
     if (name == "front") set_page(Page::Front);
     else if (name == "controls") set_page(Page::Controls);
-    else if (name == "keys1" || name == "keys2") {
-        keys_player_ = name == "keys1" ? 0 : 1;
+    else if (name == "keys1" || name == "keys2" || name == "pad1" || name == "pad2") {
+        keys_pad_ = name.rfind("pad", 0) == 0;
+        keys_player_ = name.back() == '1' ? 0 : 1;
         set_page(Page::Keys);
     }
     else if (name == "main") set_page(Page::Main);
@@ -172,7 +173,9 @@ void Menu::build_controls() {
     }
     for (int p = 0; p < 2; ++p) {
         items_.push_back({std::to_string(p + 1) + "P KEYBOARD", {},
-                          [this, p](int) { keys_player_ = p; set_page(Page::Keys); }});
+                          [this, p](int) { keys_player_ = p; keys_pad_ = false; set_page(Page::Keys); }});
+        items_.push_back({std::to_string(p + 1) + "P GAMEPAD", {},
+                          [this, p](int) { keys_player_ = p; keys_pad_ = true; set_page(Page::Keys); }});
     }
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
@@ -182,12 +185,15 @@ void Menu::build_keys() {
     Config* c = cfg_;
     if (!c) return;
     const int p = keys_player_;
+    const bool pad = keys_pad_;
     for (const char* b : kPadButtons) {
         const std::string button = b;
         items_.push_back({upper(button),
-                          [this, c, p, button] {
-                              if (awaiting_ == button) return std::string("PRESS A KEY");
-                              auto& binds = p == 0 ? c->keys : c->keys2;
+                          [this, c, p, pad, button] {
+                              if (awaiting_ == button)
+                                  return std::string(pad ? "PRESS A BUTTON" : "PRESS A KEY");
+                              const auto& binds = pad ? (p == 0 ? c->pads : c->pads2)
+                                                      : (p == 0 ? c->keys : c->keys2);
                               auto it = binds.find(button);
                               return it == binds.end() ? std::string("-") : upper(it->second);
                           },
@@ -272,18 +278,18 @@ void Menu::activate(int step) {
 bool Menu::on_key(SDL_Keycode key) {
     if (!open()) return false;
     if (!awaiting_.empty()) {
-        // Capturing a binding: the next key is the answer, except Escape,
-        // which leaves the binding alone.
-        if (key != SDLK_ESCAPE && cfg_) {
+        // Capturing a binding. Escape abandons it; on a gamepad page a key is
+        // simply the wrong kind of answer and is ignored.
+        if (key == SDLK_ESCAPE) awaiting_.clear();
+        else if (!keys_pad_ && cfg_) {
             const SDL_Scancode sc = SDL_GetScancodeFromKey(key, nullptr);
-            if (const char* name = SDL_GetScancodeName(sc)) {
-                if (*name) {
-                    auto& binds = keys_player_ == 0 ? cfg_->keys : cfg_->keys2;
-                    binds[awaiting_] = name;
-                }
+            const char* name = SDL_GetScancodeName(sc);
+            if (name && *name) {
+                auto& binds = keys_player_ == 0 ? cfg_->keys : cfg_->keys2;
+                binds[awaiting_] = name;
+                awaiting_.clear();
             }
         }
-        awaiting_.clear();
         return true;
     }
     switch (key) {
@@ -314,6 +320,18 @@ bool Menu::on_key(SDL_Keycode key) {
 
 bool Menu::on_pad(Uint8 button) {
     if (!open()) return false;
+    if (!awaiting_.empty()) {
+        // The mirror of the keyboard case: only a gamepad page takes a button.
+        if (keys_pad_ && cfg_) {
+            const char* name = SDL_GetGamepadStringForButton(SDL_GamepadButton(button));
+            if (name && *name) {
+                auto& binds = keys_player_ == 0 ? cfg_->pads : cfg_->pads2;
+                binds[awaiting_] = name;
+                awaiting_.clear();
+            }
+        }
+        return true;
+    }
     switch (button) {
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
         if (is_row_page(page_)) move(-1); else activate(-1);
@@ -450,7 +468,9 @@ void Menu::draw_options(ui::Ui& g) {
             ui::theme::background.alpha(240), ui::theme::accent, g.px(4), g.px(3));
 
     const char* heading = page_ == Page::Controls ? "CONTROLS"
-                        : page_ == Page::Keys ? (keys_player_ == 0 ? "1P KEYS" : "2P KEYS")
+                        : page_ == Page::Keys
+                              ? (keys_player_ == 0 ? (keys_pad_ ? "1P GAMEPAD" : "1P KEYBOARD")
+                                                   : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))
                         : "OPTIONS";
     g.text(ui::Font::PixelBig, x, y, heading, ui::theme::accent);
     y += head_h;
