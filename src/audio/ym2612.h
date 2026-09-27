@@ -38,6 +38,7 @@ private:
         uint8_t alg = 0, fb = 0, ams = 0, pms = 0;
         bool left = true, right = true;
         int32_t fb_mem[2] = {0, 0};
+        int32_t mem = 0;     // one-sample intermediate delay for algorithms 0-3 and 5
     };
 
     void write_reg(int bank, uint8_t reg, uint8_t v);

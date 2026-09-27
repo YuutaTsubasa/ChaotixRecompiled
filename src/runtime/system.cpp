@@ -289,7 +289,12 @@ void Machine::audio_advance(uint64_t end_mclk) {
         int32_t v = sel == 1 ? pwm.out_l : sel == 2 ? pwm.out_r : int32_t(pwm.cycle / 2);
         return (v - int32_t(pwm.cycle / 2)) * 16384 / int32_t(pwm.cycle);
     };
-    const int32_t pl = pwm_level(pwm.ctrl & 3), pr = pwm_level((pwm.ctrl >> 2) & 3);
+    // Confirmed stereo routes: 0x05 keeps L/R independent; 0x0a swaps them.
+    // Preserve other modes pending hardware verification: reference emulators
+    // disagree on the single-source routing (see docs/AUDIO_PWM.md).
+    const int route = pwm.ctrl & 0x0f;
+    const int right_source = route == 0x05 ? 2 : route == 0x0a ? 1 : (pwm.ctrl >> 2) & 3;
+    const int32_t pl = pwm_level(pwm.ctrl & 3), pr = pwm_level(right_source);
     for (int i = 0; i < n; ++i) {
         psg_frac += kMclkPerAudioSample;
         int clocks = psg_frac / 15;

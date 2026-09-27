@@ -293,12 +293,44 @@ void Ym2612::generate(int samples, std::vector<int16_t>& out) {
             ch.fb_mem[1] = o1;
             int32_t o2, o3, o4, acc;
             switch (ch.alg) {
-            case 0: o2 = op_output(ch.op[1], c, o1 >> 1, am); o3 = op_output(ch.op[2], c, o2 >> 1, am); o4 = op_output(ch.op[3], c, o3 >> 1, am); acc = o4; break;
-            case 1: o2 = op_output(ch.op[1], c, 0, am); o3 = op_output(ch.op[2], c, (o1 + o2) >> 1, am); o4 = op_output(ch.op[3], c, o3 >> 1, am); acc = o4; break;
-            case 2: o2 = op_output(ch.op[1], c, 0, am); o3 = op_output(ch.op[2], c, o2 >> 1, am); o4 = op_output(ch.op[3], c, (o1 + o3) >> 1, am); acc = o4; break;
-            case 3: o2 = op_output(ch.op[1], c, o1 >> 1, am); o3 = op_output(ch.op[2], c, 0, am); o4 = op_output(ch.op[3], c, (o2 + o3) >> 1, am); acc = o4; break;
+            // Consume the previous sample's intermediate result before
+            // replacing it. Algorithms 4, 6 and 7 leave this memory intact.
+            case 0:
+                o2 = op_output(ch.op[1], c, o1 >> 1, am);
+                o3 = op_output(ch.op[2], c, ch.mem >> 1, am);
+                o4 = op_output(ch.op[3], c, o3 >> 1, am);
+                ch.mem = o2;
+                acc = o4;
+                break;
+            case 1:
+                o2 = op_output(ch.op[1], c, 0, am);
+                o3 = op_output(ch.op[2], c, ch.mem >> 1, am);
+                o4 = op_output(ch.op[3], c, o3 >> 1, am);
+                ch.mem = o1 + o2;
+                acc = o4;
+                break;
+            case 2:
+                o2 = op_output(ch.op[1], c, 0, am);
+                o3 = op_output(ch.op[2], c, ch.mem >> 1, am);
+                o4 = op_output(ch.op[3], c, (o1 + o3) >> 1, am);
+                ch.mem = o2;
+                acc = o4;
+                break;
+            case 3:
+                o2 = op_output(ch.op[1], c, o1 >> 1, am);
+                o3 = op_output(ch.op[2], c, 0, am);
+                o4 = op_output(ch.op[3], c, (ch.mem + o3) >> 1, am);
+                ch.mem = o2;
+                acc = o4;
+                break;
             case 4: o2 = op_output(ch.op[1], c, o1 >> 1, am); o3 = op_output(ch.op[2], c, 0, am); o4 = op_output(ch.op[3], c, o3 >> 1, am); acc = o2 + o4; break;
-            case 5: o2 = op_output(ch.op[1], c, o1 >> 1, am); o3 = op_output(ch.op[2], c, o1 >> 1, am); o4 = op_output(ch.op[3], c, o1 >> 1, am); acc = o2 + o3 + o4; break;
+            case 5:
+                o2 = op_output(ch.op[1], c, o1 >> 1, am);
+                o3 = op_output(ch.op[2], c, ch.mem >> 1, am);
+                o4 = op_output(ch.op[3], c, o1 >> 1, am);
+                ch.mem = o1;
+                acc = o2 + o3 + o4;
+                break;
             case 6: o2 = op_output(ch.op[1], c, o1 >> 1, am); o3 = op_output(ch.op[2], c, 0, am); o4 = op_output(ch.op[3], c, 0, am); acc = o2 + o3 + o4; break;
             default: o2 = op_output(ch.op[1], c, 0, am); o3 = op_output(ch.op[2], c, 0, am); o4 = op_output(ch.op[3], c, 0, am); acc = o1 + o2 + o3 + o4; break;
             }
