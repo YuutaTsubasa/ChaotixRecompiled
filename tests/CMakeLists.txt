@@ -14,6 +14,8 @@ target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime)
 # is available. It drives the menu with key presses; nothing is drawn.
 if(CHAOTIX_BUILD_FRONTEND)
     target_sources(chaotix_tests PRIVATE
+        test_sdl_rom_import.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/sdl_rom_import.cpp
         test_menu.cpp
         test_time_attack.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp

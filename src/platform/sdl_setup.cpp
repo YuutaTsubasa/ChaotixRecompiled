@@ -181,13 +181,8 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
     const SDL_DialogFileFilter filters[] = {{"32X ROM", "32x;bin;md;gen;rom"}, {"All files", "*"}};
 
     auto install = [&](const std::string& path) -> std::string {
-        setup::Candidate c = setup::check_file(path);
-        if (!c.loadable) {
-            st.status = c.label;
-            return "";
-        }
         std::string installed, err;
-        if (!setup::install(path, store_root, &installed, &err)) {
+        if (!install_rom_from_stream(SDL_IOFromFile(path.c_str(), "rb"), store_root, &installed, &err)) {
             st.status = "Cannot install: " + err;
             return "";
         }

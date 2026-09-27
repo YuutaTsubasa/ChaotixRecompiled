@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ChaotixRecompiled VERSION 0.3.1 LANGUAGES C CXX)
+project(ChaotixRecompiled VERSION 0.3.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -145,6 +145,7 @@ if(CHAOTIX_BUILD_FRONTEND)
     set(_frontend_sources
         src/platform/sdl_main.cpp
         src/platform/sdl_setup.cpp
+        src/platform/sdl_rom_import.cpp
         src/platform/menu.cpp
         src/platform/ui.cpp
         src/frontend/config.cpp

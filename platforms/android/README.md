@@ -3,7 +3,21 @@
 Status: **builds and runs.** Verified on an Android 16 (API 36) emulator with
 the `x86_64` ABI: the first-run setup page appears in landscape, finds a ROM
 pushed to the app's external files folder, installs it, and the game boots.
-`arm64-v8a` builds from the same tree (not yet run on physical hardware).
+The `arm64-v8a` setup flow is also verified on an AYANEO Pocket S2 Pro:
+Browse → Downloads → select ROM installs it and reaches the main menu.
+
+Android's file picker returns a `content://` document URI, not a filesystem
+path. The SDL frontend opens it with `SDL_IOFromFile`, copies at most 8 MiB
+to a private staging file, then uses the shared ROM validation and installer.
+The staging file is removed on success or failure. This fixes issue #2,
+reported in 0.3.1, where the URI was passed to `fopen` and could not be opened.
+The runtime and headless tools still use ordinary local paths.
+
+To check this flow, use Browse to select a ROM from Downloads (putting it in
+the app's external files folder only tests scanning). Verify that the main
+menu opens, then remove the original selected file and restart the app: the
+installed copy should still load. Host unit tests also cover nonseekable
+streams, read errors, invalid ROMs and the size limit using synthetic data.
 
 The APK contains the recompiled game code, generated from a ROM. It holds a
 translation of the game's instructions and none of its data, and it stops at
