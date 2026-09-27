@@ -1,6 +1,7 @@
 # Unit tests (no ROM needed)
 add_executable(chaotix_tests
     test_main.cpp
+    test_frame_pacing.cpp
     test_m68k.cpp
     test_sh2.cpp
     test_viewport.cpp

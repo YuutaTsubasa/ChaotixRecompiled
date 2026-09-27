@@ -12,6 +12,7 @@
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
+#include "platform/frame_pacing.h"
 #include "platform/menu.h"
 #include "platform/ui.h"
 #include "game/achievements.h"
@@ -848,6 +849,16 @@ int main(int argc, char** argv) {
     uint64_t fps_t0 = last, fps_frames = 0, fps_sims = 0;
 
     while (app.running) {
+        // Wait before polling input so it is fresh when the frame is run.
+        // Rendering an unchanged frame here can block in VSync and leave the
+        // next pass catching up by two frames. The original NTSC rate, rather
+        // than the monitor refresh rate, remains the simulation clock.
+        // Use the previous pass's fast-forward state; a Tab transition takes
+        // effect when events are polled below, within at most one game frame.
+        uint64_t now = pace_frame(accumulator, last, frame_ticks, freq,
+            app.fast_forward || app.autotest_frames != 0,
+            [] { return SDL_GetPerformanceCounter(); },
+            [](uint64_t ns) { SDL_DelayPrecise(ns); });
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
             switch (e.type) {
@@ -920,12 +931,6 @@ int main(int argc, char** argv) {
         app.m->input.pad[0] = buttons;
         app.m->input.pad[1] = raw2;
 
-        // Fixed-timestep simulation at the original frame rate, independent of
-        // the display refresh rate (120/144 Hz monitors do not speed up the game).
-        uint64_t now = SDL_GetPerformanceCounter();
-        accumulator += double(now - last);
-        last = now;
-        if (accumulator > frame_ticks * 8) accumulator = frame_ticks * 8;  // after a stall, don't spiral
         {
             // True widescreen margins follow the display aspect (levels only;
             // see runtime/patches.h). Takes effect at the next level load.
@@ -1092,7 +1097,6 @@ int main(int argc, char** argv) {
             fps_frames = fps_sims = 0;
             fps_t0 = now;
         }
-        if (!app.cfg.vsync && steps == 0) SDL_Delay(1);
     }
 
     if (!app.autotest_frames) {
