@@ -80,3 +80,69 @@ TEST(setup, installed_path_is_inside_the_store) {
     CHECK(p.rfind(root, 0) == 0);
     CHECK(p.find("chaotix") != std::string::npos);
 }
+
+
+TEST(setup, rejects_unknown_rom_without_overwriting_installed_data) {
+    fs::path root = temp_root();
+    const std::string store = (root / "store").string() + "/";
+    const fs::path source = root / "unknown.32x";
+    write_blob(source, 512u * 1024);
+    {
+        std::fstream f(source, std::ios::binary | std::ios::in | std::ios::out);
+        f.seekp(0x100);
+        f.write("SEGA 32X", 8);
+    }
+    const auto candidate = setup::check_file(source.string());
+    CHECK(candidate.loadable);
+    CHECK(!candidate.verified);
+    const std::string installed = setup::installed_rom_path(store);
+    write_blob(installed, 4096, 0xA5);
+    std::string error;
+    CHECK(!setup::install(source.string(), store, nullptr, &error));
+    CHECK(error.find(source.string()) != std::string::npos);
+    CHECK(error.find(candidate.sha1) != std::string::npos);
+    CHECK(error.find("0c2fff7bc79ed26507c08ac47464c3af19f7ced7") != std::string::npos);
+    CHECK_EQ(fs::file_size(installed), 4096u);
+    std::ifstream f(installed, std::ios::binary);
+    CHECK_EQ(f.get(), 0xA5);
+    f.close();
+    CHECK(!fs::exists(installed + ".part"));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+}
+
+TEST(setup, unknown_installed_rom_is_not_valid_even_with_matching_saved_hash) {
+    fs::path root = temp_root();
+    const std::string store = (root / "store").string() + "/";
+    const std::string installed = setup::installed_rom_path(store);
+    write_blob(installed, 512u * 1024);
+    {
+        std::fstream f(installed, std::ios::binary | std::ios::in | std::ios::out);
+        f.seekp(0x100);
+        f.write("SEGA 32X", 8);
+    }
+    const auto candidate = setup::check_file(installed);
+    CHECK(candidate.loadable);
+    CHECK(!setup::is_installed(store, ""));
+    CHECK(!setup::is_installed(store, candidate.sha1));
+    std::error_code ec;
+    fs::remove_all(root, ec);
+}
+
+TEST(setup, invalid_header_reports_the_actual_and_expected_hash) {
+    fs::path root = temp_root();
+    const fs::path source = root / "invalid-header.32x";
+    write_blob(source, 512u * 1024);
+    const auto candidate = setup::check_file(source.string());
+    const std::vector<uint8_t> bytes(512u * 1024, 0x5A);
+    const std::string hash = sha1_hex(bytes.data(), bytes.size());
+    CHECK(!candidate.loadable);
+    CHECK_STR(candidate.sha1, hash);
+    std::string error;
+    CHECK(!setup::install(source.string(), (root / "store").string() + "/", nullptr, &error));
+    CHECK(error.find(hash) != std::string::npos);
+    CHECK(error.find("0c2fff7bc79ed26507c08ac47464c3af19f7ced7") != std::string::npos);
+    CHECK(error.find(source.string()) != std::string::npos);
+    std::error_code ec;
+    fs::remove_all(root, ec);
+}

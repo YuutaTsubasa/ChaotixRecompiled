@@ -33,18 +33,19 @@ Candidate check_file(const std::string& path) {
     c.size = ec ? 0 : size_t(size);
     Rom rom;
     std::string err;
-    if (!rom.load(path, &err)) {
+    const bool loaded = rom.load(path, &err);
+    c.sha1 = rom.sha1;  // A readable image may fail the header check after hashing.
+    if (!loaded) {
         c.name = file_name(path);
         c.note = err;
         c.label = c.name + "  -  " + c.note;
         return c;
     }
     c.loadable = true;
-    c.sha1 = rom.sha1;
     c.version = rom.version;
     c.verified = rom.version != RomVersion::Unknown;
     c.name = file_name(path);
-    c.note = c.verified ? "verified Knuckles' Chaotix" : "unrecognised 32X ROM (will run interpreted)";
+    c.note = c.verified ? "verified Knuckles' Chaotix" : "SHA-1 does not match the supported ROM";
     c.label = c.name + "  -  " + c.note;
     return c;
 }
@@ -87,7 +88,12 @@ bool install(const std::string& source, const std::string& store_root, std::stri
         return false;
     };
     Candidate c = check_file(source);
-    if (!c.loadable) return fail(c.label);
+    if (!c.loadable && c.sha1.empty()) return fail("Cannot read ROM: " + source + "\n" + c.note);
+    if (!c.verified)
+        return fail("This ROM does not match Knuckles' Chaotix (Japan, USA).\n"
+                    "File: " + source + "\nActual SHA-1: " + c.sha1 +
+                    "\nExpected SHA-1: 0c2fff7bc79ed26507c08ac47464c3af19f7ced7\n"
+                    "Choose a verified ROM with Browse. The installed copy was not changed.");
 
     const std::string dest = installed_rom_path(store_root);
     std::error_code ec;
@@ -123,7 +129,7 @@ bool is_installed(const std::string& store_root, const std::string& expect_sha1)
     std::error_code ec;
     if (!fs::exists(fs::path(path), ec) || ec) return false;
     Candidate c = check_file(path);
-    if (!c.loadable) return false;
+    if (!c.verified) return false;
     return expect_sha1.empty() || c.sha1 == expect_sha1;
 }
 

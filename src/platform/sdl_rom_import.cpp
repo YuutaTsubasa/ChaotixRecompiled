@@ -58,4 +58,17 @@ bool install_rom_from_stream(SDL_IOStream* source, const std::string& store_root
     return setup::install(staging.string(), store_root, installed_path, error);
 }
 
+bool install_rom_file(const std::string& source, const std::string& store_root,
+                      std::string* installed_path, std::string* error) {
+    std::string detail;
+    if (install_rom_from_stream(SDL_IOFromFile(source.c_str(), "rb"), store_root,
+                                installed_path, &detail)) return true;
+    const std::string staging = setup::installed_rom_path(store_root) + ".import";
+    const auto pos = detail.find(staging);
+    if (pos != std::string::npos) detail.replace(pos, staging.size(), source);
+    else detail = "File: " + source + "\n" + detail;
+    if (error) *error = detail;
+    return false;
+}
+
 } // namespace chaotix

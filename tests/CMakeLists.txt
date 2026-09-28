@@ -34,6 +34,16 @@ add_test(NAME unit COMMAND chaotix_tests)
 # Integration tests: need the user's ROM (-DCHAOTIX_ROM=...). They verify the
 # recompiled build against the reference interpreter and golden frame hashes.
 if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
+    if(CHAOTIX_BUILD_FRONTEND AND NOT CMAKE_CROSSCOMPILING)
+        target_compile_definitions(chaotix_tests PRIVATE CHAOTIX_TEST_ROM="${CHAOTIX_ROM}")
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if(Python3_Interpreter_FOUND)
+            add_test(NAME rom_startup
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_rom_startup.py"
+                        $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
+            set_tests_properties(rom_startup PROPERTIES TIMEOUT 180)
+        endif()
+    endif()
     # Boot -> title -> menus -> DATA LOAD -> level, with gameplay input.
     set(_script
         --press 1750:start:5 --press 1950:start:5 --press 2300:start:5

@@ -169,7 +169,8 @@ void draw(ui::Ui& g, const std::string& store_root, SetupState& st) {
 
 std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
                              const std::string& store_root,
-                             const std::vector<std::string>& search_dirs) {
+                             const std::vector<std::string>& search_dirs,
+                             const std::string& initial_error) {
     SetupState st;
     ui::Ui g;
     if (!g.init(renderer)) {
@@ -180,10 +181,17 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
     }
     const SDL_DialogFileFilter filters[] = {{"32X ROM", "32x;bin;md;gen;rom"}, {"All files", "*"}};
 
+    auto report_error = [&](const std::string& detail) {
+        LOGW("setup", "%s", detail.c_str());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "ROM import failed", detail.c_str(), window);
+        st.status = "ROM import failed. Choose a verified ROM with Browse or Install.";
+    };
+    if (!initial_error.empty()) report_error(initial_error);
+
     auto install = [&](const std::string& path) -> std::string {
         std::string installed, err;
-        if (!install_rom_from_stream(SDL_IOFromFile(path.c_str(), "rb"), store_root, &installed, &err)) {
-            st.status = "Cannot install: " + err;
+        if (!install_rom_file(path, store_root, &installed, &err)) {
+            report_error(err);
             return "";
         }
         return installed;

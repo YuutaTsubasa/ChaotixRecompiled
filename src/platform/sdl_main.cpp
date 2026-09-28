@@ -583,7 +583,7 @@ int main(int argc, char** argv) {
     // packaging scripts and by the setup test.
     if (!install_path.empty()) {
         std::string installed, err;
-        if (!setup::install(install_path, app.store.root(), &installed, &err)) {
+        if (!install_rom_file(install_path, app.store.root(), &installed, &err)) {
             std::fprintf(stderr, "install failed: %s\n", err.c_str());
             SDL_Quit();
             return 1;
@@ -751,43 +751,43 @@ int main(int argc, char** argv) {
         LOGW("app", "--menu: unknown page '%s' (front, main, options, controls, awards)",
              menu_page.c_str());
 
-    // Where to get the ROM, in order: the command line, the copy installed
-    // by a previous run, then the config or the usual folders.
+    // An explicit ROM (including an Explorer drop onto the EXE) is installed
+    // once, so subsequent launches use that copy even if the source moves.
+    const std::string installed = setup::installed_rom_path(app.store.root());
     std::string rom_path = rom_from_args(argc, argv);
-    if (rom_path.empty() && app.cfg.installed && setup::is_installed(app.store.root(), app.cfg.rom_sha1))
-        rom_path = setup::installed_rom_path(app.store.root());
-    if (rom_path.empty() && !app.cfg.rom_path.empty() && std::filesystem::exists(app.cfg.rom_path))
-        rom_path = app.cfg.rom_path;
+    std::error_code rom_ec;
+    if (rom_path.empty() && std::filesystem::exists(installed, rom_ec)) rom_path = installed;
+    if (rom_path.empty()) rom_path = app.cfg.rom_path;
 
-    app.m = std::make_unique<Machine>();
     std::string err;
-    if (rom_path.empty() || !app.m->load_rom(rom_path, &err)) {
+    // Avoid rewriting a verified installed copy on every launch. Old builds
+    // accepted unknown images; those must return to setup instead of booting.
+    bool ready = rom_path == installed && setup::is_installed(app.store.root(), "");
+    if (!ready && !rom_path.empty()) {
+        std::string imported;
+        ready = install_rom_file(rom_path, app.store.root(), &imported, &err);
+        if (ready) rom_path = imported;
+    }
+    if (!ready) {
         if (app.autotest_frames) {  // tests never show the setup screen
             std::fprintf(stderr, "no usable ROM: %s\n", err.c_str());
-            return 1;
-        }
-        // First run, or the ROM moved: let the user install one.
-        rom_path = run_setup_screen(app.window, app.renderer, app.store.root(), rom_search_dirs(app));
-        if (rom_path.empty()) { SDL_Quit(); return 0; }
-        app.m = std::make_unique<Machine>();
-        if (!app.m->load_rom(rom_path, &err)) {
-            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Knuckles' Chaotix Recompiled", err.c_str(), app.window);
             SDL_Quit();
             return 1;
         }
+        rom_path = run_setup_screen(app.window, app.renderer, app.store.root(), rom_search_dirs(app), err);
+        if (rom_path.empty()) { SDL_Quit(); return 0; }
     }
-    // Remember the installed copy so the next launch starts straight up.
-    if (rom_path == setup::installed_rom_path(app.store.root())) {
-        app.cfg.installed = true;
-        app.cfg.rom_sha1 = app.m->rom.sha1;
-        app.cfg.rom_path = rom_path;
-        app.cfg.save(app.store.config_file());
+    app.m = std::make_unique<Machine>();
+    if (!app.m->load_rom(rom_path, &err)) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Knuckles' Chaotix Recompiled", err.c_str(), app.window);
+        SDL_Quit();
+        return 1;
     }
-    if (app.m->rom.version == RomVersion::Unknown)
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "Knuckles' Chaotix Recompiled",
-                                 "This ROM does not match the verified Knuckles' Chaotix (Japan, USA) image.\n"
-                                 "The recompiled code will not be used; the reference interpreter will run it instead.",
-                                 app.window);
+    app.cfg.installed = true;
+    app.cfg.rom_sha1 = app.m->rom.sha1;
+    app.cfg.rom_path = rom_path;
+    if (!app.cfg.save(app.store.config_file()))
+        LOGW("setup", "cannot save ROM settings to %s", app.store.config_file().c_str());
     app.m->input.six_button[0] = app.cfg.six_button;
     app.m->input.six_button[1] = app.cfg.six_button;
     warn_about_dead_bindings(app);

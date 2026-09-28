@@ -37,12 +37,13 @@ Candidate check_file(const std::string& path);
 // Duplicate paths are collapsed. Missing directories are skipped.
 std::vector<Candidate> scan_candidates(const std::vector<std::string>& dirs);
 
-// Copies `source` into the user data directory (via a temporary file, then
-// rename) so the installation is atomic. Returns the installed path.
+// Requires the verified Japan/USA image before copying into the user data
+// directory (via a temporary file, then rename). Returns the installed path.
+// Rejected images never replace the existing copy.
 bool install(const std::string& source, const std::string& store_root, std::string* installed_path, std::string* error);
 
-// True when the store holds a ROM whose SHA-1 matches `expect_sha1` (or any
-// readable ROM when `expect_sha1` is empty). Cheap enough for startup: it
+// True when the store holds the verified ROM, additionally matching
+// `expect_sha1` when it is nonempty. Cheap enough for startup: it
 // hashes the installed file once.
 bool is_installed(const std::string& store_root, const std::string& expect_sha1);
 

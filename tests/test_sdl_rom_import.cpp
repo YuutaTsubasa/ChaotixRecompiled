@@ -1,5 +1,5 @@
-// Synthetic ROMs only: exercise the stream returned by Android's file picker
-// without requiring a document provider or commercial game data on the host.
+// Exercise Android-style document streams without requiring a provider.
+// Synthetic inputs cover rejection; an optional local ROM covers successful import.
 #include "platform/sdl_setup.h"
 #include "frontend/setup.h"
 #include "test_framework.h"
@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <vector>
 
 namespace {
@@ -56,34 +58,45 @@ struct Source {
 };
 }
 
-TEST(sdl_import, installs_a_nonseekable_document_stream) {
+TEST(sdl_import, verifies_all_bytes_from_a_nonseekable_document_stream) {
     Store store;
     Source source;
     std::string installed, error;
-    CHECK(chaotix::install_rom_from_stream(source.open(), store.root(), &installed, &error));
+    CHECK(!chaotix::install_rom_from_stream(source.open(), store.root(), &installed, &error));
     CHECK(source.closed);
-    CHECK_STR(installed, chaotix::setup::installed_rom_path(store.root()));
-    CHECK(chaotix::setup::is_installed(store.root(), chaotix::sha1_hex(source.bytes.data(), source.bytes.size())));
-    CHECK(!fs::exists(installed + ".import"));
+    CHECK_EQ(source.pos, source.bytes.size());
+    CHECK(error.find(chaotix::sha1_hex(source.bytes.data(), source.bytes.size())) != std::string::npos);
+    CHECK(installed.empty());
+    CHECK(!fs::exists(chaotix::setup::installed_rom_path(store.root())));
+    CHECK(!fs::exists(chaotix::setup::installed_rom_path(store.root()) + ".import"));
 }
 
-TEST(sdl_import, failed_imports_preserve_an_existing_install) {
+TEST(sdl_import, failed_imports_preserve_existing_bytes) {
     Store store;
-    Source good;
-    std::string installed, error;
-    CHECK(chaotix::install_rom_from_stream(good.open(), store.root(), &installed, &error));
-    const std::string hash = chaotix::sha1_hex(good.bytes.data(), good.bytes.size());
-    for (int failure = 0; failure < 4; ++failure) {
+    const std::string installed = chaotix::setup::installed_rom_path(store.root());
+    fs::create_directories(fs::path(installed).parent_path());
+    {
+        std::ofstream f(installed, std::ios::binary);
+        f << "previous installed data";
+    }
+    for (int failure = 0; failure < 5; ++failure) {
         Source bad;
         if (failure == 0) bad.bytes.clear();
         if (failure == 1) bad.bytes[0x100] = 0;
         if (failure == 2) bad.broken = true;
         if (failure == 3) bad.bytes.resize(8 * 1024 * 1024 + 1);
-        error.clear();
+        // Case 4 has a valid 32X header but an unrecognised hash.
+        std::string error;
         CHECK(!chaotix::install_rom_from_stream(bad.open(), store.root(), nullptr, &error));
         CHECK(!error.empty());
+        if (failure == 1 || failure == 4) {
+            CHECK(error.find(chaotix::sha1_hex(bad.bytes.data(), bad.bytes.size())) != std::string::npos);
+            CHECK(error.find("0c2fff7bc79ed26507c08ac47464c3af19f7ced7") != std::string::npos);
+        }
         CHECK(bad.closed);
-        CHECK(chaotix::setup::is_installed(store.root(), hash));
+        std::ifstream f(installed, std::ios::binary);
+        const std::string bytes((std::istreambuf_iterator<char>(f)), {});
+        CHECK_STR(bytes, "previous installed data");
         CHECK(!fs::exists(installed + ".import"));
     }
 }
@@ -97,12 +110,19 @@ TEST(sdl_import, reports_failure_to_open_the_selected_document) {
     CHECK(!fs::exists(chaotix::setup::installed_rom_path(store.root())));
 }
 
-TEST(sdl_import, can_select_the_already_installed_file) {
+#ifdef CHAOTIX_TEST_ROM
+TEST(sdl_import, verified_nonseekable_import_and_selecting_installed_file) {
     Store store;
     Source source;
+    std::ifstream rom(CHAOTIX_TEST_ROM, std::ios::binary);
+    CHECK(rom.good());
+    source.bytes.assign(std::istreambuf_iterator<char>(rom), {});
     std::string installed, error;
     CHECK(chaotix::install_rom_from_stream(source.open(), store.root(), &installed, &error));
-    CHECK(chaotix::install_rom_from_stream(SDL_IOFromFile(installed.c_str(), "rb"),
-                                          store.root(), nullptr, &error));
-    CHECK(chaotix::setup::is_installed(store.root(), chaotix::sha1_hex(source.bytes.data(), source.bytes.size())));
+    CHECK(source.closed);
+    CHECK_EQ(source.pos, source.bytes.size());
+    CHECK(chaotix::install_rom_file(installed, store.root(), nullptr, &error));
+    CHECK(chaotix::setup::is_installed(store.root(), "0c2fff7bc79ed26507c08ac47464c3af19f7ced7"));
+    CHECK(!fs::exists(installed + ".import"));
 }
+#endif

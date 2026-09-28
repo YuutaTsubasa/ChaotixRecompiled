@@ -78,7 +78,12 @@ find (Downloads, Documents, an `__ROM__` folder next to the executable, the
 app's own folder on Android); you can also drag a file onto the window, press
 `O` to browse, or tap the on-screen buttons. The file is verified by SHA-1 and
 copied into the app's own folder, so later launches go straight into the game.
-A ROM given on the command line still wins over the installed copy.
+A verified ROM given on the command line (including dragging it onto the
+Windows executable) replaces the installed copy, so later launches do not need
+the original file. Unrecognised images are rejected without replacing an existing
+installation; the error shows the selected path and both SHA-1 values. If an
+older version installed an unrecognised image, startup returns to setup so you
+can choose a verified ROM with Browse.
 
 Useful flags: `--user-dir DIR` keeps settings, saves and the installed ROM in
 `DIR` (a portable install), `--install FILE` installs a ROM without showing

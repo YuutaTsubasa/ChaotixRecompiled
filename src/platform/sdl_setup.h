@@ -17,10 +17,16 @@ namespace chaotix {
 bool install_rom_from_stream(SDL_IOStream* source, const std::string& store_root,
                              std::string* installed_path, std::string* error);
 
+// Opens filesystem paths or document URIs through SDL and reports the selected
+// path on failure instead of exposing the private staging filename.
+bool install_rom_file(const std::string& source, const std::string& store_root,
+                      std::string* installed_path, std::string* error);
+
 // Runs until a ROM has been installed (returns its path) or the user quits
 // (returns an empty string). Draws with the given renderer.
 std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
                              const std::string& store_root,
-                             const std::vector<std::string>& search_dirs);
+                             const std::vector<std::string>& search_dirs,
+                             const std::string& initial_error = "");
 
 } // namespace chaotix
