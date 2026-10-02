@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Merged into the Windows executables (CMakeLists.txt).
+
+  activeCodePage UTF-8: the program keeps paths in narrow std::string (SDL hands
+  them over as UTF-8) and opens them with std::filesystem and the C runtime,
+  which read narrow strings in the process code page. Without this, a file name
+  outside that code page crashed the first-run ROM search, and a user folder
+  with any non-ASCII name (accented ones included) was created under a garbled
+  name, so the ROM install, which goes through SDL and reads the same string as
+  UTF-8, could not find it. Windows 10 1903 and later honour it.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+  <application xmlns="urn:schemas-microsoft-com:asm.v3">
+    <windowsSettings>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
+    </windowsSettings>
+  </application>
+</assembly>

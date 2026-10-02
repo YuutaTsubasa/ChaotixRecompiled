@@ -97,6 +97,13 @@ add_executable(chaotix_headless src/frontend/headless_main.cpp)
 target_link_libraries(chaotix_headless PRIVATE chaotix_game)
 chaotix_set_warnings(chaotix_headless)
 
+# Windows: UTF-8 as the process code page, so non-ASCII paths work (see the
+# comment in the manifest).
+set(CHAOTIX_WINDOWS_MANIFEST ${CMAKE_SOURCE_DIR}/platforms/windows/app.manifest)
+if(MSVC)
+    target_sources(chaotix_headless PRIVATE ${CHAOTIX_WINDOWS_MANIFEST})
+endif()
+
 # ---------------------------------------------------------------------------
 # SDL3 frontend (desktop and mobile). Platform code is confined to src/platform.
 # ---------------------------------------------------------------------------
@@ -158,6 +165,9 @@ if(CHAOTIX_BUILD_FRONTEND)
         set_target_properties(chaotix PROPERTIES OUTPUT_NAME main)
     else()
         add_executable(chaotix WIN32 MACOSX_BUNDLE ${_frontend_sources})
+        if(MSVC)
+            target_sources(chaotix PRIVATE ${CHAOTIX_WINDOWS_MANIFEST})
+        endif()
         set_target_properties(chaotix PROPERTIES OUTPUT_NAME "ChaotixRecompiled")
     endif()
     target_link_libraries(chaotix PRIVATE chaotix_game SDL3::SDL3 SDL3_ttf::SDL3_ttf)
