@@ -18,7 +18,8 @@ namespace {
 // Menus of this era shout, so the labels are upper case and the selected one
 // carries a marker rather than a highlight bar.
 const char* kAspectNames[] = {"AUTO", "4:3", "16:9", "16:10", "21:9", "CUSTOM"};
-const char* kScaleNames[] = {"FIT", "INTEGER", "STRETCH"};
+// In ScaleMode's order (renderer/viewport.h: Integer, Fit, Stretch).
+const char* kScaleNames[] = {"INTEGER", "FIT", "STRETCH"};
 const char* kWindowNames[] = {"WINDOW", "BORDERLESS", "FULLSCREEN"};
 const char* kTouchNames[] = {"AUTO", "ON", "OFF"};
 
