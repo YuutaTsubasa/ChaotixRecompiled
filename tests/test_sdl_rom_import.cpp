@@ -110,6 +110,24 @@ TEST(sdl_import, reports_failure_to_open_the_selected_document) {
     CHECK(!fs::exists(chaotix::setup::installed_rom_path(store.root())));
 }
 
+TEST(sdl_import, a_write_failure_names_the_staging_copy_not_the_chosen_file) {
+    // Failing to write the private staging copy is the user data folder's
+    // problem, not the chosen file's: the message keeps the staging path (in
+    // SDL's "Couldn't open ...") and only adds which file was chosen.
+    Store store;
+    const fs::path source = store.path / "chosen.32x";
+    {
+        std::ofstream file(source, std::ios::binary);
+        file << "not a rom";
+    }
+    const std::string staging = chaotix::setup::installed_rom_path(store.root()) + ".import";
+    fs::create_directories(fs::path(staging) / "blocker");
+    std::string error;
+    CHECK(!chaotix::install_rom_file(source.string(), store.root(), nullptr, &error));
+    CHECK(error.rfind("File: " + source.string() + "\n", 0) == 0);
+    CHECK(error.find("cannot write ROM import") != std::string::npos);
+    CHECK(error.find(staging) != std::string::npos);
+}
 #ifdef CHAOTIX_TEST_ROM
 TEST(sdl_import, verified_nonseekable_import_and_selecting_installed_file) {
     Store store;
