@@ -39,6 +39,10 @@ public:
         // Starts a level straight away, the way the game's own stage select
         // would: TIME ATTACK.
         std::function<void(const stage_select::Request&)> start_stage;
+        // The front menu was closed (Escape, the menu button or the pad's back
+        // button) instead of START GAME: the player goes on from the game's
+        // own title screen.
+        std::function<void()> front_closed;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -107,6 +111,9 @@ private:
     void build_keys();
     void move(int delta);
     void activate(int step);
+    // Escape, the menu button or the pad's back button: one level up, or
+    // closed.
+    void back_out();
     void draw_front(ui::Ui& g);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);

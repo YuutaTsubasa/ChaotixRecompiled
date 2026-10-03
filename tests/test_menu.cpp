@@ -250,6 +250,50 @@ TEST(menu, rebinding_a_key_takes_the_next_press) {
     CHECK_STR(m.page_name(), "keys");      // and does not navigate away
 }
 
+TEST(menu, closing_the_front_menu_hands_the_game_over) {
+    // Escape, the menu button and the pad's back button (East) back out of
+    // the front menu the same way, and each tells the program so: playing on
+    // from the game's own title screen is then a hand-over, as START GAME is.
+    for (int way = 0; way < 3; ++way) {
+        Config config;
+        config.set_defaults();
+        Menu menu;
+        menu.bind(config);
+        int closed = 0;
+        Menu::Hooks hooks;
+        hooks.front_closed = [&closed] { ++closed; };
+        menu.set_hooks(hooks);
+        menu.open_front();
+        if (way == 0) {
+            CHECK(menu.on_key(SDLK_ESCAPE));
+        } else if (way == 1) {
+            CHECK(menu.on_pad(SDL_GAMEPAD_BUTTON_LEFT_STICK));
+        } else {
+            CHECK(menu.on_pad(SDL_GAMEPAD_BUTTON_EAST));
+        }
+        CHECK(!menu.open());
+        CHECK_EQ(closed, 1);
+    }
+}
+
+TEST(menu, leaving_the_pause_menu_is_not_a_hand_over) {
+    Config config;
+    config.set_defaults();
+    Menu menu;
+    menu.bind(config);
+    int closed = 0;
+    Menu::Hooks hooks;
+    hooks.front_closed = [&closed] { ++closed; };
+    menu.set_hooks(hooks);
+    menu.toggle();  // the pause menu
+    CHECK(menu.on_key(SDLK_ESCAPE));
+    CHECK(!menu.open());
+    menu.toggle();
+    CHECK(menu.on_pad(SDL_GAMEPAD_BUTTON_EAST));
+    CHECK(!menu.open());
+    CHECK_EQ(closed, 0);
+}
+
 TEST(menu, resetting_awards_asks_twice) {
     Config cfg;
     cfg.set_defaults();
