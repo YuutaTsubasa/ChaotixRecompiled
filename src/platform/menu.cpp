@@ -342,7 +342,7 @@ void Menu::build_keys() {
                               // here, there is no list to step through.
                               if (step == 0) awaiting_ = button;
                           },
-                          pb.does});
+                          pb.does, /*read_only=*/false, /*pressed=*/true});
     }
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Controls); }});
 }
@@ -386,17 +386,19 @@ void Menu::build_options() {
     items_.push_back({"AWARDS",
                       [c] { return on_off(c->achievements); },
                       [c](int s) { if (s) c->achievements = !c->achievements; }});
-    items_.push_back({"RESET AWARDS",
-                      [this] { return confirm_reset_ ? std::string("SURE? PRESS AGAIN")
-                                                     : std::string("..."); },
-                      [this](int step) {
-                          // A value row, so that the confirmation can be shown
-                          // in place; left and right must not trip it.
-                          if (step != 0) return;
-                          if (!confirm_reset_) { confirm_reset_ = true; return; }
-                          confirm_reset_ = false;
-                          if (hooks_.reset_awards) hooks_.reset_awards();
-                      }});
+    Item reset{"RESET AWARDS",
+               [this] { return confirm_reset_ ? std::string("SURE? PRESS AGAIN")
+                                              : std::string("..."); },
+               [this](int step) {
+                   // A value row, so that the confirmation can be shown
+                   // in place; left and right must not trip it.
+                   if (step != 0) return;
+                   if (!confirm_reset_) { confirm_reset_ = true; return; }
+                   confirm_reset_ = false;
+                   if (hooks_.reset_awards) hooks_.reset_awards();
+               }};
+    reset.pressed = true;
+    items_.push_back(std::move(reset));
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
@@ -417,8 +419,11 @@ void Menu::move(int delta) {
 void Menu::activate(int step) {
     if (selected_ < 0 || selected_ >= int(items_.size())) return;
     const Item& it = items_[size_t(selected_)];
-    // An action ignores left/right; a value ignores "activate".
+    // An action ignores left/right. A value steps forward on "activate", so
+    // Enter, the pad's confirm button and a tap all change it, unless it is a
+    // row that is pressed rather than stepped.
     if (!it.value && step != 0) return;
+    if (it.value && step == 0 && !it.pressed && !it.read_only) step = +1;
     if (it.act) it.act(step);
 }
 
@@ -515,8 +520,15 @@ bool Menu::on_touch_down(float x, float y) {
     for (const Hit& h : hits_) {
         if (x < h.r.x || x > h.r.x + h.r.w || y < h.r.y || y > h.r.y + h.r.h) continue;
         // A tap on an entry selects it; a second tap acts on it, which keeps
-        // one finger enough to drive the whole menu.
-        if (h.index == selected_) activate(0); else { selected_ = h.index; anim_ = 0; }
+        // one finger enough to drive the whole menu. On a value, the "<"
+        // arrow steps it back and anywhere else on the row steps it forward.
+        if (h.index == selected_) {
+            const bool back = h.back_w > 0 && x >= h.back_x && x < h.back_x + h.back_w;
+            activate(back ? -1 : 0);
+        } else {
+            selected_ = h.index;
+            anim_ = 0;
+        }
         drag_total_ = 1e9f;  // this touch is spoken for
         return true;
     }
@@ -715,6 +727,7 @@ void Menu::draw_options(ui::Ui& g) {
             g.text(ui::Font::Small, x + label_w + g.px(16), ny, it.note, ui::theme::text_faint);
         }
         const float this_h = wrapped[i] ? row_h * 2 : row_h;
+        Hit hit{{x - g.px(24), y - g.px(4), column + g.px(48), this_h}, int(i)};
         if (it.value) {
             const std::string v = it.value();
             const float vw = g.text_width(ui::Font::Pixel, v);
@@ -727,14 +740,22 @@ void Menu::draw_options(ui::Ui& g) {
                        sel ? ui::theme::accent : ui::theme::text_dim);
             // Arrows only where left/right actually does something: on the
             // key page the value changes by capturing a press instead.
-            if (sel && page_ != Page::Keys && !it.read_only) {
+            if (sel && !it.pressed && !it.read_only) {
                 const float aw = wrapped[i] ? std::min(vw, room) : vw;
                 const float ax = wrapped[i] ? vx : x + column - vw;
                 g.text(ui::Font::Pixel, ax - g.px(22), vy, "<", ui::theme::accent);
                 g.text(ui::Font::Pixel, ax + aw + g.px(10), vy, ">", ui::theme::accent);
             }
+            // The "<" arrow's area, padded to a finger's width. It is taken
+            // from where the arrow is drawn when the row is selected, so it
+            // is right for the second tap, the one that changes the value.
+            if (!it.pressed && !it.read_only) {
+                const float ax = wrapped[i] ? vx : x + column - vw;
+                hit.back_x = ax - g.px(40);
+                hit.back_w = g.px(40);
+            }
         }
-        hits_.push_back({{x - g.px(24), y - g.px(4), column + g.px(48), this_h}, int(i)});
+        hits_.push_back(hit);
         y += this_h;
     }
 

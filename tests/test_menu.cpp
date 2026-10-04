@@ -4,6 +4,7 @@
 #include "platform/menu.h"
 
 #include "frontend/config.h"
+#include "game/achievements.h"
 #include "test_framework.h"
 
 using namespace chaotix;
@@ -457,4 +458,115 @@ TEST(menu, the_binding_page_says_what_each_button_does) {
     }
     CHECK(select_row(m, "BACK"));
     CHECK(m.selected_note().empty());
+}
+
+TEST(menu, confirm_changes_a_setting) {
+    // Enter (or the pad's confirm button) on a value steps it forward, as
+    // Right would, instead of doing nothing.
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    open_options(m);
+    CHECK(select_row(m, "WIDESCREEN"));
+    const bool was = cfg.widescreen;
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(cfg.widescreen != was);
+    CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_SOUTH));
+    CHECK(cfg.widescreen == was);
+    CHECK_STR(m.page_name(), "options");
+}
+
+namespace {
+
+// Lays the menu out on an off-screen software renderer, so taps have rows to
+// land on, the way the phone build sees them.
+struct Drawn {
+    SDL_Surface* surface = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    ui::Ui g;
+    achievements::Tracker ach;
+    bool ok = false;
+    Drawn() {
+        surface = SDL_CreateSurface(1280, 720, SDL_PIXELFORMAT_ARGB8888);
+        renderer = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
+        ok = renderer && g.init(renderer);
+    }
+    ~Drawn() {
+        g.shutdown();
+        if (renderer) SDL_DestroyRenderer(renderer);
+        if (surface) SDL_DestroySurface(surface);
+    }
+    void draw(Menu& m) {
+        g.begin_frame();
+        m.draw(g, ach);
+        g.end_frame();
+    }
+    void tap(Menu& m, float x, float y) {
+        m.on_touch_down(x, y);
+        m.on_touch_up();
+        draw(m);
+    }
+};
+
+// Taps down the middle of the screen until the entry is selected; returns the
+// height it was found at, or a negative number.
+float tap_select(Drawn& d, Menu& m, const std::string& label) {
+    for (float y = 0; y < 720; y += 4) {
+        if (m.selected_label() == label) return y - 4;
+        d.tap(m, 640, y);
+    }
+    return m.selected_label() == label ? 716.0f : -1.0f;
+}
+
+} // namespace
+
+TEST(menu, tapping_an_option_changes_it) {
+    // Issue #9: on a phone a second tap on an option did nothing at all.
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    open_options(m);
+    Drawn d;
+    CHECK(d.ok);
+    if (!d.ok) return;
+    d.draw(m);
+
+    CHECK(select_row(m, "SCALING"));  // away from the row under test
+    const bool was = cfg.widescreen;
+    const float y = tap_select(d, m, "WIDESCREEN");
+    CHECK(y >= 0);
+    CHECK(cfg.widescreen == was);  // the first tap only selects
+    d.tap(m, 640, y);
+    CHECK(cfg.widescreen != was);  // the second changes it
+    d.tap(m, 640, y);
+    CHECK(cfg.widescreen == was);
+}
+
+TEST(menu, tapping_the_back_arrow_steps_backwards) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    open_options(m);
+    Drawn d;
+    CHECK(d.ok);
+    if (!d.ok) return;
+    d.draw(m);
+
+    const float y = tap_select(d, m, "ASPECT RATIO");
+    CHECK(y >= 0);
+    // Somewhere along the row a tap steps the value back rather than forward:
+    // the "<" arrow. Everywhere else steps it forward.
+    bool stepped_back = false, stepped_forward = false;
+    for (float x = 1280; x > 0 && !stepped_back; x -= 4) {
+        const int before = int(cfg.viewport.aspect);
+        d.tap(m, x, y);
+        const int after = int(cfg.viewport.aspect);
+        if (after == (before + 4) % 5) stepped_back = true;
+        else if (after == (before + 1) % 5) stepped_forward = true;
+    }
+    CHECK(stepped_back);
+    CHECK(stepped_forward);
 }

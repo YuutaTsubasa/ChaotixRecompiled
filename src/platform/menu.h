@@ -88,6 +88,10 @@ private:
         std::string note = {};
         // A value that is shown but not edited (a record, say): no arrows.
         bool read_only = false;
+        // A value row that is pressed rather than stepped: activating it does
+        // something (starts a capture, asks for confirmation) and left/right
+        // do not change it, so it has no arrows either.
+        bool pressed = false;
     };
 
     // Pages are built when they are opened, not when they are drawn, so the
@@ -125,7 +129,12 @@ private:
     int rows_ = 1;            // rows the achievements page had room for
     float row_h_ = 0;
     // Touch: where the drawn rows were, so a tap can hit them.
-    struct Hit { SDL_FRect r; int index; };
+    struct Hit {
+        SDL_FRect r;
+        int index;
+        // Where a value row's "<" arrow is; zero width when it has none.
+        float back_x = 0, back_w = 0;
+    };
     std::vector<Hit> hits_;
     float drag_y_ = 0, drag_total_ = 0;
     // Drives the little bounce on the selected entry.
