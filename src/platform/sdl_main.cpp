@@ -933,10 +933,13 @@ int main(int argc, char** argv) {
 
         {
             // True widescreen margins follow the display aspect (levels only;
-            // see runtime/patches.h). Takes effect at the next level load.
+            // see runtime/patches.h). Resizing the window takes effect at
+            // once; turning widescreen off and on again waits for the next
+            // level load, because the ring shift is latched there.
             int ww = 0, wh = 0;
             SDL_GetRenderOutputSize(app.renderer, &ww, &wh);
             const double fa = aspect_value(app.cfg.viewport.aspect, app.cfg.viewport.custom_aspect, wh > 0 ? double(ww) / double(wh) : 0.0);
+            app.m->wide_enabled = app.cfg.widescreen;
             app.m->wide_extra = app.cfg.widescreen ? widescreen_extra(fa, patches::kMaxWideExtra) : 0;
             // A frame taller than 4:3 gets extra rows below instead.
             app.m->wide_extra_bottom = app.cfg.widescreen ? widescreen_rows(fa, patches::kMaxWideExtraBottom) : 0;

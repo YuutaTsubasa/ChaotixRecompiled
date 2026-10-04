@@ -67,6 +67,44 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     add_test(NAME widescreen_centre_matches_4_3
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4000 --wide 53 --wide-bottom 16
                 --compare-native --min-centre-frames 1000)
+    # The margins follow the window, and the player can resize it (or go
+    # fullscreen, or change the aspect) while a level is running. The plane
+    # ring shift is latched when a level loads and used to be latched from the
+    # margin width, so a window widened during a level left that level in 4:3
+    # until the next load -- reported as "it goes into 4:3 whenever a level
+    # starts" (issue #7). Here the level starts with no margins at all and is
+    # widened 600 frames in; the margins must go live straight away.
+    add_test(NAME widescreen_follows_a_resize_during_a_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1400
+                --stage 600:0:1:0:2:7:0 --wide 0 --wide-at 1200:53)
+    set_tests_properties(widescreen_follows_a_resize_during_a_level PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "margins live from frame 120[0-9]")
+
+    # Pausing stops the level engine, but the game keeps the level on screen.
+    # The margins were dropped eight frames later, so the picture snapped to
+    # 4:3 and back every time anyone paused -- the other half of issue #7.
+    # One stretch means the margins went live once and stayed live: a pause in
+    # the middle would split it in two.
+    add_test(NAME widescreen_survives_a_pause
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3400
+                --wide 53 --wide-bottom 16 --stage 600:0:1:0:2:7:0
+                --press 1400:right:600 --press 2200:start:6 --press 2800:start:6)
+    set_tests_properties(widescreen_survives_a_pause PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "margins live for 2[0-9][0-9][0-9] frames in 1 stretches")
+
+    # Finishing a level hands over to the lobby, which runs in the same game
+    # mode as a level, so that scene change shows up only in the place and
+    # level the engine reads. Without those in the scene identity the margins
+    # went on drawing the finished level's ring for 196 frames -- the camera
+    # jumping about inside them -- and then flashed 4:3 for four frames when
+    # the lobby was finally drawn. The recorded run changes zone at frame 4640.
+    add_test(NAME widescreen_lets_go_when_a_level_hands_over
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 5000
+                --wide 53 --wide-bottom 16 --trace-wide
+                --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt)
+    set_tests_properties(widescreen_lets_go_when_a_level_hands_over PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "WIDE f=464[0-9] active=0 .*zone=7 level=0")
+
     add_test(NAME golden_frames_16_9
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 ${_script}
                 --expect-hash 2800:${CHAOTIX_GOLDEN_169_A} --expect-hash 3200:${CHAOTIX_GOLDEN_169_B})

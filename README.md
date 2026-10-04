@@ -104,7 +104,7 @@ Settings live in the user data directory (`Config/chaotix.ini`), saves in
 | F1 / F5 | Debug overlay / overlay page |
 | F2 | Aspect ratio (Auto, 4:3, 16:9, 16:10, 21:9) |
 | F3 / F4 | Filter / scaling mode |
-| F6 | True widescreen on/off (extra columns apply from the next level load) |
+| F6 | True widescreen on/off (applies from the next level load; resizing the window applies at once) |
 | F7 | Achievements (the menu's Awards page) |
 | F11, Alt+Enter | Borderless fullscreen |
 | Tab (hold) | Fast-forward |

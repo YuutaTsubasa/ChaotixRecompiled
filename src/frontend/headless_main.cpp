@@ -165,6 +165,19 @@ int main(int argc, char** argv) {
     bool lockstep = false;
     bool profile = false;
     int wide = 0, wide_bottom = 0;
+    // --wide-at FRAME:E[:EB]: widen the margins part way through, the way
+    // resizing the window does. The ring shift is latched when a level loads,
+    // so this is what shows it does not need re-latching.
+    uint64_t wide_at_frame = 0;
+    int wide_at = -1, wide_at_bottom = 0;
+    bool wide_live_reported = false;
+    // --trace-wide: one line whenever the widescreen state changes, and a
+    // count at the end. The count is what tells a level that stayed wide from
+    // one that flickered back to 4:3 part way through.
+    bool trace_wide = false;
+    uint64_t wide_live_frames = 0;
+    int wide_stretches = 0;
+    bool wide_was_live = false;
     // --compare-native: run a 4:3 machine alongside the widescreen one and
     // require the centre 320 px to be pixel-identical. Comparison stops when
     // the cameras legitimately differ (the widescreen camera clamp keeps the
@@ -263,6 +276,15 @@ int main(int argc, char** argv) {
         else if (a == "--profile") profile = true;
         else if (a == "--wide") wide = std::atoi(next().c_str());
         else if (a == "--wide-bottom") wide_bottom = std::atoi(next().c_str());
+        else if (a == "--trace-wide") trace_wide = true;
+        else if (a == "--wide-at") {
+            const std::vector<std::string> parts = split(next(), ':');
+            if (parts.size() >= 2) {
+                wide_at_frame = std::strtoull(parts[0].c_str(), nullptr, 10);
+                wide_at = std::atoi(parts[1].c_str());
+                wide_at_bottom = parts.size() > 2 ? std::atoi(parts[2].c_str()) : 0;
+            }
+        }
         else if (a == "--compare-native") compare_native = true;
         else if (a == "--achievements" && i + 1 < argc) achievements_file = next();
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
@@ -349,6 +371,7 @@ int main(int argc, char** argv) {
     m->reset();
     m->audio_enabled = !wav_path.empty() || want_audio;
     m->profile = profile;
+    m->wide_enabled = wide > 0 || wide_bottom > 0 || wide_at > 0 || wide_at_bottom > 0;
     m->wide_extra = wide;
     m->wide_extra_bottom = wide_bottom;
     if (six_button >= 0) m->input.six_button[0] = m->input.six_button[1] = six_button != 0;
@@ -374,6 +397,7 @@ int main(int argc, char** argv) {
         ref = std::make_unique<Machine>();
         ref->load_rom(rom_path, &err);
         ref->reset();
+        ref->wide_enabled = wide > 0 || wide_bottom > 0 || wide_at > 0 || wide_at_bottom > 0;
         ref->wide_extra = wide;
         ref->wide_extra_bottom = wide_bottom;
         if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
@@ -479,6 +503,7 @@ int main(int argc, char** argv) {
                 // diverges. A recording from before these were kept leaves
                 // whatever the command line asked for.
                 if (q.has_video) {
+                    m->wide_enabled = q.wide > 0 || q.wide_bottom > 0;
                     m->wide_extra = q.wide;
                     m->wide_extra_bottom = q.wide_bottom;
                     m->input.six_button[0] = m->input.six_button[1] = q.six_button;
@@ -487,6 +512,7 @@ int main(int argc, char** argv) {
                 m->stage_pending = true;
                 if (ref) {
                     if (q.has_video) {
+                        ref->wide_enabled = q.wide > 0 || q.wide_bottom > 0;
                         ref->wide_extra = q.wide;
                         ref->wide_extra_bottom = q.wide_bottom;
                         ref->input.six_button[0] = ref->input.six_button[1] = q.six_button;
@@ -503,11 +529,43 @@ int main(int argc, char** argv) {
                 btn2 = uint16_t(replay[size_t(f)] >> 16);
             }
         }
+        if (wide_at >= 0 && f == wide_at_frame) {
+            m->wide_extra = wide_at;
+            m->wide_extra_bottom = wide_at_bottom;
+            if (ref) { ref->wide_extra = wide_at; ref->wide_extra_bottom = wide_at_bottom; }
+        }
         m->input.pad[0] = btn;
         m->input.pad[1] = btn2;
         if (ref) { ref->input.pad[0] = btn; ref->input.pad[1] = btn2; }
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
         m->run_frame();
+        if (m->wide_active) {
+            ++wide_live_frames;
+            if (!wide_was_live) { ++wide_stretches; wide_was_live = true; }
+        } else {
+            wide_was_live = false;
+        }
+        if (trace_wide) {
+            std::printf("WCAM f=%llu active=%d cam=%d,%d\n", (unsigned long long)m->frame_count,
+                        m->wide_active ? 1 : 0, patches::camera_x(*m), patches::camera_y(*m));
+            static int pa = -1, pr = -1, ps = -1, pz = -1, pl = -1, pm = -1;
+            const int a = m->wide_active ? 1 : 0, rg = m->vdp.reg[16], sh = m->plane_shift;
+            const int z = (m->wram[0xDFF2] << 8) | m->wram[0xDFF3];
+            const int lv = (m->wram[0xDFF4] << 8) | m->wram[0xDFF5];
+            const int md = (m->wram[0xDFDE] << 8) | m->wram[0xDFDF];
+            if (a != pa || rg != pr || sh != ps || z != pz || lv != pl || md != pm) {
+                std::printf("WIDE f=%llu active=%d reg16=%02X shift=%d zone=%d level=%d mode=%04X seen=%lld\n",
+                            (unsigned long long)m->frame_count, a, rg, sh, z, lv, md,
+                            m->level_seen_frame == ~0ull ? -1LL : (long long)(m->frame_count - m->level_seen_frame));
+                pa = a; pr = rg; ps = sh; pz = z; pl = lv; pm = md;
+            }
+        }
+        // The margins go live a frame or two after they are asked for (the
+        // level engine's plane update has to run), so report when, not that.
+        if (m->wide_active && !wide_live_reported) {
+            wide_live_reported = true;
+            std::printf("widescreen: margins live from frame %llu\n", (unsigned long long)m->frame_count);
+        }
         if (ta.update(*m)) {
             if (!ta.timed())
                 std::printf("stage: the run ended without a time (this level keeps no clock)\n");
@@ -583,6 +641,9 @@ int main(int argc, char** argv) {
     }
     double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("ran %llu frames in %.2fs (%.1f fps)\n", (unsigned long long)frames, secs, frames / secs);
+    if (m->wide_enabled)
+        std::printf("widescreen: margins live for %llu frames in %d stretches\n",
+                    (unsigned long long)wide_live_frames, wide_stretches);
     print_recomp_stats(*m);
     if (profile) {
 

@@ -9,17 +9,30 @@ namespace {
 
 inline void set_low_word(uint32_t& r, uint32_t v) { r = (r & 0xFFFF0000u) | (v & 0xFFFFu); }
 
+inline uint16_t wram16(const Machine& m, uint32_t a) {
+    return uint16_t(m.wram[a] << 8 | m.wram[a + 1]);
+}
+
 void m68k_hook(m68k::State* c, uint32_t pc) {
     Machine* m = static_cast<Machine*>(c->hook_user);
     switch (pc) {
     case kFullRedrawA:
     case kFullRedrawB:
         // A full redraw re-establishes the ring, so a new shift is safe here.
-        m->plane_shift = plane_shift_for(std::clamp(m->wide_extra, 0, kMaxWideExtra));
+        // The shift does not depend on how wide the margins are (the ring
+        // always covers cam - 96 .. cam + 416), so it is latched from the
+        // setting rather than from the current margin: the margins follow the
+        // window, and a window resized during a level would otherwise leave
+        // that level in 4:3 until the next load.
+        m->plane_shift = plane_shift_for(m->wide_enabled ? kMaxWideExtra : 0);
+        // Also how a scene change is told apart from a level that has merely
+        // stopped (see wide_scene_active): a new scene redraws the planes.
+        m->full_redraw_frame = m->frame_count;
         return;
     case kPlaneUpdateA:
     case kPlaneUpdateB:
         m->level_seen_frame = m->frame_count;
+        m->level_scene = scene_key(*m);
         return;
     case kModeDispatch:
         // The game is between scenes: a stage the host asked for can start.
@@ -97,8 +110,23 @@ void write_clip(Machine& m, int16_t left, int16_t right) {
 
 } // namespace
 
+uint64_t scene_key(const Machine& m) {
+    return (uint64_t(wram16(m, kGameMode)) << 32) | (uint64_t(wram16(m, kSceneZone)) << 16) |
+           wram16(m, kSceneLevel);
+}
+
 bool wide_scene_active(const Machine& m) {
-    return m.level_seen_frame != ~0ull && m.level_seen_frame + 8 >= m.frame_count;
+    if (m.level_seen_frame == ~0ull) return false;
+    if (m.level_seen_frame + 8 >= m.frame_count) return true;  // the level is running
+    // The level engine has stopped, but it also stops while the game is
+    // paused, and the game holds the level on screen then -- dropping the
+    // margins here is what made the picture snap to 4:3 and back every time
+    // someone paused. Nothing moves while the engine is stopped, so the ring
+    // still holds the level's tiles. Keep them until the planes are claimed by
+    // something else: begin_frame has already cleared level_seen_frame if the
+    // scene changed, so all that is left to rule out is a redraw within the
+    // same scene -- a level restarting after a death.
+    return m.full_redraw_frame == ~0ull || m.full_redraw_frame <= m.level_seen_frame;
 }
 
 int camera_x(const Machine& m) { return int(int16_t((m.wram[kPlaneAStruct] << 8) | m.wram[kPlaneAStruct + 1])); }
@@ -116,11 +144,16 @@ MarginCut margin_cut(const Machine& m, int extra) {
 }
 
 void begin_frame(Machine& m) {
+    // A different scene is running: the level whose tiles the ring holds is
+    // over, whatever the plane geometry still says. (A pause keeps the key.)
+    if (m.level_seen_frame != ~0ull && scene_key(m) != m.level_scene) m.level_seen_frame = ~0ull;
     const int e = std::clamp(m.wide_extra, 0, kMaxWideExtra);
     const int eb = std::clamp(m.wide_extra_bottom, 0, kMaxWideExtraBottom);
-    // plane_shift is latched when a level loads: turning widescreen on in the
-    // middle of a level shows bars until the next load. The bottom rows need
-    // no patch, so they only wait for a level scene.
+    // plane_shift is latched when a level loads, from the setting rather than
+    // from the margin width, so resizing the window mid-level widens the view
+    // at once; only turning widescreen off and on again waits for the next
+    // load. The bottom rows need no patch, so they only wait for a level
+    // scene.
     m.wide_active = (e > 0 || eb > 0) && (e == 0 || m.plane_shift > 0) &&
                     m.vdp.reg[16] == kLevelPlaneSize && wide_scene_active(m);
     if (m.wide_active) {
@@ -145,6 +178,8 @@ void install(Machine& m) {
     m.m68k.hook_count = uint32_t(sizeof kM68kHooks / sizeof kM68kHooks[0]);
     m.plane_shift = 0;
     m.level_seen_frame = ~0ull;
+    m.full_redraw_frame = ~0ull;
+    m.level_scene = 0;
     m.wide_active = false;
     m.clip_overridden = false;
     m.cull_shift = 0;

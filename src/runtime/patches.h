@@ -72,6 +72,17 @@ enum : uint32_t {
 // +10 camera Y, +C bottom bound, +E top bound.
 constexpr uint32_t kPlaneAStruct = 0xC1DE;
 
+// What scene is on screen, as the game itself records it: the game mode the
+// dispatcher above reads, plus the place and level the level engine reads.
+// Measured modes: 0x00 boot and the SEGA logo, 0x08 title, 0x18 a level or the
+// lobby, 0x38 an attract demo. The mode alone is not enough -- the lobby runs
+// in the level's mode -- but no two scenes share all three, and pausing
+// changes none of them, which is how a paused level is told apart from a scene
+// that has replaced it.
+constexpr uint32_t kGameMode = 0xDFDE;
+constexpr uint32_t kSceneZone = 0xDFF2;
+constexpr uint32_t kSceneLevel = 0xDFF4;
+
 // Sorted: the interpreter binary-searches this list.
 inline constexpr uint32_t kM68kHooks[] = {
     kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit, kModeDispatch,
@@ -124,6 +135,9 @@ constexpr int kMaxWideExtraBottom = 16;
 // leaves 96 - E px of slack on both sides (slack hides new 16 px columns
 // arriving a step late when the camera moves fast). W stays a multiple of 16
 // so the "camera crossed a block" test and the column drawn stay in step.
+// The shift does not depend on E: it is latched (at a full redraw) from
+// whether widescreen is on at all, so the margins the window asks for can
+// change while a level runs without the ring having to be re-established.
 constexpr int plane_shift_for(int extra) { return extra > 0 ? 96 : 0; }
 
 // The patches assume the level engine's plane geometry: 64 columns x 32 rows
@@ -132,9 +146,17 @@ constexpr int plane_shift_for(int extra) { return extra > 0 ? 96 : 0; }
 constexpr uint8_t kLevelPlaneSize = 0x01;
 
 // A frame counts as a level scene when the level engine's per-frame plane
-// update ran in the last 8 frames (it skips a few while a level loads). Other
+// update ran in the last 8 frames (it skips a few while a level loads), or,
+// once it has stopped, until another scene redraws the planes: a pause stops
+// the engine with the level still on screen, and the ring keeps the level's
+// tiles until something else claims it. Other
 // scenes (title, menus, special stages) stay 4:3 with black side bars.
 bool wide_scene_active(const Machine& m);
+
+// Which scene is on screen now, packed from the three words above. Equal keys
+// mean the same scene; Machine::level_scene holds the key the level engine
+// last drew under. Tests that stand in for the engine set it from this.
+uint64_t scene_key(const Machine& m);
 
 // Level camera position (plane A struct), for tooling and tests.
 int camera_x(const Machine& m);

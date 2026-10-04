@@ -151,8 +151,15 @@ public:
     // VRAM, so machines compared in lockstep must use the same value.
     int wide_extra = 0;
     int wide_extra_bottom = 0;  // extra rows below the screen (see patches.h)
+    // Whether the player has widescreen turned on at all, as opposed to how
+    // wide the margins currently are. The margins follow the window, which
+    // changes while a level runs; the ring shift is latched at a level load
+    // and must not, or resizing the window leaves that level in 4:3.
+    bool wide_enabled = false;
     int plane_shift = 0;               // W latched by the plane streaming patch
     uint64_t level_seen_frame = ~0ull; // last frame the level engine ran (patches.cpp)
+    uint64_t full_redraw_frame = ~0ull; // last frame a scene redrew both planes
+    uint64_t level_scene = 0;          // scene the level engine last ran in (patches.cpp)
     bool wide_active = false;          // margins show game content this frame
     bool clip_overridden = false;      // 32X clip rect widened by the patch
     int cull_shift = 0;                // pending d2 offset inside the ring cull patch
