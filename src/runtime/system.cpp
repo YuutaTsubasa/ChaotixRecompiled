@@ -68,6 +68,7 @@ void Machine::reset() {
     std::memset(wram, 0, sizeof wram);
     std::memset(sdram, 0, sizeof sdram);
     std::memset(zram, 0, sizeof zram);
+    std::memset(fb_margin, 0, sizeof fb_margin);
     // The 32X boot ROMs are not used (boot is high-level emulated). The SH-2
     // BIOS area reads as an infinite loop in case anything jumps there.
     for (size_t i = 0; i < sizeof bios_stub; i += 4) {

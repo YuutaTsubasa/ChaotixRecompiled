@@ -173,7 +173,7 @@ public:
     // wide_active, sprite (overwrite image) writes outside native columns land
     // here instead of in the line padding, which the game uses as storage.
     // Render-only; never read by the emulated CPUs.
-    uint8_t fb_margin[2][0x20000];
+    uint8_t fb_margin[2][0x20000] = {};
     // Tooling hooks: writes to the 32X draw buffer (offset, value, size,
     // overwrite image) and auto fills (word address, word count, data).
     void (*on_fb_write)(void* user, uint32_t off, uint32_t v, int size, bool overwrite) = nullptr;

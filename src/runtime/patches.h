@@ -106,7 +106,8 @@ constexpr bool is_m68k_hook(uint32_t pc) {
 
 // 32X sprite/polygon renderers (master SH-2, SDRAM image copied from ROM
 // 0x77800) clip against a rectangle stored as data at SDRAM 0x06003834:
-// int16 left, int16 right, int32 top, int32 bottom (native 0, 320, 0, 223).
+// int16 left/right in pixels, int32 top/bottom in 24.8 fixed point
+// (native 0, 320, 0, 223 << 8).
 // The patch widens it to [-C, 320 + C) with C = E rounded up to 8 (the
 // blitters store 16-bit words at bound-aligned addresses; an odd bound makes
 // the SH-2 take an address error). Frame buffer lines are 512 bytes
@@ -150,7 +151,9 @@ constexpr uint8_t kLevelPlaneSize = 0x01;
 // once it has stopped, until another scene redraws the planes: a pause stops
 // the engine with the level still on screen, and the ring keeps the level's
 // tiles until something else claims it. Other
-// scenes (title, menus, special stages) stay 4:3 with black side bars.
+// scenes (title, menus, special stages) stay 4:3 with black side bars. The
+// scripted Eggman encounter in INTRODUCTION level 0 also stays native while
+// C21C bit2 is set: its actors wait just outside the original viewport.
 bool wide_scene_active(const Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys

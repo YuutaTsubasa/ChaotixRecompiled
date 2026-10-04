@@ -1,4 +1,5 @@
 #include "vdp.h"
+#include "patches.h"
 #include "log.h"
 #include <cstring>
 
@@ -359,7 +360,15 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
             uint16_t sz = rw(2);
             int hs = ((sz >> 10) & 3) + 1, vsz = ((sz >> 8) & 3) + 1;
             uint16_t pat = rw(4);
-            int sxr = rw(6) & 0x1FF;
+            const uint16_t raw_x = rw(6);
+            int sxr = raw_x & 0x1FF;
+            // The widened ring hook retains screen X + 128 in the SAT word.
+            // Only the added right edge of a level needs coordinates beyond
+            // the native nine bits. Preserve masking of unrelated high bits.
+            if (h40 && reg[16] == patches::kLevelPlaneSize && extra > 64 &&
+                raw_x >= 512 && int(raw_x) < xe + 128)
+                sxr = raw_x;
+            // An extended X of 384 is raw 512, not the zero-X mask sprite.
             int sx = sxr - 128;
             if (line >= sy && line < sy + vsz * 8) {
                 if (++on_line > max_per_line) sprite_overflow = true;

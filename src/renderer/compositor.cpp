@@ -4,10 +4,10 @@
 // Output encoding per pixel (alpha byte):
 //   0xFE: 32X pixel is visible regardless of the MD pixel
 //   0xFD: 32X pixel is visible only where the MD pixel is the backdrop
-//   0x00: no 32X pixel (blank mode, or a transparent frame buffer pixel)
+//   0x00: no 32X pixel (blank/disabled display or unsupported margin)
 //
-// Frame buffer value 0 is transparent in every mode (32X hardware manual):
-// the Mega Drive image shows through, whatever palette entry 0 holds.
+// Zero is an ordinary displayed pixel: pal[0] in indexed modes, black in
+// direct colour. Zero-byte suppression applies only to overwrite-image writes.
 #include "runtime/system.h"
 #include "runtime/patches.h"
 
@@ -23,9 +23,9 @@ inline uint32_t encode(uint16_t c, bool pri) {
     bool through = (c & 0x8000) != 0;
     return ((through != pri) ? 0xFE000000u : 0xFD000000u) | rgb555(c);
 }
-// Packed pixel / run length: palette index 0 is transparent.
+// Packed pixel / run length: every index uses its palette priority bit.
 inline uint32_t encode_idx(uint8_t idx, const uint16_t* pal, bool pri) {
-    return idx ? encode(pal[idx], pri) : 0;
+    return encode(pal[idx], pri);
 }
 } // namespace
 
@@ -53,14 +53,17 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src) {
             for (int x = -extra; x < 0; ++x) all[x + extra] = encode_idx(sh[(p + uint32_t(x)) & 0x1FFFF], mars.pal, pri);
             for (int x = kNativeWidth; x < kNativeWidth + extra; ++x) all[x + extra] = encode_idx(sh[(p + uint32_t(x)) & 0x1FFFF], mars.pal, pri);
         }
-        for (int x = 0; x < kNativeWidth; ++x) out[x] = encode_idx(fb[(p + uint32_t(x)) & 0x1FFFF], mars.pal, pri);
+        // Extended rows are entirely redirected to the shadow by the blitter.
+        const uint8_t* center = wide_src && (ln < 0 || ln >= kActiveLines)
+                              ? fb_margin[mars.fb_display] : fb;
+        for (int x = 0; x < kNativeWidth; ++x) out[x] = encode_idx(center[(p + uint32_t(x)) & 0x1FFFF], mars.pal, pri);
         break;
     }
     case 2: {  // direct colour, 15 bpp
         for (int x = 0; x < kNativeWidth; ++x) {
             uint32_t o = (base + uint32_t(x) * 2) & 0x1FFFF;
             uint16_t v = uint16_t((fb[o] << 8) | fb[o + 1]);
-            out[x] = v ? encode(v, pri) : 0;  // 0000h is transparent
+            out[x] = encode(v, pri);
         }
         break;
     }

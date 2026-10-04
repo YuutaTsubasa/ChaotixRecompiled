@@ -125,3 +125,7 @@ every demo level is widescreen end to end.
 - `lockstep_widescreen`, `lockstep_boot_to_level` and both long attract lockstep
   runs pass: the reference interpreter and the recompiled code take the patch at
   the same instruction.
+
+`render_attract_long` passes after its golden file was regenerated for the
+issue #5 compositor change (32X frame-buffer index 0 is an ordinary pixel);
+see `ISSUE_5_RENDERING.md`.

@@ -7,6 +7,9 @@ add_executable(chaotix_tests
     test_m68k.cpp
     test_sh2.cpp
     test_viewport.cpp
+    test_compositor.cpp
+    test_widescreen_render.cpp
+    test_vdp_widescreen.cpp
     test_setup.cpp
     test_achievements.cpp
     test_stage_select.cpp

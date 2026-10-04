@@ -100,12 +100,16 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
 }
 
-void write_clip(Machine& m, int16_t left, int16_t right) {
+void write_clip(Machine& m, int16_t left, int16_t right, uint32_t bottom) {
     uint8_t* p = m.sdram + kClipRectSdram;
     p[0] = uint8_t(uint16_t(left) >> 8);
     p[1] = uint8_t(left);
     p[2] = uint8_t(uint16_t(right) >> 8);
     p[3] = uint8_t(right);
+    p[8] = uint8_t(bottom >> 24);
+    p[9] = uint8_t(bottom >> 16);
+    p[10] = uint8_t(bottom >> 8);
+    p[11] = uint8_t(bottom);
 }
 
 } // namespace
@@ -116,6 +120,12 @@ uint64_t scene_key(const Machine& m) {
 }
 
 bool wide_scene_active(const Machine& m) {
+    // INTRODUCTION's first encounter parks Eggman at screen X=-49 while the
+    // script continues, and stages Metal Sonic outside the native view too.
+    // $8A6CB8 sets C21C bit2 when that sequence starts; level initialization
+    // clears it. Other levels reuse these camera flags, so keep this scoped.
+    if (wram16(m, kSceneZone) == 6 && wram16(m, kSceneLevel) == 0 && (m.wram[0xC21C] & 0x04))
+        return false;
     if (m.level_seen_frame == ~0ull) return false;
     if (m.level_seen_frame + 8 >= m.frame_count) return true;  // the level is running
     // The level engine has stopped, but it also stops while the game is
@@ -161,12 +171,16 @@ void begin_frame(Machine& m) {
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
         const int ce = (e + 7) & ~7;
-        write_clip(m, int16_t(-ce), int16_t(320 + ce));
+        // The SH-2 blitters compare vertical bounds in 24.8 fixed point.
+        write_clip(m, int16_t(-ce), int16_t(320 + ce),
+                   uint32_t(kActiveLines - 1 + eb) << 8);
         m.clip_overridden = true;
     } else if (m.clip_overridden) {
         // Restore the native rectangle from the SDRAM image in the ROM.
         const uint8_t* r = m.rom.data.data() + kClipRectRom;
-        write_clip(m, int16_t((r[0] << 8) | r[1]), int16_t((r[2] << 8) | r[3]));
+        const uint32_t bottom = (uint32_t(r[8]) << 24) | (uint32_t(r[9]) << 16) |
+                                (uint32_t(r[10]) << 8) | r[11];
+        write_clip(m, int16_t((r[0] << 8) | r[1]), int16_t((r[2] << 8) | r[3]), bottom);
         m.clip_overridden = false;
     }
 }
