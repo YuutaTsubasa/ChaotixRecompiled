@@ -45,6 +45,11 @@ Machine::Machine() {
     exec.m68k_block = m68k::interp_block;
     exec.sh2_block = sh2::interp_block;
     std::memset(framebuffer, 0, sizeof framebuffer);
+    // reset() clears these too, but tooling and tests read a Machine that was
+    // never reset; heap memory reused from an earlier Machine is not zero.
+    std::memset(wram, 0, sizeof wram);
+    std::memset(sdram, 0, sizeof sdram);
+    std::memset(zram, 0, sizeof zram);
 }
 
 Machine::~Machine() = default;
