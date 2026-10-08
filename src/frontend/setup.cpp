@@ -1,6 +1,7 @@
 #include "frontend/setup.h"
 #include "runtime/log.h"
 #include <algorithm>
+#include <exception>
 #include <filesystem>
 #include <system_error>
 
@@ -53,26 +54,45 @@ Candidate check_file(const std::string& path) {
 std::vector<Candidate> scan_candidates(const std::vector<std::string>& dirs) {
     std::vector<Candidate> out;
     std::vector<std::string> seen;
-    for (const auto& d : dirs) {
+    for (const auto& directory : dirs) {
         std::error_code ec;
-        fs::directory_iterator it(d, ec), end;
-        if (ec) continue;
+        fs::directory_iterator it(directory, ec), end;
+        if (ec) {
+            continue;
+        }
         for (; it != end; it.increment(ec)) {
-            if (ec) break;
+            if (ec) {
+                break;
+            }
             const fs::path& p = it->path();
-            if (!it->is_regular_file(ec) || ec) continue;
-            if (!has_rom_extension(p)) continue;
-            const auto size = fs::file_size(p, ec);
-            // Chaotix is 3 MiB; accept anything from 512 KiB to 8 MiB.
-            if (ec || size < 512u * 1024 || size > 8u * 1024 * 1024) continue;
-            // The same file often shows up through several search paths
-            // (relative and next to the executable), so compare real paths.
-            std::error_code cec;
-            fs::path canon = fs::weakly_canonical(p, cec);
-            std::string key = (cec ? p : canon).string();
-            if (std::find(seen.begin(), seen.end(), key) != seen.end()) continue;
-            seen.push_back(key);
-            out.push_back(check_file(key));
+            try {
+                if (!it->is_regular_file(ec) || ec) {
+                    continue;
+                }
+                if (!has_rom_extension(p)) {
+                    continue;
+                }
+                const auto size = fs::file_size(p, ec);
+                // Chaotix is 3 MiB; accept anything from 512 KiB to 8 MiB.
+                if (ec || size < 512u * 1024 || size > 8u * 1024 * 1024) {
+                    continue;
+                }
+                // The same file often shows up through several search paths
+                // (relative and next to the executable), so compare real paths.
+                std::error_code cec;
+                fs::path canon = fs::weakly_canonical(p, cec);
+                std::string key = (cec ? p : canon).string();
+                if (std::find(seen.begin(), seen.end(), key) != seen.end()) {
+                    continue;
+                }
+                seen.push_back(key);
+                out.push_back(check_file(key));
+            } catch (const std::exception& error) {
+                // A name the narrow path functions cannot represent, or any
+                // other failure on one entry, skips that entry rather than
+                // ending the program.
+                LOGW("setup", "skipping a file in %s: %s", directory.c_str(), error.what());
+            }
         }
     }
     std::stable_sort(out.begin(), out.end(), [](const Candidate& a, const Candidate& b) {
