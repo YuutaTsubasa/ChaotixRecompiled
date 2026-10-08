@@ -99,8 +99,16 @@ chaotix_set_warnings(chaotix_headless)
 
 # Windows: UTF-8 as the process code page, so non-ASCII paths work (see the
 # comment in the manifest).
-set(CHAOTIX_WINDOWS_MANIFEST ${CMAKE_SOURCE_DIR}/platforms/windows/app.manifest)
+# MSVC merges a .manifest source by itself; MinGW needs it as a resource.
+set(CHAOTIX_WINDOWS_MANIFEST "")
 if(MSVC)
+    set(CHAOTIX_WINDOWS_MANIFEST ${CMAKE_SOURCE_DIR}/platforms/windows/app.manifest)
+elseif(MINGW)
+    set(CHAOTIX_WINDOWS_MANIFEST ${CMAKE_SOURCE_DIR}/platforms/windows/app.rc)
+    set_source_files_properties(${CHAOTIX_WINDOWS_MANIFEST} PROPERTIES
+        OBJECT_DEPENDS ${CMAKE_SOURCE_DIR}/platforms/windows/app.manifest)
+endif()
+if(CHAOTIX_WINDOWS_MANIFEST)
     target_sources(chaotix_headless PRIVATE ${CHAOTIX_WINDOWS_MANIFEST})
 endif()
 
@@ -165,7 +173,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         set_target_properties(chaotix PROPERTIES OUTPUT_NAME main)
     else()
         add_executable(chaotix WIN32 MACOSX_BUNDLE ${_frontend_sources})
-        if(MSVC)
+        if(CHAOTIX_WINDOWS_MANIFEST)
             target_sources(chaotix PRIVATE ${CHAOTIX_WINDOWS_MANIFEST})
         endif()
         set_target_properties(chaotix PROPERTIES OUTPUT_NAME "ChaotixRecompiled")

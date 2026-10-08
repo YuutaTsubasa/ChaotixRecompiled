@@ -1,0 +1,3 @@
+// MinGW: embeds app.manifest, which CMake only does by itself for MSVC.
+// 1 is CREATEPROCESS_MANIFEST_RESOURCE_ID, 24 is RT_MANIFEST.
+1 24 "app.manifest"
