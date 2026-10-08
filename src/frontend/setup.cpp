@@ -109,15 +109,29 @@ bool install(const std::string& source, const std::string& store_root, std::stri
         return true;  // already installed from this very file
     }
     ec.clear();
+    // A failed copy or rename removes the temporary file again and names the
+    // path that failed: the temporary file for the copy, where the ROM was to
+    // go for the rename.
+    auto fail_and_clean_up = [&](const std::string& action, const std::string& target,
+                                 const std::error_code& reason) {
+        const std::string message = action + " " + target + ": " + reason.message();
+        std::error_code ignored;
+        fs::remove(fs::path(tmp), ignored);
+        return fail(message);
+    };
     fs::copy_file(fs::path(source), fs::path(tmp), fs::copy_options::overwrite_existing, ec);
-    if (ec) return fail("cannot copy the ROM: " + ec.message());
+    if (ec) {
+        return fail_and_clean_up("cannot copy the ROM to", tmp, ec);
+    }
     fs::rename(fs::path(tmp), fs::path(dest), ec);
     if (ec) {
         // Some filesystems refuse rename over an existing file.
         fs::remove(fs::path(dest), ec);
         ec.clear();
         fs::rename(fs::path(tmp), fs::path(dest), ec);
-        if (ec) return fail("cannot store the ROM: " + ec.message());
+        if (ec) {
+            return fail_and_clean_up("cannot store the ROM as", dest, ec);
+        }
     }
     LOGI("setup", "installed %s (%s) to %s", file_name(source).c_str(), c.sha1.c_str(), dest.c_str());
     if (installed_path) *installed_path = dest;
