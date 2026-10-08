@@ -731,6 +731,20 @@ int main(int argc, char** argv) {
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
         };
+        hooks.front_closed = [&app] {
+            // Playing on from the game's own title screen hands it control as
+            // much as START GAME does, only without pressing Start for the
+            // player: Escape later opens the pause menu, and BACK TO TITLE has
+            // a title to return to.
+            if (app.handed_over || !app.m) {
+                return;
+            }
+            if (!app.title_snapshot) {
+                app.title_snapshot = std::make_unique<Machine>();
+            }
+            *app.title_snapshot = *app.m;
+            app.handed_over = true;
+        };
         hooks.pad_count = [&app] { return int(app.pads.size()); };
         hooks.pad_name = [&app](int i) -> std::string {
             if (i < 0 || size_t(i) >= app.pads.size()) return "";

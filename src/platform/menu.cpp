@@ -428,6 +428,21 @@ void Menu::activate(int step) {
     if (it.act) it.act(step);
 }
 
+void Menu::back_out() {
+    if (page_ == Page::Front) {
+        close();
+        if (hooks_.front_closed) {
+            hooks_.front_closed();
+        }
+        return;
+    }
+    if (is_row_page(page_)) {
+        close();
+    } else {
+        set_page(return_to_);
+    }
+}
+
 bool Menu::on_key(SDL_Keycode key) {
     if (!open()) return false;
     if (!awaiting_.empty()) {
@@ -447,7 +462,7 @@ bool Menu::on_key(SDL_Keycode key) {
     }
     switch (key) {
     case SDLK_ESCAPE:
-        if (is_row_page(page_) || page_ == Page::Front) close(); else set_page(return_to_);
+        back_out();
         return true;
     case SDLK_LEFT:
         if (is_row_page(page_)) move(-1); else activate(-1);
@@ -487,7 +502,7 @@ bool Menu::on_pad(Uint8 button) {
     }
     // The button that opened the menu closes it again, the way Escape does.
     if (cfg_ && SDL_GetGamepadButtonFromString(cfg_->menu_button.c_str()) == SDL_GamepadButton(button)) {
-        if (is_row_page(page_) || page_ == Page::Front) close(); else set_page(return_to_);
+        back_out();
         return true;
     }
     switch (button) {
@@ -507,7 +522,9 @@ bool Menu::on_pad(Uint8 button) {
         if (page_ == Page::Achievements) set_page(return_to_); else activate(0);
         return true;
     case SDL_GAMEPAD_BUTTON_EAST:
-        if (is_row_page(page_) || page_ == Page::Front) close(); else set_page(return_to_);
+        // The pad's "back" button backs out exactly like Escape, so closing
+        // the front menu with it hands the game over too.
+        back_out();
         return true;
     default:
         return true;
