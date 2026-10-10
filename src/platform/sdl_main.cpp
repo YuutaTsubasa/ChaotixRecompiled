@@ -48,9 +48,6 @@ extern const size_t achievements_ini_len;
 
 namespace {
 
-// Far enough that a touch is never mistaken for a tap.
-constexpr float kNotATap = 1e9f;
-
 // Original NTSC field rate: 53.693175 MHz / (3420 * 262).
 constexpr double kNtscFrameRate = 53693175.0 / (3420.0 * 262.0);
 

@@ -59,6 +59,10 @@ gradle assembleDebug -PSDL3_SOURCE_DIR=/path/to/SDL3                      -PSDL3
 `-PABIS` is a comma-separated ABI list and defaults to `arm64-v8a`; use
 `x86_64` for the emulator, or `arm64-v8a,x86_64` for both (each ABI is a full
 compile of the generated code, so building one at a time is much faster).
+`armeabi-v7a` builds for 32-bit ARM phones (issue #19); releases ship it as a
+separate APK so the 64-bit one stays small. It compiles without warnings but
+has not been run on a 32-bit device, and those are slower phones, so whether
+it keeps full speed is not known.
 `gradle assembleRelease` produces an unsigned release APK.
 
 Gradle drives the root `CMakeLists.txt` through `externalNativeBuild`, so the
