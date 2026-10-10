@@ -66,7 +66,19 @@ enum : uint32_t {
     // Camera Y ($FFDFEA) is clamped to [plane.$E, plane.$C]; only the bottom
     // bound needs pulling in, because the extra rows are below the screen.
     kCamClampBottom = 0x889AC0,  // after d1 = bottom bound
+    // Every sound request ($8F6E76, sound in d0) once it holds the Z80 bus,
+    // before the id is queued for the Z80 driver at $A01C0A. Ids below $2A
+    // are music; $8F6E72 is the same with the id kept at $FFFCFC as the
+    // current music, which the game requests again after a jingle
+    // ($88E962). Measured with the driver: $F1 stops the music (sound
+    // effects carry on), $F0 lowers it. See audio/music_mods.h.
+    kSoundRequest = 0x8F6E8A,
 };
+constexpr uint8_t kFirstSoundEffect = 0x2A;
+constexpr uint8_t kSoundLowerMusic = 0xF0;
+constexpr uint8_t kSoundStopMusic = 0xF1;
+// Z80 RAM: non-zero while the game is paused and the driver holds the music.
+constexpr uint32_t kZ80Paused = 0x1C10;
 
 // Plane A struct in 68K work RAM: +0 camera X, +8 right bound, +A left bound,
 // +10 camera Y, +C bottom bound, +E top bound.
@@ -88,7 +100,7 @@ inline constexpr uint32_t kM68kHooks[] = {
     kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit, kModeDispatch,
     kFullRedrawA, kRowsA_X, kFullRedrawB, kRowsB_X, kPlaneUpdateA, kRowUpA_X, kRowDownA_X,
     kColLeftA_X, kColRightA_X, kPlaneUpdateB, kColLeftB_X, kColRightB_X, kRowUpB_X, kRowDownB_X,
-    kCamClampMax, kCamClampMin, kCamClampBottom, kFillSplitX,
+    kCamClampMax, kCamClampMin, kCamClampBottom, kFillSplitX, kSoundRequest,
 };
 
 constexpr bool hooks_sorted() {

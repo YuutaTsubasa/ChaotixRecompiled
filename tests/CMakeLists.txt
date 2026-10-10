@@ -13,6 +13,7 @@ add_executable(chaotix_tests
     test_setup.cpp
     test_achievements.cpp
     test_stage_select.cpp
+    test_music_mods.cpp
 )
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime)
 

@@ -4,6 +4,7 @@
 //   chaotix_headless --rom <file> --frames N [--shot F1,F2,...] [--out dir]
 //                    [--press FRAME:BUTTON[+BUTTON]:DURATION ...] [--state-every N]
 //                    [--interp]   (force interpreter even if generated code exists)
+#include "audio/music_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
 #include "cpu/sh2/sh2_interp.h"
@@ -186,6 +187,7 @@ int main(int argc, char** argv) {
     std::string achievements_file;  // --achievements FILE: report unlocks
     uint64_t min_centre_frames = 0;  // fail if fewer frames could be compared
     std::string wav_path;
+    std::string music_dir;  // --music-dir: music replaced by files (audio/music_mods.h)
     std::string coverage_path;
     int break_cpu = -1;
     uint64_t trace_from = 0, trace_to = 0;
@@ -289,6 +291,7 @@ int main(int argc, char** argv) {
         else if (a == "--achievements" && i + 1 < argc) achievements_file = next();
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
+        else if (a == "--music-dir") music_dir = next();
         else if (a == "--expect-hash") {
             auto parts = split(next(), ':');
             if (parts.size() == 2) expect_hash[std::strtoull(parts[0].c_str(), nullptr, 10)] = std::strtoull(parts[1].c_str(), nullptr, 16);
@@ -401,6 +404,14 @@ int main(int argc, char** argv) {
         ref->wide_extra = wide;
         ref->wide_extra_bottom = wide_bottom;
         if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
+    }
+    audio::MusicMods music;
+    if (!music_dir.empty()) {
+        std::printf("music: %d replaced from %s\n", music.scan(music_dir), music_dir.c_str());
+        // The patch tells the driver to stop replaced music, so a lockstep
+        // reference must be told the same.
+        music.attach(*m);
+        if (ref) music.attach(*ref);
     }
     // The 4:3 comparison machine runs on the interpreter: the recompiled
     // code's SH-2 validation state is process-wide, so only one machine at a
@@ -540,7 +551,9 @@ int main(int argc, char** argv) {
         m->input.pad[1] = btn2;
         if (ref) { ref->input.pad[0] = btn; ref->input.pad[1] = btn2; }
         g_trace_on = g_trace && f >= trace_from && f < trace_to;
+        const size_t first_sample = m->audio_out.size();
         m->run_frame();
+        if (!music_dir.empty()) music.after_frame(*m, first_sample);
         if (m->wide_active) {
             ++wide_live_frames;
             if (!wide_was_live) { ++wide_stretches; wide_was_live = true; }

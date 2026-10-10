@@ -16,6 +16,7 @@
 #include "runtime/rom.h"
 #include "runtime/stage_select.h"
 #include "runtime/vdp.h"
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -174,6 +175,11 @@ public:
     // dispatcher, the one place the game passes through between scenes.
     stage_select::Request stage_request;
     bool stage_pending = false;
+    // Music replaced by files (audio/music_mods.h): which music ids the host
+    // plays itself, and the music requests and commands the game has made
+    // since the host last drained them (patches.h, kSoundRequest).
+    std::array<bool, 0x2A> music_replaced{};
+    std::vector<uint8_t> music_events;
     // Host-side shadow of the 32X frame buffers for widescreen margins: while
     // wide_active, sprite (overwrite image) writes outside native columns land
     // here instead of in the line padding, which the game uses as storage.

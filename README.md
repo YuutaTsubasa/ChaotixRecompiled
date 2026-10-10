@@ -203,6 +203,16 @@ second player on the partner. The character ones want TIME ATTACK, which is
 how you reach a character the game would otherwise have chosen for you. Each
 was checked by driving the game to it rather than by reading the conditions.
 
+## Music replacement
+
+Put WAV files in `Mods/Music` in the user data folder (created on first run),
+named after the game's music id in hex: `05.wav` replaces BOTANIC BASE's
+music. The game's sound effects still play. Loops come from the WAV's sampler
+chunk or a `05.loop` text file, and `ModMusicVolume` in `[Audio]` sets their
+level. Every music request is logged with its id, so playing the game shows
+which file to make; see [docs/MUSIC_MODS.md](docs/MUSIC_MODS.md). Only music
+you have the right to use, please.
+
 ## Tools
 
 - `rom_analyzer --rom <rom> [--coverage f.cov] --out dir [--refs-to ADDR]

@@ -44,6 +44,7 @@ add_library(chaotix_runtime STATIC
     src/runtime/save.cpp
     src/audio/ym2612.cpp
     src/audio/sn76489.cpp
+    src/audio/music_mods.cpp
     src/renderer/image_io.cpp
     src/renderer/viewport.cpp
     src/frontend/setup.cpp

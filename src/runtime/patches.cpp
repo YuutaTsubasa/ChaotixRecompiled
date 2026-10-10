@@ -8,6 +8,7 @@ namespace chaotix::patches {
 namespace {
 
 inline void set_low_word(uint32_t& r, uint32_t v) { r = (r & 0xFFFF0000u) | (v & 0xFFFFu); }
+inline void set_low_byte(uint32_t& r, uint32_t v) { r = (r & 0xFFFFFF00u) | (v & 0xFFu); }
 
 inline uint16_t wram16(const Machine& m, uint32_t a) {
     return uint16_t(m.wram[a] << 8 | m.wram[a + 1]);
@@ -35,6 +36,19 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         m->level_seen_frame = m->frame_count;
         m->level_scene = scene_key(*m);
         return;
+    case kSoundRequest: {
+        // Music the host replaces with a file of its own: the driver is told
+        // to stop its music instead, so its sound effects still play. The
+        // request itself goes to the host either way (audio/music_mods.h).
+        const uint8_t id = uint8_t(c->d[0]);
+        if (id != 0 && (id < kFirstSoundEffect || id == kSoundLowerMusic || id == kSoundStopMusic)) {
+            // Only the newest matter; a machine nobody drains stays small.
+            if (m->music_events.size() >= 64) m->music_events.erase(m->music_events.begin());
+            m->music_events.push_back(id);
+            if (id < kFirstSoundEffect && m->music_replaced[id]) set_low_byte(c->d[0], kSoundStopMusic);
+        }
+        return;
+    }
     case kModeDispatch:
         // The game is between scenes: a stage the host asked for can start.
         if (m->stage_pending) {

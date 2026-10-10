@@ -7,6 +7,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
+#include "audio/music_mods.h"
 #include "frontend/config.h"
 #include "frontend/time_attack.h"
 #include "frontend/debug_overlay.h"
@@ -57,6 +58,7 @@ struct App {
     Config cfg;
     SaveStore store;
     std::unique_ptr<Machine> m;
+    audio::MusicMods music;  // <user data>/Mods/Music
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
@@ -809,6 +811,14 @@ int main(int argc, char** argv) {
     if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
     RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
     LOGI("app", "execution: %s", rs.description.c_str());
+    if (!app.autotest_frames) {  // autotests are hermetic
+        // Created so it is easy to find; empty, it changes nothing.
+        const std::string music_dir = app.store.root() + "Mods/Music";
+        std::error_code ec;
+        std::filesystem::create_directories(std::filesystem::u8path(music_dir), ec);
+        if (const int n = app.music.scan(music_dir)) LOGI("music", "%d piece(s) of music replaced from %s", n, music_dir.c_str());
+        app.music.attach(*app.m);
+    }
 
     if (app.cfg.achievements) {
         // A file in the user data directory (or beside the executable) wins,
@@ -992,7 +1002,10 @@ int main(int argc, char** argv) {
             app.m->input.pad[0] = uint16_t(buttons | scripted);
             app.recorded.push_back(uint32_t(uint16_t(buttons | scripted)) | uint32_t(raw2) << 16);
             app.m->input.pad[1] = raw2;
+            const size_t first_sample = app.m->audio_out.size();
             app.m->run_frame();
+            app.music.set_volume(app.cfg.mod_music_volume);
+            app.music.after_frame(*app.m, first_sample);
             follow_time_attack(app);
             if (app.achievements_on) {
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {

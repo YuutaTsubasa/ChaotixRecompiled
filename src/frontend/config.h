@@ -28,6 +28,9 @@ struct Config {
     // [Audio]
     bool audio = true;
     int volume = 80;  // percent
+    // Music played from files in <user data>/Mods/Music (audio/music_mods.h),
+    // relative to Volume: they are mastered louder than the game's own.
+    int mod_music_volume = 25;  // percent
     // [Input]
     TouchMode touch = TouchMode::Auto;
     bool six_button = true;
