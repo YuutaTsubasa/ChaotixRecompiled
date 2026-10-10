@@ -28,9 +28,16 @@ enum : uint32_t {
     kPadOffset = 0xE05C,
     kMode = 0xDFDE,
     kSceneFlag = 0xDFE6,   // $8F72C8 sets this to -1 before starting
+    kSceneStep = 0xDFE0,
+    kRings = 0xE008,
+    kSpecialLevel = 0xE01A,
+    kSpecialPlayer = 0xE048,
 };
 
 constexpr uint16_t kModeLevel = 0x18;
+constexpr uint16_t kModeSpecial = 0x20;
+constexpr uint16_t kModeUnused = 0x28;
+constexpr uint16_t kModeBonus = 0x50;
 
 } // namespace
 
@@ -78,6 +85,20 @@ void apply(Machine& m, const Request& r) {
     // -2 (one player, both on pad 1) or +0x10 (the partner on pad 2).
     m.wram[kPlayers] = 0;
     m.wram[kPadOffset] = r.two_players ? 0x10 : 0xFE;
+    // Places 8-10 start in game modes of their own and leave the zone alone.
+    if (r.place == 8) {  // NOT USED
+        wr16(m, kSpecialLevel, 0);
+        wr16(m, kSceneStep, 0);
+        wr16(m, kMode, kModeUnused);
+        return;
+    }
+    if (r.place >= 9) {  // BONUS STAGE, SPECIAL STAGE
+        wr16(m, kSpecialPlayer, rd16(m, kPlayer));
+        if (r.place == 10) wr16(m, kSpecialLevel, rd16(m, kLevel));
+        wr16(m, kRings, 200);
+        wr16(m, kMode, r.place == 10 ? kModeSpecial : kModeBonus);
+        return;
+    }
     // The place is the zone the level engine loads.
     wr16(m, kZone, r.place);
     // One special case in the game's own code: WORLD ENTRANCE level 1 is the
@@ -89,9 +110,6 @@ void apply(Machine& m, const Request& r) {
         wr16(m, 0xE002, 0x0600);
         wr16(m, kLevel, 0);
     }
-    // Places 8-10 (NOT USED, BONUS STAGE, SPECIAL STAGE) start in their own
-    // game modes; the front end does not offer them, so only the level mode is
-    // transcribed here.
     wr16(m, kMode, kModeLevel);
 }
 

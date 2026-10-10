@@ -66,6 +66,7 @@ void Machine::fb_write(uint32_t off, uint32_t v, int size, bool overwrite) {
     off &= 0x1FFFF;
     if (on_fb_write) on_fb_write(on_fb_write_user, off, v, size, overwrite);
     uint8_t* fb = mars.fb[mars.fb_display ^ 1];
+    if (wide_special) { fb_write_special(fb, off, v, size, overwrite); return; }
     if (!overwrite) { be_write(fb + off, v, size); return; }
     if (wide_active) { fb_write_wide(fb, off, v, size); return; }
     // Overwrite image: zero bytes are transparent (not written).
@@ -88,6 +89,27 @@ void Machine::fb_write_wide(uint8_t* fb, uint32_t off, uint32_t v, int size) {
         const bool off_line = fline < 0 || fline >= kActiveLines;
         if (off_line || (uint32_t(rel) & (patches::kFbLineStride - 1)) >= uint32_t(kNativeWidth)) shadow[o] = b;
         else fb[o] = b;
+    }
+}
+
+// The widened special stage (see patches.h): polygon pixels (everything but
+// the overwrite image) are moved back by the shift its projection was given,
+// and every byte outside the native columns of a line goes to the margin
+// shadow.
+bool Machine::fb_in_margin(uint32_t o) {
+    const int32_t rel = int32_t(o) - int32_t(patches::kFbLineBase);
+    const int fline = rel >= 0 ? rel / int32_t(patches::kFbLineStride) : -1;
+    return fline < 0 || fline >= kActiveLines ||
+           (uint32_t(rel) & (patches::kFbLineStride - 1)) >= uint32_t(kNativeWidth);
+}
+
+void Machine::fb_write_special(uint8_t* fb, uint32_t off, uint32_t v, int size, bool overwrite) {
+    uint8_t* shadow = fb_margin[mars.fb_display ^ 1];
+    for (int i = 0; i < size; ++i) {
+        const uint8_t b = uint8_t(v >> (8 * (size - 1 - i)));
+        if (overwrite && !b) continue;  // overwrite image: zero bytes are transparent
+        const uint32_t o = (off + uint32_t(i) - (overwrite ? 0u : uint32_t(special_shift))) & 0x1FFFF;
+        (fb_in_margin(o) ? shadow : fb)[o] = b;
     }
 }
 
@@ -162,6 +184,31 @@ void Machine::vdp32x_write(uint32_t off, uint32_t v, int size) {
         uint8_t* fb = mars.fb[mars.fb_display ^ 1];
         uint32_t addr = mars.fill_addr;
         if (on_fb_fill) on_fb_fill(on_fb_write_user, addr, mars.fill_len + 1u, mars.fill_data);
+        if (wide_special) {
+            uint8_t* shadow = fb_margin[mars.fb_display ^ 1];
+            if ((addr & 0xFF) == patches::kSpecialClearStart && mars.fill_len == patches::kSpecialClearLen &&
+                mars.fill_data == 0) {
+                // The stage's clear (see patches.h): the whole widened line.
+                const uint32_t line = (addr & 0xFF00) * 2u;
+                for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x) {
+                    const uint32_t o = (line + uint32_t(x)) & 0x1FFFF;
+                    (fb_in_margin(o) ? shadow : fb)[o] = 0;
+                }
+                mars.fill_addr = uint16_t((addr & 0xFF00) | ((addr + mars.fill_len + 1u) & 0xFF));
+                break;
+            }
+            // A polygon span: moved back by the projection's shift (even),
+            // with the margins going to the shadow (see patches.h).
+            for (uint32_t i = 0; i <= mars.fill_len; ++i) {
+                const uint32_t o = ((addr & 0xFFFF) * 2 - uint32_t(special_shift)) & 0x1FFFF;
+                uint8_t* dst = fb_in_margin(o) ? shadow : fb;
+                dst[o] = uint8_t(mars.fill_data >> 8);
+                dst[o + 1] = uint8_t(mars.fill_data);
+                addr = (addr & 0xFF00) | ((addr + 1) & 0xFF);
+            }
+            mars.fill_addr = uint16_t(addr);
+            break;
+        }
         for (uint32_t i = 0; i <= mars.fill_len; ++i) {
             uint32_t o = (addr & 0xFFFF) * 2;
             fb[o] = uint8_t(mars.fill_data >> 8);

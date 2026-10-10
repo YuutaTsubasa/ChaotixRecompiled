@@ -24,7 +24,8 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         // setting rather than from the current margin: the margins follow the
         // window, and a window resized during a level would otherwise leave
         // that level in 4:3 until the next load.
-        m->plane_shift = plane_shift_for(m->wide_enabled ? kMaxWideExtra : 0);
+        // WORLD ENTRANCE is left native (see wide_zone).
+        m->plane_shift = plane_shift_for(m->wide_enabled && wide_zone(*m) ? kMaxWideExtra : 0);
         // Also how a scene change is told apart from a level that has merely
         // stopped (see wide_scene_active): a new scene redraws the planes.
         m->full_redraw_frame = m->frame_count;
@@ -45,7 +46,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     case kRingCullHi:
     case kRingCullDone:
     case kRingCullExit: {
-        const int e = m->wide_active ? std::clamp(m->wide_extra, 0, kMaxWideExtra) : 0;
+        const int e = m->wide_active && !m->wide_special ? std::clamp(m->wide_extra, 0, kMaxWideExtra) : 0;
         int want = 0;
         if (pc == kRingCullLo) want = e;
         else if (pc == kRingCullHi) want = -e;
@@ -57,7 +58,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
     if (pc == kCamClampMax || pc == kCamClampMin) {
         const int e = std::clamp(m->wide_extra, 0, kMaxWideExtra);
-        if (!e) return;
+        if (!e || !wide_zone(*m)) return;
         const int right = int16_t(m68k::rd16(c, c->a[1] + 8));
         const int left = int16_t(m68k::rd16(c, c->a[1] + 0xA));
         int lo = left + e, hi = right - e;
@@ -68,7 +69,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     if (pc == kCamClampBottom) {
         // The extra rows are below the screen, so only the bottom bound moves.
         const int e = std::clamp(m->wide_extra_bottom, 0, kMaxWideExtraBottom);
-        if (!e) return;
+        if (!e || !wide_zone(*m)) return;
         const int bottom = int16_t(m68k::rd16(c, c->a[1] + 0xC));
         const int top = int16_t(m68k::rd16(c, c->a[1] + 0xE));
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
@@ -112,14 +113,75 @@ void write_clip(Machine& m, int16_t left, int16_t right, uint32_t bottom) {
     p[11] = uint8_t(bottom);
 }
 
+int16_t special_rect(const Machine& m, int i) {
+    const uint8_t* p = m.sdram + kSpecialRectSdram + 2 * i;
+    return int16_t((p[0] << 8) | p[1]);
+}
+
+void write_special_rect(Machine& m, int16_t left, int16_t right) {
+    uint8_t* p = m.sdram + kSpecialRectSdram;
+    p[0] = uint8_t(uint16_t(left) >> 8);
+    p[1] = uint8_t(left);
+    p[2] = uint8_t(uint16_t(right) >> 8);
+    p[3] = uint8_t(right);
+}
+
+// Our widened rectangle is still in place: the stage has not set another.
+bool special_rect_is_ours(const Machine& m) {
+    return m.special_rect_overridden && special_rect(m, 0) == 0 && special_rect(m, 1) >= 319 &&
+           special_rect(m, 2) == kSpecialRect[2] && special_rect(m, 3) == kSpecialRect[3];
+}
+
+uint16_t sdram16(const Machine& m, uint32_t off) { return uint16_t((m.sdram[off] << 8) | m.sdram[off + 1]); }
+
+// ADD #imm,Rn with any immediate.
+bool is_add_to(uint16_t w, uint8_t reg) { return (w & 0xFF00) == (0x7000 | uint16_t(reg) << 8); }
+
+// The stage's code is loaded, possibly with our centre in it.
+bool special_projection_loaded(const Machine& m) {
+    for (int i = 0; i < 8; ++i) {
+        const uint16_t w = sdram16(m, kSpecialProjectSdram + 2 * uint32_t(i));
+        const bool centre = i == 1 || i == 2;
+        if (centre ? !is_add_to(w, 4) : w != kSpecialProjectCode[i]) return false;
+    }
+    return true;
+}
+
+// Puts the screen centre at 160 + shift in every projection.
+void set_special_projection(Machine& m, int shift) {
+    if (!special_projection_loaded(m)) return;
+    for (const CentreAdd& c : kSpecialCentreAdds) {
+        const uint16_t add = uint16_t(0x7000 | uint16_t(c.reg) << 8 | (80 + shift / 2));
+        for (uint32_t i = 0; i < 2; ++i) {
+            const uint32_t off = c.sdram + 2 * i;
+            const uint16_t w = sdram16(m, off);
+            if (w == add || !is_add_to(w, c.reg)) continue;
+            m.sdram[off] = uint8_t(add >> 8);
+            m.sdram[off + 1] = uint8_t(add);
+            ++m.sdram_code_epoch;
+        }
+    }
+}
+
 } // namespace
+
+bool special_stage_active(const Machine& m) {
+    if (wram16(m, kGameMode) != kModeSpecialStage || !special_projection_loaded(m)) return false;
+    if (special_rect_is_ours(m)) return true;
+    for (int i = 0; i < 4; ++i)
+        if (special_rect(m, i) != kSpecialRect[i]) return false;
+    return true;
+}
 
 uint64_t scene_key(const Machine& m) {
     return (uint64_t(wram16(m, kGameMode)) << 32) | (uint64_t(wram16(m, kSceneZone)) << 16) |
            wram16(m, kSceneLevel);
 }
 
+bool wide_zone(const Machine& m) { return wram16(m, kSceneZone) != kWorldEntrance; }
+
 bool wide_scene_active(const Machine& m) {
+    if (!wide_zone(m)) return false;
     // INTRODUCTION's first encounter parks Eggman at screen X=-49 while the
     // script continues, and stages Metal Sonic outside the native view too.
     // $8A6CB8 sets C21C bit2 when that sequence starts; level initialization
@@ -140,6 +202,13 @@ bool wide_scene_active(const Machine& m) {
 }
 
 int camera_x(const Machine& m) { return int(int16_t((m.wram[kPlaneAStruct] << 8) | m.wram[kPlaneAStruct + 1])); }
+CameraRange camera_range(const Machine& m) {
+    CameraRange r;
+    r.left = int16_t(wram16(m, (kPlaneAStruct + 0xA) & 0xFFFF));
+    r.right = int16_t(wram16(m, (kPlaneAStruct + 0x8) & 0xFFFF));
+    return r;
+}
+
 int camera_y(const Machine& m) { return int(int16_t((m.wram[(kPlaneAStruct + 0x10) & 0xFFFF] << 8) | m.wram[(kPlaneAStruct + 0x11) & 0xFFFF])); }
 
 MarginCut margin_cut(const Machine& m, int extra) {
@@ -164,9 +233,28 @@ void begin_frame(Machine& m) {
     // at once; only turning widescreen off and on again waits for the next
     // load. The bottom rows need no patch, so they only wait for a level
     // scene.
-    m.wide_active = (e > 0 || eb > 0) && (e == 0 || m.plane_shift > 0) &&
-                    m.vdp.reg[16] == kLevelPlaneSize && wide_scene_active(m);
-    if (m.wide_active) {
+    const bool level = (e > 0 || eb > 0) && (e == 0 || m.plane_shift > 0) &&
+                       m.vdp.reg[16] == kLevelPlaneSize && wide_scene_active(m);
+    // Only side margins in the special stage: its rectangle ends at 219.
+    m.wide_special = !level && m.wide_enabled && e > 0 && special_stage_active(m);
+    m.wide_active = level || m.wide_special;
+    if (m.wide_special) {
+        // Same multiple of 8 as the level clip, which also keeps the shift
+        // even, so a moved fill stays word-aligned.
+        const int ce = (e + 7) & ~7;
+        write_special_rect(m, 0, int16_t(319 + 2 * ce));
+        set_special_projection(m, ce);
+        m.special_shift = ce;
+        m.special_rect_overridden = true;
+    } else if (m.special_rect_overridden) {
+        // Put the stage's own rectangle and centre back, unless something
+        // has already replaced them (the next scene sets its own).
+        if (special_rect_is_ours(m)) write_special_rect(m, kSpecialRect[0], kSpecialRect[1]);
+        set_special_projection(m, 0);
+        m.special_shift = 0;
+        m.special_rect_overridden = false;
+    }
+    if (level) {
         // The blitters write 16-bit words at clip-aligned addresses: an odd
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
@@ -196,6 +284,9 @@ void install(Machine& m) {
     m.level_scene = 0;
     m.wide_active = false;
     m.clip_overridden = false;
+    m.wide_special = false;
+    m.special_rect_overridden = false;
+    m.special_shift = 0;
     m.cull_shift = 0;
     m.plane_fill_clamped = true;
 }

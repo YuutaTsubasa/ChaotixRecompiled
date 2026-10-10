@@ -164,7 +164,7 @@ TEST(widescreen_render, intro_mask_does_not_cover_gameplay_or_other_level_events
         patches::begin_frame(*m);
         CHECK(m->wide_active);
     }
-    for (uint8_t zone : {uint8_t(0), uint8_t(5), uint8_t(7)}) {
+    for (uint8_t zone : {uint8_t(0), uint8_t(3), uint8_t(5)}) {
         stand_in_for_the_engine_in(*m, zone, 0);
         m->wram[0xC21C] = 4;
         patches::begin_frame(*m);
@@ -175,6 +175,18 @@ TEST(widescreen_render, intro_mask_does_not_cover_gameplay_or_other_level_events
     patches::begin_frame(*m);
     CHECK(!m->wide_active);
     m->wram[0xC21C] = 0; // reset/reload the same introduction
+    patches::begin_frame(*m);
+    CHECK(m->wide_active);
+}
+
+TEST(widescreen_render, the_lobby_stays_4_3) {
+    // Issue #13: WORLD ENTRANCE is shown exactly as a 4:3 window shows it.
+    auto m = level_machine();
+    stand_in_for_the_engine_in(*m, 7, 0);
+    patches::begin_frame(*m);
+    CHECK(!m->wide_active);
+    CHECK(!patches::wide_zone(*m));
+    stand_in_for_the_engine_in(*m, 1, 0);
     patches::begin_frame(*m);
     CHECK(m->wide_active);
 }

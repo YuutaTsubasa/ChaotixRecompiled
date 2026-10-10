@@ -146,15 +146,81 @@ constexpr int plane_shift_for(int extra) { return extra > 0 ? 96 : 0; }
 // a different plane (menus and transitions use 64x64) are left alone.
 constexpr uint8_t kLevelPlaneSize = 0x01;
 
+// The special stage (game mode 0x20, handler $885850) is not a level-engine
+// scene: the master SH-2 draws its tube as polygons from code the stage copies
+// into SDRAM. The polygon rasterizer ($06004858) takes its bounding box and
+// clips against a rectangle stored as data at SDRAM 0x06003844: int16 left,
+// right, top, bottom, inclusive. The special stage sets it to 16, 303, 4, 219
+// (a 288 px picture inside the 320 px screen); other scenes use 0, 319, 0, 223.
+// Widening it makes the tube's own geometry fill the margins, but only to the
+// right: the rasterizer turns 8.8 x into pixels with SHLR8, a logical shift,
+// so a span starting left of x = 0 gets a huge start and a garbage length.
+//
+// So the whole tube is drawn C px further right instead. Every projection in
+// that code adds the screen centre as two ADD #80 (kSpecialCentreAdds); those
+// immediates become 80 + C/2, the rectangle becomes [0, 319 + 2C], and the
+// host moves every polygon pixel -- the rasterizer's CPU writes and its auto
+// fills, which are the frame buffer's only non-overwrite writes here -- back
+// by C. Pixels that land outside the native 320 columns go to the host-side
+// shadow (Machine::fb_margin) that the compositor shows in the margins; the
+// stage keeps data in the line padding, so they must not go there. Sprites
+// (HUD, the player) are drawn with the overwrite image at their native
+// positions and are only redirected, not moved. The one other non-overwrite
+// writer is the per-frame clear in the boot code ($0600032C): it fills each
+// of lines 4-219 from x = 16 for 145 words with 0. It is recognised by exactly
+// that fill and clears the whole widened line instead, unmoved; moved, it
+// would leave the right of the picture uncleared.
+//
+// The code patch bumps sdram_code_epoch, so recompiled code that covers those
+// bytes is revalidated and the interpreter runs the patched routine.
+constexpr uint32_t kSpecialRectSdram = 0x3844;
+constexpr uint16_t kModeSpecialStage = 0x20;
+constexpr int16_t kSpecialRect[4] = {16, 303, 4, 219};
+// The clear's fill: start word within the line, length register, data.
+constexpr uint16_t kSpecialClearStart = 0x08;
+constexpr uint16_t kSpecialClearLen = 0x90;
+// The stage's code is recognised by its vertex projection: SHLR8 R4;
+// ADD #80,R4; ADD #80,R4; STS MACL,R0; MOV.W R4,@R7; SHLR8 R0; ADD #112,R0;
+// MOV.W R0,@(2,R7).
+constexpr uint32_t kSpecialProjectSdram = 0x4442;
+constexpr uint16_t kSpecialProjectCode[8] = {0x4419, 0x7450, 0x7450, 0x001A,
+                                             0x2741, 0x4019, 0x7070, 0x8171};
+// The polygon projections' pairs of ADD #80,Rn (SDRAM offset of the first,
+// Rn): every one whose output goes to the polygon dispatcher ($060045E8) --
+// the tube's two vertex projections ($06004442, $06004C5E), the near-plane
+// clippers ($060044F4, $0600456C) and a rotated one ($0600414A). The add at
+// $06004BE0 places sprite objects (the player, the spheres), which are not
+// moved back, so it stays at 160.
+struct CentreAdd { uint32_t sdram; uint8_t reg; };
+constexpr CentreAdd kSpecialCentreAdds[] = {
+    {0x414A, 0}, {0x4444, 4}, {0x4558, 0}, {0x45D0, 0}, {0x4C60, 0},
+};
+// The special stage is drawing its tube: mode 0x20 with the stage's own
+// rectangle, or the widened one (its intro and results use other rectangles).
+bool special_stage_active(const Machine& m);
+
 // A frame counts as a level scene when the level engine's per-frame plane
 // update ran in the last 8 frames (it skips a few while a level loads), or,
 // once it has stopped, until another scene redraws the planes: a pause stops
 // the engine with the level still on screen, and the ring keeps the level's
 // tiles until something else claims it. Other
-// scenes (title, menus, special stages) stay 4:3 with black side bars. The
+// scenes (title, menus) stay 4:3 with black side bars; the special stage has
+// its own support (special_stage_active, above). The
 // scripted Eggman encounter in INTRODUCTION level 0 also stays native while
 // C21C bit2 is set: its actors wait just outside the original viewport.
 bool wide_scene_active(const Machine& m);
+
+// WORLD ENTRANCE (the lobby, zone 7) stays 4:3 (issue #13): its rooms are
+// narrower than a widened view, so the margins showed the neighbouring part of
+// the layout -- the outdoor entrance beside the indoor rooms, drawn with the
+// indoor tiles and palette -- or blocks the engine never streams; the
+// palette changes where the camera reaches a point, which the margins pass
+// first; and the catapult moves the camera faster than the shifted ring's
+// 96 - E px of slack (natively 192) can keep up with, so chunks went missing
+// even in the 4:3 centre. There the ring is not shifted, the camera clamp is
+// left alone and the margins are black, exactly as a 4:3 window shows it.
+constexpr uint16_t kWorldEntrance = 7;
+bool wide_zone(const Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
 // mean the same scene; Machine::level_scene holds the key the level engine
@@ -164,6 +230,10 @@ uint64_t scene_key(const Machine& m);
 // Level camera position (plane A struct), for tooling and tests.
 int camera_x(const Machine& m);
 int camera_y(const Machine& m);
+// The range the level engine clamps camera X to (plane A struct +$A, +$8),
+// before the widescreen patch pulls it in: the room the player is in.
+struct CameraRange { int left = 0, right = 0; };
+CameraRange camera_range(const Machine& m);
 
 // Margin columns on the left that fall left of the level's origin, where no
 // layout exists. Non-zero only where a room is narrower than the widened view

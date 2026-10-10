@@ -363,7 +363,8 @@ void Machine::render_output_line(int src_line, int dst_row) {
         // Scenes without widescreen support: black side bars. In a level,
         // black out margin columns outside the level's camera range.
         patches::MarginCut cut{extra, extra};
-        if (wide_active) cut = patches::margin_cut(*this, extra);
+        if (wide_special) cut = {};
+        else if (wide_active) cut = patches::margin_cut(*this, extra);
         for (int x = 0; x < cut.left; ++x) row[x] = 0xFF000000u;
         for (int x = 0; x < cut.right; ++x) row[n - 1 - x] = 0xFF000000u;
     }
@@ -379,7 +380,7 @@ void Machine::end_line() {
     const int eb = std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom);
     const int n = vdp.width() + 2 * std::clamp(wide_extra, 0, patches::kMaxWideExtra);
     for (int k = 0; k < eb; ++k) {
-        if (wide_active) { render_output_line(kActiveLines + k, kActiveLines + k); continue; }
+        if (wide_active && !wide_special) { render_output_line(kActiveLines + k, kActiveLines + k); continue; }
         uint32_t* row = framebuffer + (kActiveLines + k) * kScreenWidth;
         for (int x = 0; x < n; ++x) row[x] = 0xFF000000u;
     }

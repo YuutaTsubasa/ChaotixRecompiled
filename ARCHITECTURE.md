@@ -237,8 +237,9 @@ Machine（simulation）                                   Platform（SDL3）
 | 環（MD sprite，68K `0x1044`） | 環以 MD sprite 繪製；sprite 座標 X 只在 `0x70 ≤ x < 0x1D0`（畫面 −16…335）時才輸出。環物件本身在鏡頭前方 448–576 px 就已生成。 | 比較前把 d2 暫時 +E / −E、比較後還原，等效把範圍放寬為 [−16−E, 336+E)，輸出的 sprite 座標不變。 |
 | 32X 物件的畫面外旗標（68K `0x182E`） | 物件在鏡頭 −64…+384 px 外設定 off-screen 旗標。 | 已涵蓋 E ≤ 64，不需修改。 |
 | Camera clamp（68K `0x9A76`，所有 zone） | camera X（`$FFDFE8`）夾在 plane A 結構（`$FFC1DE`）的 [$A, $8]。 | 兩個界線各內縮 E（房間比畫面窄時置中），邊界不會顯示關卡外。 |
-| 場景判斷 | 關卡每幀呼叫 plane 更新 `0x984E`/`0x98C4`。 | 最近 8 幀內有執行 → 寬螢幕；否則（標題、選單、特殊關卡、過場）4:3 + 黑邊。 |
-| 關卡邊界 | 鏡頭夾制（上）讓邊界通常落在關卡內。房間比畫面窄時鏡頭置中，邊界會超出該房間的鏡頭範圍，但那裡仍是引擎從關卡配置串流進來的圖塊（實測：選關大廳等窄房間看起來是連續的場景）。 | `patches::margin_cut` 只把「關卡原點左側」（沒有配置資料）的部分塗黑。 |
+| 場景判斷 | 關卡每幀呼叫 plane 更新 `0x984E`/`0x98C4`。 | 最近 8 幀內有執行 → 寬螢幕；否則（標題、選單、過場）4:3 + 黑邊。WORLD ENTRANCE（zone 7，大廳）一律 4:3（issue #13，見 `docs/ISSUE_13_LOBBY.md`）。 |
+| 特殊關卡（模式 `0x20`） | 主 SH-2 以多邊形畫管道（SDRAM 中執行期載入的程式）。光柵器 `$06004858` 以 SDRAM `0x06003844` 的矩形（16/303/4/219）裁切；x 用 `SHLR8`（邏輯位移）轉換，所以 x < 0 會壞掉。 | 整個管道往右投影 C px（五處 `ADD #80` 改為 80 + C/2），矩形改為 [0, 319 + 2C]，host 把多邊形像素移回 C、邊界外寫入影子緩衝；每幀清畫面的 fill 認得後清整條加寬的行。詳見 `docs/ISSUE_18_SPECIAL_STAGE.md`（issue #18）。 |
+| 關卡邊界 | 鏡頭夾制（上）讓邊界通常落在關卡內。房間比畫面窄時鏡頭置中，邊界會超出該房間的鏡頭範圍，但那裡仍是引擎從關卡配置串流進來的圖塊。大廳（WORLD ENTRANCE）例外：旁邊是室外入口等其他區域，因此大廳保持 4:3（issue #13）。 | `patches::margin_cut` 只把「關卡原點左側」（沒有配置資料）的部分塗黑。 |
 | HUD | 由 32X 繪於固定位置 | 保持在原生 4:3 區域內（未移動）。 |
 | 遊戲模式分派器（68K `0x3262`） | `move.w $FFDFDE,d0; andi.w #$78,d0; jsr $883270(pc,d0.w)` — 16 個模式各一格 `jmp`。每個模式處理常式自己跑迴圈，只有在該場景結束時才回到這裡，因此這是遊戲在兩個場景之間唯一會經過的點。 | 不改變執行；只在此處套用 host 要求的關卡（TIME ATTACK，見 §8.3）。因為直譯器與生成碼在同一條指令前呼叫同一個 hook，lockstep 仍 bit-identical（測試 `stage_select_starts_the_chosen_level`）。 |
 
@@ -401,7 +402,7 @@ CMakeLists.txt
 | SRAM 位置、控制方式、checksum | ✅ 已驗證 |
 | 遊戲不依賴 cache 不一致（stale cache） | UNKNOWN — requires ROM analysis |
 | DREQ FIFO 使用的場景與傳輸大小 | UNKNOWN — requires ROM analysis（已實作一般路徑） |
-| 特殊關卡 / 過場的 32X 繪圖模式（RLE / direct color） | UNKNOWN — requires ROM analysis |
+| 特殊關卡 / 過場的 32X 繪圖模式（RLE / direct color） | 特殊關卡：✅ packed 8 bpp、512-byte 行，多邊形以 auto fill 繪製（見 `docs/ISSUE_18_SPECIAL_STAGE.md`）；過場 UNKNOWN |
 | Camera / 物件啟動視窗 / culling 的資料結構（寬螢幕所需） | UNKNOWN — requires ROM analysis |
 | 音效驅動與 68K 的握手是否要求 Z80 實際執行 | ✅ Z80 已執行；流程不受阻，關卡載入時序與 Z80 互動略有變化（golden hash 已更新） |
 | 6 按鍵手把在本作中的用途 | ✅ 已驗證：X / Y / Z / MODE 完全未使用，本作是三鍵遊戲（見 §8.4） |

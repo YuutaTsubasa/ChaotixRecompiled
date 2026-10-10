@@ -162,6 +162,11 @@ public:
     uint64_t level_scene = 0;          // scene the level engine last ran in (patches.cpp)
     bool wide_active = false;          // margins show game content this frame
     bool clip_overridden = false;      // 32X clip rect widened by the patch
+    // The special stage is the widescreen scene this frame (wide_active is
+    // then also set). Its polygons are filled, not blitted: see patches.h.
+    bool wide_special = false;
+    bool special_rect_overridden = false;  // its polygon clip rect widened
+    int special_shift = 0;             // px its polygons are drawn right of true
     int cull_shift = 0;                // pending d2 offset inside the ring cull patch
     bool plane_fill_clamped = true;    // last plane fill used the unmasked (clamped) form
     // A stage the host has asked the game to start (TIME ATTACK). A game mode
@@ -275,6 +280,8 @@ private:
     void fifo_push(uint16_t v);
     void fb_write(uint32_t off, uint32_t v, int size, bool overwrite);
     void fb_write_wide(uint8_t* fb, uint32_t off, uint32_t v, int size);
+    void fb_write_special(uint8_t* fb, uint32_t off, uint32_t v, int size, bool overwrite);
+    static bool fb_in_margin(uint32_t off);
     void fb_margin_clear_line(uint32_t line_off, uint16_t fill);
     uint32_t fb_read(uint32_t off, int size);
     uint32_t pad_read(int port);
