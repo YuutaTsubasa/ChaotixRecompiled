@@ -14,6 +14,7 @@ add_executable(chaotix_tests
     test_achievements.cpp
     test_stage_select.cpp
     test_lobby.cpp
+    test_tether.cpp
     test_music_mods.cpp
     test_cheats.cpp
     test_volumes.cpp
@@ -567,6 +568,99 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(lobby_shortcuts_a_finished_level_still_saves_to_its_data_slot PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION
         "peek 4700 E038 00140010.*peek 4700 DFF2 000700000003.*peek 4800 FA00 0000C69E4000BC00000037DC000008A80000.*save RAM changed on 1 frames, the last at frame 4639.*lockstep: 4800 frames bit-identical")
+
+    # Ring tether options (issue #43, runtime/tether.h, docs/RING_TETHER.md).
+    # Off, BOTANIC BASE 1 and TECHNO TOWER 2 played with random input give
+    # exactly the frames they gave before the options existed (golden hashes
+    # from that build).
+    add_test(NAME tether_off_leaves_botanic_base_as_it_was
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 6000 --stage 300:0:1:0:2:7:0 --fuzz 43:700:6000
+                --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/tether_off_bb1_fuzz_every50.txt)
+    add_test(NAME tether_off_leaves_techno_tower_as_it_was
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4000 --stage 300:3:2:0:4:3:0 --fuzz 11:700:4000
+                --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/tether_off_tt2_fuzz_every50.txt)
+    set_tests_properties(tether_off_leaves_botanic_base_as_it_was tether_off_leaves_techno_tower_as_it_was
+        PROPERTIES TIMEOUT 600 PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    # STRENGTH: Knuckles holds Espio (B) and walks right for 90 frames. The
+    # ring gives way to x 0x168 when WEAK, 0x155 as the game has it, 0x14E
+    # when STRONG; Espio braces in place (state $16) every time. Lockstep
+    # holds with each.
+    set(TETHER_STRETCH --frames 990 --lockstep --stage 300:0:1:0:2:7:0 --press 900:right+b:90
+                       --peek-every 990:AD50:2 --peek-every 990:AE0F:1)
+    foreach(_s weak:0168 normal:0155 strong:014E)
+        string(REPLACE ":" ";" _p "${_s}")
+        list(GET _p 0 _name)
+        list(GET _p 1 _x)
+        add_test(NAME tether_strength_${_name}_stretches_the_ring
+            COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" ${TETHER_STRETCH} --tether-strength ${_name})
+        set_tests_properties(tether_strength_${_name}_stretches_the_ring PROPERTIES TIMEOUT 600
+            PASS_REGULAR_EXPRESSION "peek 990 AD50 ${_x}\npeek 990 AE0F 16\n.*lockstep: 990 frames bit-identical")
+    endforeach()
+    # FOLLOW: Espio is put 250 px behind a running Knuckles. As the game has
+    # it the ring pulls Knuckles back to x 0xCE on the next frame; following,
+    # Knuckles runs on (0x110) and Espio is put back on the ring's circle
+    # instead (0x62 rather than 0x20).
+    set(TETHER_BEHIND --frames 901 --lockstep --stage 300:0:1:0:2:7:0 --press 880:right:200
+                      --poke 900:AE10:00 --poke 900:AE11:10 --peek-every 901:AD50:2 --peek-every 901:AE10:2)
+    add_test(NAME tether_normal_pulls_the_player_back
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" ${TETHER_BEHIND})
+    set_tests_properties(tether_normal_pulls_the_player_back PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 901 AD50 00CE\npeek 901 AE10 0020\n.*lockstep: 901 frames bit-identical")
+    add_test(NAME tether_follow_never_holds_the_player_back
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" ${TETHER_BEHIND} --tether-partner follow)
+    set_tests_properties(tether_follow_never_holds_the_player_back PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 901 AD50 0110\npeek 901 AE10 0062\n.*lockstep: 901 frames bit-identical")
+    # SOLO: once Espio has landed it is sent away as the game does it (state
+    # $14 kept for good, hidden and intangible: +4/+5 = 34 60) and FFFCEA
+    # bit 0 drops, so the camera follows Knuckles alone and the tether is off:
+    # no Espio (banks 7 and 15) and no ring between them (bank 29) is drawn.
+    add_test(NAME tether_solo_leaves_the_player_alone
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1000 --lockstep --stage 300:0:1:0:2:7:0
+                --press 880:right:200 --tether-partner solo --sprites-log 1000
+                --peek-every 1000:AE0C:2 --peek-every 1000:AE0F:1 --peek-every 1000:FCEA:1)
+    set_tests_properties(tether_solo_leaves_the_player_alone PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "bank   2 frame .*peek 1000 AE0C 3460\npeek 1000 AE0F 14\npeek 1000 FCEA 04\n.*lockstep: 1000 frames bit-identical"
+        FAIL_REGULAR_EXPRESSION "bank   7 frame|bank  15 frame|bank  29 frame")
+    # Holding CALL (A) for half a second brings Espio back the game's way:
+    # in play again (state 2, FFFCEA = 5) by frame 1400.
+    add_test(NAME tether_solo_hold_call_brings_the_partner_back
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1400 --lockstep --stage 300:0:1:0:2:7:0
+                --press 880:right:200 --press 1100:a:40 --tether-partner solo
+                --peek-every 1090:AE0F:1 --peek-every 1400:AE0F:1 --peek-every 1400:FCEA:1)
+    set_tests_properties(tether_solo_hold_call_brings_the_partner_back PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 1090 AE0F 14\n.*peek 1400 AE0F 02\npeek 1400 FCEA 05\n.*lockstep: 1400 frames bit-identical")
+    # TECHNO TOWER's lift waits for both characters to stand in it. SOLO, it
+    # counts Knuckles twice and carries him up all the same (y 0xC4D -> 0xB4C;
+    # without that he would wait at the bottom for ever).
+    add_test(NAME tether_solo_takes_the_lift_meant_for_two
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1500 --lockstep --stage 300:3:1:0:2:7:0
+                --press 850:right:1000 --tether-partner solo --peek-every 1500:AD54:2 --peek-every 1500:AE0F:1)
+    set_tests_properties(tether_solo_takes_the_lift_meant_for_two PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 1500 AD54 0B4C\npeek 1500 AE0F 14\n.*lockstep: 1500 frames bit-identical")
+    # The recorded run that finishes BOTANIC BASE 1, SOLO from frame 3000:
+    # the goal is reached (FFFDC5 up by frame 3500), the level hands over to
+    # the lobby as before (zone 7 by 4700), where the partner is the game's
+    # again, and lockstep holds throughout.
+    add_test(NAME tether_solo_finishes_a_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4700 --lockstep
+                --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt --tether-at 3000:0:2
+                --peek-every 3100:AE0F:1 --peek-every 3500:FDC5:1 --peek-every 4700:DFF2:2)
+    set_tests_properties(tether_solo_finishes_a_level PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "peek 3100 AE0F 14\n.*peek 3500 FDC5 FF\n.*peek 4700 DFF2 0007\n.*lockstep: 4700 frames bit-identical")
+    # Long play in each mode with random input: no divergence between the
+    # interpreter and the recompiled code, and the level still running at the
+    # end (game mode $18, BOTANIC BASE 1).
+    foreach(_m "weak:follow" "strong:solo" "strong:normal")
+        string(REPLACE ":" ";" _p "${_m}")
+        list(GET _p 0 _st)
+        list(GET _p 1 _pa)
+        add_test(NAME tether_${_st}_${_pa}_plays_6000_frames
+            COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 6000 --lockstep --stage 300:0:1:0:2:7:0
+                    --fuzz 43:700:6000 --tether-strength ${_st} --tether-partner ${_pa}
+                    --peek-every 6000:DFDE:2 --peek-every 6000:DFF2:4)
+        set_tests_properties(tether_${_st}_${_pa}_plays_6000_frames PROPERTIES TIMEOUT 900
+            PASS_REGULAR_EXPRESSION "peek 6000 DFDE 0018\npeek 6000 DFF2 00000001\n.*lockstep: 6000 frames bit-identical")
+    endforeach()
 
     # Speedrun tools (issue #47, frontend/speedrun.h, docs/SPEEDRUN.md).
     # The recorded run finishes BOTANIC BASE 1 at the goal: the goal flag

@@ -158,6 +158,8 @@ void Settings::apply(Machine& m) const {
     for (size_t i = 0; i < m.music_replaced.size() && i < 64; ++i) m.music_replaced[i] = (music_replaced >> i) & 1;
     // A time attack run has no lobby shortcuts (runtime/lobby.h).
     m.lobby_partner = m.lobby_time = -1;
+    // Nor ring tether options (runtime/tether.h): TIME ATTACK plays the original.
+    m.tether_strength = m.tether_partner = 0;
 }
 
 bool Settings::operator==(const Settings& o) const {

@@ -143,6 +143,11 @@ struct Config {
     bool lobby_shortcuts = false;
     int lobby_partner = -1;
     int lobby_time = -1;
+    // [Tether] Ring tether options (issue #43, runtime/tether.h): the
+    // tether's strength (tether::Strength) and what the partner does
+    // (tether::Partner), 0 the original game. Not in TIME ATTACK runs.
+    int tether_strength = 0;
+    int tether_partner = 0;
     // [MusicPlayer] (issue #48, frontend/jukebox.h): what happens when a
     // track ends or has played FadeAfter seconds (0: never fades): 0 LOOP
     // (the track again, for ever), 1 ONCE (stop), 2 ALL (the next one).

@@ -213,6 +213,20 @@ public:
     // in lockstep must have the same values.
     int lobby_partner = -1;
     int lobby_time = -1;
+    // Ring tether options (issue #43, runtime/tether.h): tether::Strength
+    // and tether::Partner, 0 the original game. Settings like the lobby
+    // shortcuts': the app gives them again before every frame, and machines
+    // compared in lockstep must have the same values.
+    uint8_t tether_strength = 0;
+    uint8_t tether_partner = 0;
+    // Latched by the SOLO partner's hook: CALL brought the partner back, so
+    // it stays until the next scene. In save states.
+    bool tether_called = false;
+    // FOLLOW's note of where the player stood before the game put one of the
+    // two back on the tether's circle; used and dropped by the next
+    // instruction's hook, within the same routine, so never in a save state.
+    bool tether_clamp_saved = false;
+    uint32_t tether_clamp_x = 0, tether_clamp_y = 0;
     // Music replaced by files (audio/music_mods.h): which music ids the host
     // plays itself, and the music requests and commands the game has made
     // since the host last drained them (patches.h, kSoundRequest).

@@ -89,7 +89,7 @@ app: where the replacement music was, which the game will not ask for again).
 | Offset | Size | |
 |---|---|---|
 | 0 | 8 | `CHXSTATE` |
-| 8 | 4 | format version (1) |
+| 8 | 4 | format version (2; 1 before the ring tether options of issue #43) |
 | 12 | 4 | header size (164) |
 | 16 | 16 | program version (`0.7.1`) |
 | 32 | 48 | ROM SHA-1 |

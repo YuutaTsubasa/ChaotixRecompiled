@@ -7,6 +7,8 @@
 //                    [--save-state FRAME:FILE] [--load-state FILE] [--state-hash-every N]
 //                    [--rewind INTERVAL[:BUDGET_MB]]   (issue #40, runtime/save_state.h)
 //                    [--lobby-partner ID] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
+//                    [--tether-strength weak|normal|strong] [--tether-partner normal|follow|solo]
+//                    [--tether-at FRAME:STRENGTH:PARTNER]   (issue #43, runtime/tether.h)
 //                    [--mods-dir DIR [--mods-order A,B] [--mods-disable C] [--mods-no-loose]]
 //                                 (mod packs as the app loads them, issue #42, runtime/mod_packs.h)
 //                    [--ghost FILE] [--ghost-record FILE] [--ghost-log N] [--ghost-threaded]
@@ -31,6 +33,7 @@
 #include "runtime/save_state.h"
 #include "runtime/sprite_record.h"
 #include "runtime/sprite_replace.h"
+#include "runtime/tether.h"
 #include "runtime/tile_replace.h"
 #include "frontend/backdrop.h"
 #include "frontend/ghost.h"
@@ -41,6 +44,7 @@
 #include "frontend/speedrun.h"
 #include "renderer/game_font.h"
 #include "runtime/system.h"
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -473,6 +477,22 @@ int main(int argc, char** argv) {
     // session carries its own ("lobby FRAME PARTNER TIME" lines).
     int lobby_partner = -1, lobby_time = -1;
     std::map<uint64_t, std::pair<int, int>> replay_lobby;
+    // Ring tether options (issue #43, runtime/tether.h): --tether-strength
+    // and --tether-partner stand in for OPTIONS > EXTRAS > RING TETHER;
+    // --tether-at FRAME:S:P changes both before that frame (S and P as the
+    // enums' numbers or names), as a recorded session's "tether FRAME S P"
+    // lines do.
+    int tether_strength = 0, tether_partner = 0;
+    std::map<uint64_t, std::pair<int, int>> tether_events;
+    auto tether_value = [](const std::string& v, const char* const* names, int count) {
+        for (int k = 0; k < count; ++k) {
+            std::string n = names[k];
+            for (char& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+            if (v == n) return k;
+        }
+        const int k = std::atoi(v.c_str());
+        return k >= 0 && k < count ? k : -1;
+    };
     // TIME ATTACK ghosts (issue #41, frontend/ghost.h): --ghost-record FILE
     // writes the run started by --stage or a replay as a ghost when it ends;
     // --ghost FILE races one, started when the stage is taken, and draws it
@@ -651,6 +671,20 @@ int main(int argc, char** argv) {
         else if (a == "--sram") sram_path = next();
         else if (a == "--lobby-partner") lobby_partner = std::atoi(next().c_str());
         else if (a == "--lobby-time") lobby_time = std::atoi(next().c_str());
+        else if (a == "--tether-strength" || a == "--tether-partner") {
+            const bool strength = a == "--tether-strength";
+            const int k = strength ? tether_value(next(), tether::kStrengthNames, tether::kStrengthCount)
+                                   : tether_value(next(), tether::kPartnerNames, tether::kPartnerCount);
+            if (k < 0) { std::fprintf(stderr, "bad %s\n", a.c_str()); return 2; }
+            (strength ? tether_strength : tether_partner) = k;
+        }
+        else if (a == "--tether-at") {
+            auto parts = split(next(), ':');
+            const int ts = parts.size() == 3 ? tether_value(parts[1], tether::kStrengthNames, tether::kStrengthCount) : -1;
+            const int tp = parts.size() == 3 ? tether_value(parts[2], tether::kPartnerNames, tether::kPartnerCount) : -1;
+            if (ts < 0 || tp < 0) { std::fprintf(stderr, "bad --tether-at\n"); return 2; }
+            tether_events[std::strtoull(parts[0].c_str(), nullptr, 10)] = {ts, tp};
+        }
         else if (a == "--ghost") ghost_path = next();
         else if (a == "--speedrun") speedrun_on = true;
         else if (a == "--speedrun-start") { speedrun_on = true; speedrun_start = std::atoll(next().c_str()); }
@@ -714,6 +748,10 @@ int main(int argc, char** argv) {
                     int lp = -1, lt = -1;
                     if (std::sscanf(line, "lobby %llu %d %d", &lf, &lp, &lt) == 3) {
                         replay_lobby[lf] = {lp, lt};
+                        continue;
+                    }
+                    if (std::sscanf(line, "tether %llu %d %d", &lf, &lp, &lt) == 3) {
+                        tether_events[lf] = {lp, lt};
                         continue;
                     }
                 }
@@ -1031,6 +1069,11 @@ int main(int argc, char** argv) {
             if (x) { x->lobby_partner = partner; x->lobby_time = time; }
     };
     set_lobby(lobby_partner, lobby_time);
+    auto set_tether = [&](int strength, int partner) {
+        for (Machine* x : {m.get(), ref.get(), nat.get()})
+            if (x) { x->tether_strength = uint8_t(strength); x->tether_partner = uint8_t(partner); }
+    };
+    set_tether(tether_strength, tether_partner);
     uint64_t start_frame = 0;
     if (!load_state_path.empty()) {
         std::vector<uint8_t> file;
@@ -1170,6 +1213,10 @@ int main(int argc, char** argv) {
             }
         }
         uint16_t btn2 = 0;
+        {
+            auto te = tether_events.find(f);
+            if (te != tether_events.end()) set_tether(te->second.first, te->second.second);
+        }
         if (!replay.empty()) {
             // A recorded session drives everything: its pads replace the
             // scripted ones, and its stage requests are applied where they

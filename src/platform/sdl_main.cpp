@@ -28,6 +28,7 @@
 #include "platform/ui.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
+#include "runtime/tether.h"
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
 #include "input/touch_controls.h"
@@ -229,6 +230,12 @@ struct App {
         int partner, time;
     };
     std::vector<LobbyEvent> recorded_lobby;
+    // And so do the ring tether options (issue #43).
+    struct TetherEvent {
+        uint64_t frame;
+        int strength, partner;
+    };
+    std::vector<TetherEvent> recorded_tether;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
@@ -314,6 +321,8 @@ void write_recording(const App& app, const std::string& path, int result_frames 
                      int(e.six_button));
     for (const auto& e : app.recorded_lobby)
         std::fprintf(f, "lobby %llu %d %d\n", (unsigned long long)e.frame, e.partner, e.time);
+    for (const auto& e : app.recorded_tether)
+        std::fprintf(f, "tether %llu %d %d\n", (unsigned long long)e.frame, e.strength, e.partner);
     for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
     std::fclose(f);
     LOGI("app", "session recorded to %s (%zu frames)", path.c_str(), app.recorded.size());
@@ -819,6 +828,18 @@ void apply_lobby_shortcuts(App& app) {
     app.recorded_lobby.push_back({app.m->frame_count, partner, time});
 }
 
+// Issue #43: the ring tether options, set before each frame like the lobby
+// shortcuts. Off for TIME ATTACK runs, so their times compare like with like.
+void apply_tether(App& app) {
+    const bool on = !app.ta.running;
+    const int strength = on ? std::clamp(app.cfg.tether_strength, 0, tether::kStrengthCount - 1) : 0;
+    const int partner = on ? std::clamp(app.cfg.tether_partner, 0, tether::kPartnerCount - 1) : 0;
+    if (strength == app.m->tether_strength && partner == app.m->tether_partner) return;
+    app.m->tether_strength = uint8_t(strength);
+    app.m->tether_partner = uint8_t(partner);
+    app.recorded_tether.push_back({app.m->frame_count, strength, partner});
+}
+
 // Settings and the cartridge save, written now. Android ends an app without
 // a quit event when it is swiped away, so waiting for the exit lost every
 // setting there (issue #26): this runs whenever the menu closes and whenever
@@ -962,9 +983,11 @@ void speedrun_reset(App& app) {
 }
 
 void follow_speedrun(App& app) {
-    if (app.cheating) app.run.mark_cheated();
+    // A run with a cheat or a changed ring tether (issue #43) is not kept as a best.
+    const bool assisted = app.cheating || tether::any(*app.m);
+    if (assisted) app.run.mark_cheated();
     const unsigned ev = app.run.update(*app.m, host_seconds());
-    if (app.cheating) app.run.mark_cheated();
+    if (assisted) app.run.mark_cheated();
     if (ev & speedrun::kReset) speedrun_ended(app);
     if (ev & speedrun::kStarted) LOGI("speedrun", "run started at frame %llu", (unsigned long long)app.m->frame_count);
     if (ev & speedrun::kSplit) {
@@ -2039,7 +2062,7 @@ int main(int argc, char** argv) {
     // behind it and its title screen and attract demo are the backdrop.
     app.menu.open_front();
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
-        LOGW("app", "--menu: unknown page '%s' (front, main, options, video, sound, input, extras, controls, cheats, awards, music)",
+        LOGW("app", "--menu: unknown page '%s' (front, main, options, video, sound, input, extras, gameplay, controls, cheats, awards, music)",
              menu_page.c_str());
 
     // An explicit ROM (including an Explorer drop onto the EXE) is installed
@@ -2418,6 +2441,7 @@ int main(int argc, char** argv) {
             app.m->input.pad[1] = raw2;
             apply_cheats(app);
             apply_lobby_shortcuts(app);
+            apply_tether(app);
             audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
                                                float(app.cfg.effects_volume) / 100.0f);
             const size_t first_sample = app.m->audio_out.size();
@@ -2449,7 +2473,9 @@ int main(int argc, char** argv) {
             follow_speedrun(app);
             if (app.cfg.rewind && states_locked(app).empty() && app.m->frame_count % kRewindInterval == 0)
                 rewind_push(app);
-            if (app.achievements_on && !app.cheating) {
+            // Not with the ring tether changed either (issue #43): the game
+            // plays differently.
+            if (app.achievements_on && !app.cheating && !tether::any(*app.m)) {
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {
                     app.toasts.push_back({a.title, a.description, SDL_GetTicks() + 5000});
                     app.achievements.save_progress(achievements_progress_path(app));
