@@ -31,6 +31,9 @@
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
 #include "input/touch_controls.h"
+#include "net/machine_game.h"
+#include "net/netplay.h"
+#include "net/udp_socket.h"
 #include "renderer/game_font.h"
 #include "renderer/sprite_pack.h"
 #include "renderer/sprite_sheet.h"
@@ -260,6 +263,29 @@ struct App {
     // --rewind-hold FRAME:PASSES, for testing: rewind held for that many
     // passes round the main loop from that frame on, as the key would be.
     struct RewindHold { uint64_t frame = 0; int passes = 0; bool armed = false; } rewind_script;
+    // Netplay (issue #46, docs/NETPLAY.md): online two-player through a
+    // session (net/netplay.h) that, while it owns the game, runs every frame
+    // itself (rolling back and running frames again as the other player's
+    // pads come in). The client keeps its own game aside meanwhile and gets
+    // it back afterwards.
+    struct Net {
+        net::Session session;
+        std::unique_ptr<net::MachineGame> game;
+        bool on = false;              // from HOST / JOIN until the session ends
+        net::Session::Phase seen = net::Session::Phase::Idle;
+        uint64_t stalled = 0;         // ticks in a row spent waiting for the other player
+        size_t first_sample = 0;      // the frame's first sample in audio_out
+        std::string notice_seen;
+        // The client's own game, put back when the session ends.
+        std::vector<uint8_t> own_state;
+        std::unique_ptr<Machine> own_title;
+        bool own_handed_over = false;
+    } net;
+    bool text_input_on = false;   // the system's text input, for a text row of the menu
+    // --netplay-host PORT / --netplay-join ADDRESS: a session started as soon
+    // as the game is up, as HOST / JOIN on the NETPLAY page would.
+    int cli_net_host = -1;
+    std::string cli_net_join;
 };
 
 // Rewind: a snapshot every other frame, so holding rewind goes back at twice
@@ -369,7 +395,7 @@ std::vector<std::string> rom_search_dirs(const App& app) {
 bool option_takes_value(const std::string& a) {
     static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
                                        "--press", "--user-dir", "--install", "--menu", "--keys", "--shots", "--hold", "--record-input", "--mods-dir", "--stage",
-                                       "--rewind-hold"};
+                                       "--rewind-hold", "--netplay-host", "--netplay-join"};
     for (const char* o : with_value)
         if (a == o) return true;
     return false;
@@ -652,6 +678,7 @@ std::string state_path(const App& app, int slot) {
 // Why states and rewind cannot be used now, or empty when they can. Never in
 // a TIME ATTACK run: a record is set in one go, at the game's own speed.
 std::string states_locked(const App& app) {
+    if (app.net.on) return "NOT IN NETPLAY";
     if (app.ta.running) return "NOT IN TIME ATTACK";
     if (!app.handed_over) return "START THE GAME FIRST";
     if (app.stage_kick >= 0) return "THE STAGE IS STARTING";
@@ -751,7 +778,7 @@ void rewind_step(App& app) {
 // The music player's machine (issue #48), made when its page opens: by the
 // main loop, or by the page's first request if that comes in the same pass.
 void open_jukebox(App& app) {
-    if (app.jukebox_open) return;
+    if (app.jukebox_open || app.net.on) return;  // netplay: the game cannot be held
     app.jukebox.begin(app.m->rom, &app.music, app.recompiled);
     app.jukebox.set_tracks(jukebox::track_list(app.m->rom));
     app.jukebox_open = true;
@@ -823,11 +850,216 @@ void apply_lobby_shortcuts(App& app) {
 // a quit event when it is swiped away, so waiting for the exit lost every
 // setting there (issue #26): this runs whenever the menu closes and whenever
 // the app goes to the background.
+// A netplay client plays the host's save: its own is not written over.
+bool sram_is_ours(const App& app) { return !(app.net.on && !app.net.session.is_host()); }
+
 void save_now(App& app) {
     if (app.autotest_frames) return;  // autotests are hermetic
-    if (app.m->sram_dirty) app.store.store_sram(*app.m);
+    if (app.m->sram_dirty && sram_is_ours(app)) app.store.store_sram(*app.m);
     if (!app.cfg.save(app.store.config_file()))
         LOGW("app", "cannot save settings to %s", app.store.config_file().c_str());
+}
+
+// ---------------------------------------------------------------------------
+// Netplay (issue #46, docs/NETPLAY.md)
+// ---------------------------------------------------------------------------
+uint32_t net_now() { return uint32_t(SDL_GetTicks()); }
+
+// The session runs the game's frames (rather than the main loop): from the
+// moment a player is let in (host) or the host is asked (client).
+bool netplay_owns(const App& app) { return app.net.on && app.net.session.owns_game(); }
+
+std::string upper_text(std::string s) {
+    for (char& ch : s) ch = char(std::toupper(static_cast<unsigned char>(ch)));
+    return s;
+}
+
+void netplay_begin(App& app, bool host) {
+    App::Net& n = app.net;
+    if (n.on) { notice(app, "NETPLAY", "ALREADY IN A SESSION", "DISCONNECT FIRST."); return; }
+    if (app.ta.running) { notice(app, "NETPLAY", "NOT IN TIME ATTACK"); return; }
+    auto socket = std::make_unique<net::UdpSocket>();
+    std::string why;
+    net::Endpoint at;
+    if (!host && !net::UdpSocket::resolve(app.cfg.netplay_address, net::kDefaultPort, at, &why)) {
+        notice(app, "NETPLAY", "CANNOT JOIN", upper_text(why));
+        return;
+    }
+    if (!socket->open(host ? uint16_t(app.cfg.netplay_port) : 0, &why, host ? nullptr : &at)) {
+        notice(app, "NETPLAY", host ? "CANNOT HOST" : "CANNOT JOIN", upper_text(why));
+        return;
+    }
+    const uint16_t port = socket->local_port();
+    n.game = std::make_unique<net::MachineGame>(*app.m);
+    // Every frame the session runs: the sound and the replacement music of
+    // new frames only; a frame run again after a rollback was heard already.
+    n.game->before_frame = [&app](bool) {
+        audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
+                                           float(app.cfg.effects_volume) / 100.0f);
+        app.net.first_sample = app.m->audio_out.size();
+    };
+    n.game->after_frame = [&app](bool resimulating) {
+        if (resimulating) {
+            app.m->audio_out.resize(std::min(app.m->audio_out.size(), app.net.first_sample));
+            app.m->music_events.clear();
+        } else {
+            app.music.set_volume(app.cfg.mod_music_volume * app.cfg.music_volume / 100);
+            app.music.after_frame(*app.m, app.net.first_sample);
+        }
+    };
+    net::SessionOptions o;
+    o.input_delay = std::clamp(app.cfg.netplay_delay, 0, net::kMaxInputDelay);
+    // What only one player has must not touch the game from here on.
+    stop_ghost(app);
+    app.rewind.clear();
+    app.rewind_music.clear();
+    app.fast_forward = false;
+    app.inject_start = 0;
+    if (host) {
+        n.session.host(std::move(socket), *n.game, o, net_now());
+        LOGI("netplay", "hosting on UDP port %u", unsigned(port));
+        notice(app, "NETPLAY", "WAITING FOR PLAYER 2", "ON UDP PORT " + std::to_string(port));
+    } else {
+        n.own_state = savestate::save(*app.m, std::vector<uint8_t>(app.m->sram, app.m->sram + sizeof app.m->sram), 0);
+        n.own_title = app.title_snapshot ? std::make_unique<Machine>(*app.title_snapshot) : nullptr;
+        n.own_handed_over = app.handed_over;
+        n.session.join(std::move(socket), at, *n.game, o, net_now());
+        LOGI("netplay", "joining %s", net::UdpSocket().describe(at).c_str());
+        notice(app, "NETPLAY", "CONNECTING", upper_text(net::UdpSocket().describe(at)));
+    }
+    n.on = true;
+    n.seen = n.session.phase();
+    n.stalled = 0;
+    n.notice_seen.clear();
+}
+
+// After the session ended (however it ended): what it was and what it
+// leaves, the game given back to the client.
+void netplay_finish(App& app) {
+    App::Net& n = app.net;
+    const net::Session::End end = n.session.end();
+    const std::string reason = n.session.end_reason();
+    const bool client = !n.session.is_host();
+    LOGI("netplay", "session over: %s", reason.c_str());
+    if (const net::Rollback* rb = n.session.rollback()) {
+        const net::RollbackStats& st = rb->stats();
+        LOGI("netplay", "%llu frames as player %d, %llu confirmed, %llu rollbacks (%llu frames run again, at most %d), "
+             "%llu stalls, %llu hashes compared, ping %d ms",
+             (unsigned long long)st.frames, n.session.local_player() + 1, (unsigned long long)rb->confirmed(),
+             (unsigned long long)st.rollbacks, (unsigned long long)st.resimulated, st.max_rollback,
+             (unsigned long long)st.stalls, (unsigned long long)st.hashes_checked, n.session.ping_ms());
+    }
+    std::string dumped;
+    if (end == net::Session::End::Desync) {
+        // Both sides write the state they hashed at that frame, to compare.
+        const uint32_t f = n.session.desync_frame();
+        const net::Rollback* rb = n.session.rollback();
+        const std::vector<uint8_t>* snap = rb ? rb->hashed_snapshot(f) : nullptr;
+        if (snap) {
+            std::error_code ec;
+            std::filesystem::create_directories(std::filesystem::u8path(app.store.root() + "Netplay"), ec);
+            const std::string path = app.store.root() + "Netplay/desync_frame" + std::to_string(f) + "_player" +
+                                     std::to_string(n.session.local_player() + 1) + ".state";
+            if (n.game->write_snapshot_as_state(*snap, path)) {
+                dumped = "SAVED TO NETPLAY/";
+                LOGW("netplay", "desync at frame %u: this side's state written to %s", f, path.c_str());
+            }
+        }
+    }
+    if (client && !n.own_state.empty()) {
+        // The client's own game and save, as they were before it joined.
+        std::string why;
+        std::vector<uint8_t> sram;
+        if (savestate::load(*app.m, n.own_state, &why, &sram) && sram.size() == sizeof app.m->sram)
+            std::memcpy(app.m->sram, sram.data(), sram.size());
+        else
+            LOGW("netplay", "could not put the game back: %s", why.c_str());
+        app.title_snapshot = std::move(n.own_title);
+        app.handed_over = n.own_handed_over;
+        after_time_jump(app);
+    }
+    app.m->audio_enabled = app.audio != nullptr;
+    // An autotest with a session ends with it (and takes its picture then).
+    if (app.autotest_frames && n.session.phase() == net::Session::Phase::Ended)
+        app.autotest_frames = std::min(app.autotest_frames, app.m->frame_count + app.held_frames);
+    n.session = net::Session{};
+    n.game.reset();
+    n.own_state.clear();
+    n.on = false;
+    n.seen = net::Session::Phase::Idle;
+    const bool bad = end == net::Session::End::Desync || end == net::Session::End::Lost ||
+                     end == net::Session::End::Rejected || end == net::Session::End::Error;
+    std::string title = end == net::Session::End::Desync ? "DESYNC" : bad ? "DISCONNECTED" : "SESSION OVER";
+    app.toasts.erase(std::remove_if(app.toasts.begin(), app.toasts.end(),
+                                    [](const App::Toast& t) { return t.caption == "NETPLAY"; }),
+                     app.toasts.end());
+    app.toasts.push_back({title, upper_text(reason) + (dumped.empty() ? "" : " - " + dumped),
+                          SDL_GetTicks() + (bad ? 10000u : 4000u), "NETPLAY"});
+}
+
+void netplay_leave(App& app) {
+    if (!app.net.on) return;
+    app.net.session.leave(net_now());
+    netplay_finish(app);
+}
+
+std::string netplay_status(const App& app) {
+    const App::Net& n = app.net;
+    if (!n.on) return "OFF";
+    const net::Session& s = n.session;
+    switch (s.phase()) {
+    case net::Session::Phase::Waiting: return "WAITING FOR PLAYER 2";
+    case net::Session::Phase::Connecting: return "CONNECTING";
+    case net::Session::Phase::Transferring: {
+        const int pct = int(s.transfer_progress() * 100.0f + 0.5f);
+        return s.is_host() ? "SENDING THE GAME" : "RECEIVING THE GAME " + std::to_string(pct) + "%";
+    }
+    case net::Session::Phase::Running: {
+        std::string t = "PLAYER " + std::to_string(s.local_player() + 1) + " - PING " + std::to_string(s.ping_ms()) + " MS";
+        if (const net::Rollback* rb = s.rollback()) t += " - ROLLBACK " + std::to_string(rb->stats().last_rollback);
+        if (n.stalled > 10) t += " - WAITING";
+        return t;
+    }
+    default: return "OFF";
+    }
+}
+
+// Once a pass while there is a session: the network, then (while the
+// session owns the game) `frames` ticks with the local pad. Returns the
+// frames advanced.
+int netplay_pass(App& app, uint16_t local, int frames) {
+    App::Net& n = app.net;
+    const uint32_t now = net_now();
+    n.session.update(now);
+    int ran = 0;
+    if (n.session.phase() == net::Session::Phase::Running) {
+        for (int i = 0; i < std::min(frames, 2); ++i) {
+            const net::Session::Tick t = n.session.tick(local, now);
+            if (t == net::Session::Tick::Advanced) {
+                ++ran;
+                n.stalled = 0;
+            } else if (t == net::Session::Tick::Stalled) {
+                ++n.stalled;
+            }
+        }
+    }
+    const net::Session::Phase p = n.session.phase();
+    if (p != n.seen) {
+        if (p == net::Session::Phase::Transferring && n.session.is_host())
+            notice(app, "NETPLAY", "PLAYER 2 IS JOINING", upper_text(n.session.peer()));
+        if (p == net::Session::Phase::Running)
+            notice(app, "NETPLAY", n.session.is_host() ? "PLAYER 2 JOINED" : "CONNECTED: YOU ARE PLAYER 2",
+                   "PING " + std::to_string(n.session.ping_ms()) + " MS");
+        LOGI("netplay", "%s -> %s (%s)", net::phase_name(n.seen), net::phase_name(p), n.session.peer().c_str());
+        n.seen = p;
+    }
+    if (n.session.notice() != n.notice_seen) {
+        n.notice_seen = n.session.notice();
+        if (p == net::Session::Phase::Waiting && !n.notice_seen.empty())
+            notice(app, "NETPLAY", "STILL WAITING", upper_text(n.notice_seen));
+    }
+    if (p == net::Session::Phase::Ended) netplay_finish(app);
+    return ran;
 }
 
 double host_seconds();
@@ -1837,6 +2069,8 @@ int main(int argc, char** argv) {
             }
         }
         else if (a == "--record-input" && i + 1 < argc) app.record_path = argv[++i];
+        else if (a == "--netplay-host" && i + 1 < argc) app.cli_net_host = std::atoi(argv[++i]);
+        else if (a == "--netplay-join" && i + 1 < argc) app.cli_net_join = argv[++i];
         else if (a == "--show-achievements") menu_page = "awards";
         else if (a == "--window-size" && i + 1 < argc) {
             int w = 0, h = 0;
@@ -1917,6 +2151,7 @@ int main(int argc, char** argv) {
             app.inject_start = 8;
         };
         hooks.start_stage = [&app](const stage_select::Request& r) {
+            if (app.net.on) { notice(app, "NETPLAY", "NOT DURING NETPLAY", "DISCONNECT FIRST."); return; }
             // Same hand-over as START GAME, but from the title screen rather
             // than wherever the game happens to be: the request is applied at
             // the game's mode dispatcher, which a running level never reaches.
@@ -1961,6 +2196,7 @@ int main(int argc, char** argv) {
         hooks.speedrun_start = [&app] { if (app.m) speedrun_start(app); };
         hooks.speedrun_reset = [&app] { if (app.m) speedrun_reset(app); };
         hooks.back_to_title = [&app] {
+            if (app.net.on) { notice(app, "NETPLAY", "NOT DURING NETPLAY", "DISCONNECT FIRST."); return; }
             if (return_to_title(app)) app.menu.open_front();
         };
         hooks.front_closed = [&app] {
@@ -2015,6 +2251,9 @@ int main(int argc, char** argv) {
         hooks.mods_changed = [&app] { if (app.m) app.packs_restart = game_signature(app) != app.packs_game_signature; };
         hooks.reload_mods = [&app, mods_allowed] {
             if (!app.m || !mods_allowed) return;
+            // Mods change what the game does: both players must start with
+            // the same, so they wait for the end of the session.
+            if (app.net.on) { notice(app, "NETPLAY", "MODS NOT RELOADED", "NOT DURING NETPLAY."); return; }
             load_mods(app, true);
             app.packs_restart = game_signature(app) != app.packs_game_signature;
         };
@@ -2026,10 +2265,17 @@ int main(int argc, char** argv) {
         hooks.load_state = [&app](int slot) { load_state(app, slot); };
         hooks.state_info = [&app](int slot) { return app.m ? state_info(app, slot) : std::string(); };
         hooks.states_locked = [&app] { return app.m ? states_locked(app) : std::string(); };
-        hooks.music_play = [&app](uint8_t id) { open_jukebox(app); app.jukebox.play(id); };
-        hooks.music_stop = [&app] { open_jukebox(app); app.jukebox.stop_music(); };
-        hooks.music_fade = [&app] { open_jukebox(app); app.jukebox.fade_out(); };
-        hooks.music_step = [&app](int delta) { open_jukebox(app); app.jukebox.next(delta); };
+        // Not during netplay: the music player holds the game, which a
+        // session cannot.
+        hooks.music_play = [&app](uint8_t id) { open_jukebox(app); if (app.jukebox_open) app.jukebox.play(id); };
+        hooks.music_stop = [&app] { open_jukebox(app); if (app.jukebox_open) app.jukebox.stop_music(); };
+        hooks.music_fade = [&app] { open_jukebox(app); if (app.jukebox_open) app.jukebox.fade_out(); };
+        hooks.music_step = [&app](int delta) { open_jukebox(app); if (app.jukebox_open) app.jukebox.next(delta); };
+        hooks.netplay_host = [&app] { if (app.m) netplay_begin(app, true); };
+        hooks.netplay_join = [&app] { if (app.m) netplay_begin(app, false); };
+        hooks.netplay_leave = [&app] { if (app.m) netplay_leave(app); };
+        hooks.netplay_status = [&app] { return netplay_status(app); };
+        hooks.netplay_active = [&app] { return app.net.on; };
         hooks.music_status = [&app] { return app.jukebox.status(); };
         hooks.music_replaced = [&app](uint8_t id) { return app.music.has(id); };
         app.start_stage = hooks.start_stage;
@@ -2182,6 +2428,13 @@ int main(int argc, char** argv) {
     uint64_t pass_start = last;
     double worst_pass = 0, worst_emu = 0, worst_present = 0;
 
+    if (app.cli_net_host > 0) {
+        app.cfg.netplay_port = app.cli_net_host;
+        netplay_begin(app, true);
+    } else if (!app.cli_net_join.empty()) {
+        app.cfg.netplay_address = app.cli_net_join;
+        netplay_begin(app, false);
+    }
     bool menu_was_open = app.menu.open();
     while (app.running) {
         // The menu is where settings change: keep them the moment it closes.
@@ -2193,7 +2446,7 @@ int main(int argc, char** argv) {
         // The music player: its machine runs while its page is open, the game
         // held until the page is left; then the game's sound comes back.
         {
-            const bool want = app.menu.page_name() == "music";
+            const bool want = app.menu.page_name() == "music" && !app.net.on;
             if (want) {
                 open_jukebox(app);
             } else if (app.jukebox_open) {
@@ -2216,6 +2469,14 @@ int main(int argc, char** argv) {
         // effect when events are polled below, within at most one game frame.
         // Only MAX is unthrottled: 2X and 4X keep the normal pacing and run
         // more frames per period instead.
+        // A text row of the menu being typed into (the NETPLAY address): the
+        // system's text input on, which brings up the on-screen keyboard on
+        // a phone.
+        if (app.menu.editing_text() != app.text_input_on) {
+            app.text_input_on = app.menu.editing_text();
+            if (app.text_input_on) SDL_StartTextInput(app.window);
+            else SDL_StopTextInput(app.window);
+        }
         uint64_t now = pace_frame(accumulator, last, frame_ticks, freq,
             (app.fast_forward && app.cfg.ff_speed == FastForwardSpeed::Max) || app.autotest_frames != 0,
             [] { return SDL_GetPerformanceCounter(); },
@@ -2225,6 +2486,7 @@ int main(int argc, char** argv) {
             switch (e.type) {
             case SDL_EVENT_QUIT: app.running = false; break;
             case SDL_EVENT_KEY_DOWN: handle_key(app, e.key); break;
+            case SDL_EVENT_TEXT_INPUT: app.menu.on_text(e.text.text); break;
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN: handle_pad_button(app, e.gbutton.button); break;
             case SDL_EVENT_GAMEPAD_ADDED:
                 if (SDL_Gamepad* g = SDL_OpenGamepad(e.gdevice.which)) {
@@ -2280,7 +2542,7 @@ int main(int argc, char** argv) {
         // Fast-forward (issue #45) is never on during a time attack run, so a
         // record is set at the game's own speed, nor under the menu.
         app.fast_forward = app.ff_state.update(fast_forward_held(app, touch_held), app.cfg.ff_mode,
-                                               app.ta.running || app.menu.open());
+                                               app.ta.running || app.menu.open() || app.net.on);
         // Rewind (issue #40): never in a time attack run, nor under the menu.
         // Turned off, its memory goes back.
         if (!app.cfg.rewind && app.rewind.snapshots()) {
@@ -2333,7 +2595,7 @@ int main(int argc, char** argv) {
         app.m->input.pad[0] = buttons;
         app.m->input.pad[1] = raw2;
 
-        {
+        if (!netplay_owns(app)) {
             // True widescreen margins follow the display aspect (levels only;
             // see runtime/patches.h). Resizing the window takes effect at
             // once; turning widescreen off and on again waits for the next
@@ -2363,7 +2625,19 @@ int main(int argc, char** argv) {
         // so a "hold for N frames" means N frames rather than N batches of up
         // to 64 - the difference between a tap and holding the button down.
         const int autotest_batch = app.host_script.empty() ? 64 : 1;
-        while (steps < (autotest ? autotest_batch : plan.frames)) {
+        if (app.net.on) {
+            // Netplay: the network every pass; while the session owns the
+            // game, its ticks run the frames (the local pad is this player's,
+            // player 1 or 2 by role).
+            const bool owned = netplay_owns(app);
+            const int ran = netplay_pass(app, buttons, owned ? std::max(plan.frames, 1) : 0);
+            if (owned) {
+                steps = ran;
+                app.recorded.clear();  // a session is not one player's to replay
+                if (autotest && !app.fast_forward) accumulator -= frame_ticks * std::max(plan.frames, 1);
+            }
+        }
+        while (!netplay_owns(app) && steps < (autotest ? autotest_batch : plan.frames)) {
             if (autotest && app.m->frame_count + app.held_frames >= app.autotest_frames) break;
             if (app.jukebox_open) {
                 // The music player's frame instead of the game's.
@@ -2510,7 +2784,7 @@ int main(int argc, char** argv) {
         }
 
         // SRAM autosave shortly after the game writes it.
-        if (app.m->sram_dirty && !app.autotest_frames) {
+        if (app.m->sram_dirty && !app.autotest_frames && sram_is_ours(app)) {
             if (!app.sram_dirty_since) app.sram_dirty_since = now;
             else if (double(now - app.sram_dirty_since) / double(freq) > 1.0) { app.store.store_sram(*app.m); app.sram_dirty_since = 0; }
         }
@@ -2566,6 +2840,18 @@ int main(int argc, char** argv) {
             draw_speedrun(app, dst);
             app.menu.draw(app.ui, app.achievements);
             draw_toasts(app);
+            if (netplay_owns(app) && !app.menu.open()) {
+                // Top left: who this is and how the link is, and what the
+                // game waits for when it waits.
+                ui::Ui& g = app.ui;
+                std::string label = netplay_status(app);
+                const float w = g.text_width(ui::Font::Pixel, label.c_str()) + g.px(28);
+                const float h = g.line_height(ui::Font::Pixel) + g.px(14);
+                const SDL_FRect r{g.px(12), g.px(12), w, h};
+                g.panel(r, ui::theme::surface.alpha(170), app.net.stalled > 10 ? ui::theme::accent : ui::theme::surface,
+                        h * 0.5f);
+                g.text(ui::Font::Pixel, r.x + g.px(14), r.y + g.px(7), label.c_str(), ui::theme::text);
+            }
             if (app.rewinding && !app.menu.open()) {
                 // Top centre, where nothing else is.
                 ui::Ui& g = app.ui;
@@ -2640,6 +2926,9 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The other player hears that this one left, rather than waiting for the
+    // link to time out; a client gets its own game and save back first.
+    netplay_leave(app);
     if (!app.autotest_frames) {
         if (app.m->sram_dirty) app.store.store_sram(*app.m);
         app.cfg.save(app.store.config_file());

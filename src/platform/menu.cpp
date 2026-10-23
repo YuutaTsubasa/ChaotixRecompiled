@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstdio>
+#include <cstring>
 #include <iterator>
 #include <string>
 
@@ -47,7 +48,7 @@ bool Menu::is_list_page(Page p) {
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
            p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo ||
-           p == Page::Music || p == Page::Speedrun;
+           p == Page::Music || p == Page::Speedrun || p == Page::Netplay;
 }
 
 // Where BACK and Escape go from a page below another one.
@@ -72,6 +73,7 @@ void Menu::set_page(Page p) {
     scroll_ = 0;
     anim_ = 0;
     awaiting_.clear();
+    editing_ = nullptr;
     confirm_reset_ = false;
     info_lines_.clear();
     if (p == Page::Front) build_front();
@@ -89,6 +91,7 @@ void Menu::set_page(Page p) {
     else if (p == Page::Cheats) build_cheats();
     else if (p == Page::Lobby) build_lobby();
     else if (p == Page::Speedrun) build_speedrun();
+    else if (p == Page::Netplay) build_netplay();
     else if (p == Page::Mods) {
         build_mods();
         // Back from a pack's page: on that pack again.
@@ -102,6 +105,7 @@ void Menu::set_page(Page p) {
 }
 
 void Menu::close() {
+    if (editing_) end_edit(true);
     leave_mods();
     page_ = Page::Closed;
 }
@@ -126,6 +130,7 @@ bool Menu::show_page(const std::string& name) {
     else if (name == "cheats") set_page(Page::Cheats);
     else if (name == "lobby") set_page(Page::Lobby);
     else if (name == "speedrun") set_page(Page::Speedrun);
+    else if (name == "netplay") set_page(Page::Netplay);
     else if (name == "controls") set_page(Page::Controls);
     else if (name == "keys1" || name == "keys2" || name == "pad1" || name == "pad2") {
         keys_pad_ = name.rfind("pad", 0) == 0;
@@ -165,6 +170,7 @@ std::string Menu::page_name() const {
     case Page::StateKeys: return "statekeys";
     case Page::Lobby: return "lobby";
     case Page::Speedrun: return "speedrun";
+    case Page::Netplay: return "netplay";
     case Page::Mods: return "mods";
     case Page::ModInfo: return "modinfo";
     case Page::Music: return "music";
@@ -196,6 +202,8 @@ void Menu::build_front() {
         if (hooks_.start_game) hooks_.start_game();
     }});
     items_.push_back({"TIME ATTACK", {}, [this](int) { set_page(Page::TimeAttack); }});
+    // Issue #46: online two-player, hosted or joined from here.
+    items_.push_back({"NETPLAY", {}, [this](int) { set_page(Page::Netplay); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"MUSIC PLAYER", {}, [this](int) { set_page(Page::Music); }});
@@ -214,6 +222,9 @@ void Menu::build_main() {
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
+    // Netplay (issue #46): to see how it goes, or to leave, in the middle of
+    // a game.
+    items_.push_back({"NETPLAY", {}, [this](int) { set_page(Page::Netplay); }});
     items_.push_back({"BACK TO TITLE", {}, [this](int) {
         close();
         if (hooks_.back_to_title) hooks_.back_to_title();
@@ -964,6 +975,115 @@ void Menu::build_speedrun() {
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
 }
 
+// Issue #46 (net/netplay.h, docs/NETPLAY.md): host or join a game, the
+// address and port, the input delay, how it is going, and leaving.
+void Menu::build_netplay() {
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    items_.push_back({"HOST A GAME", {}, [this](int step) {
+        if (step == 0 && hooks_.netplay_host) hooks_.netplay_host();
+    }, "you are player 1; your friend joins you"});
+    items_.push_back({"JOIN A GAME", {}, [this](int step) {
+        if (step == 0 && hooks_.netplay_join) hooks_.netplay_join();
+    }, "you are player 2, at the address below"});
+    items_.push_back({"ADDRESS",
+                      [this, c] {
+                          if (editing_ == &c->netplay_address) return upper(c->netplay_address) + "_";
+                          return c->netplay_address.empty() ? std::string("TYPE ONE") : upper(c->netplay_address);
+                      },
+                      [this, c](int step) {
+                          if (step == 0)
+                              begin_edit(&c->netplay_address, "0123456789.:abcdefghijklmnopqrstuvwxyz-[]", 63, {});
+                      },
+                      "the host's address:port", false, /*pressed=*/true});
+    items_.push_back({"PORT",
+                      [this, c] {
+                          if (editing_ == &port_text_) return port_text_ + "_";
+                          return std::to_string(c->netplay_port);
+                      },
+                      [this, c](int step) {
+                          if (step == 0) {
+                              port_text_ = std::to_string(c->netplay_port);
+                              begin_edit(&port_text_, "0123456789", 5, [this, c] {
+                                  const int p = std::atoi(port_text_.c_str());
+                                  if (p > 0 && p < 65536) c->netplay_port = p;
+                              });
+                          } else {
+                              c->netplay_port = std::clamp(c->netplay_port + step, 1, 65535);
+                          }
+                      },
+                      "the UDP port a host waits on", false, /*pressed=*/true});
+    items_.push_back({"INPUT DELAY",
+                      [c] { return std::to_string(c->netplay_delay) + (c->netplay_delay == 1 ? " FRAME" : " FRAMES"); },
+                      [c](int s) { if (s) c->netplay_delay = std::clamp(c->netplay_delay + s, 0, 4); },
+                      "more: fewer corrections, later controls"});
+    items_.push_back({"STATUS", [this] { return hooks_.netplay_status ? hooks_.netplay_status() : std::string("OFF"); },
+                      [](int) {}, "", /*read_only=*/true});
+    items_.push_back({"DISCONNECT", {}, [this](int step) {
+        if (step == 0 && hooks_.netplay_leave) hooks_.netplay_leave();
+    }});
+    items_.push_back({"BACK", {}, [this](int) { back_out(); }});
+}
+
+void Menu::begin_edit(std::string* target, const char* allowed, size_t max_len, std::function<void()> done) {
+    editing_ = target;
+    edit_before_ = *target;
+    edit_allowed_ = allowed;
+    edit_max_ = max_len;
+    edit_done_ = std::move(done);
+}
+
+void Menu::end_edit(bool keep) {
+    if (!editing_) return;
+    std::string* target = editing_;
+    editing_ = nullptr;
+    if (!keep) {
+        *target = edit_before_;
+        return;
+    }
+    if (edit_done_) edit_done_();
+}
+
+bool Menu::on_text(const char* text) {
+    if (!editing_ || !text) return false;
+    for (const char* p = text; *p; ++p) {
+        char ch = *p;
+        if (ch >= 'A' && ch <= 'Z') ch = char(ch - 'A' + 'a');
+        if (!std::strchr(edit_allowed_, ch) || editing_->size() >= edit_max_) continue;
+        editing_->push_back(ch);
+    }
+    return true;
+}
+
+bool Menu::edit_key(int key) {
+    if (!editing_) return true;
+    std::string& t = *editing_;
+    const std::string allowed = edit_allowed_;
+    switch (key) {
+    case 0: end_edit(true); break;
+    case 1: end_edit(false); break;
+    case 2: if (!t.empty()) t.pop_back(); break;
+    case 3: case 4: {
+        // The last character steps through the ones allowed, as on a
+        // console's name entry: all a pad has to type with.
+        if (t.empty() || allowed.empty()) {
+            if (!allowed.empty() && t.size() < edit_max_) t.push_back(allowed[0]);
+            break;
+        }
+        size_t i = allowed.find(t.back());
+        if (i == std::string::npos) i = 0;
+        i = (i + (key == 3 ? 1 : allowed.size() - 1)) % allowed.size();
+        t.back() = allowed[i];
+        break;
+    }
+    case 5:
+        if (!allowed.empty() && t.size() < edit_max_) t.push_back(t.empty() ? allowed[0] : t.back());
+        break;
+    }
+    return true;
+}
+
 void Menu::refresh() {
     const int keep = selected_, top = scroll_;
     info_lines_.clear();
@@ -1233,6 +1353,17 @@ void Menu::back_out() {
 
 bool Menu::on_key(SDL_Keycode key) {
     if (!open()) return false;
+    if (editing_) {
+        switch (key) {
+        case SDLK_RETURN: case SDLK_KP_ENTER: return edit_key(0);
+        case SDLK_ESCAPE: return edit_key(1);
+        case SDLK_BACKSPACE: case SDLK_LEFT: return edit_key(2);
+        case SDLK_UP: return edit_key(3);
+        case SDLK_DOWN: return edit_key(4);
+        case SDLK_RIGHT: return edit_key(5);
+        default: return true;  // typed characters come as text
+        }
+    }
     if (!awaiting_.empty()) {
         // Capturing a binding. Escape abandons it; on a gamepad page a key is
         // simply the wrong kind of answer and is ignored.
@@ -1282,6 +1413,17 @@ bool Menu::on_key(SDL_Keycode key) {
 
 bool Menu::on_pad(Uint8 button) {
     if (!open()) return false;
+    if (editing_) {
+        switch (button) {
+        case SDL_GAMEPAD_BUTTON_SOUTH: return edit_key(0);
+        case SDL_GAMEPAD_BUTTON_EAST: return edit_key(1);
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return edit_key(2);
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: return edit_key(3);
+        case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return edit_key(4);
+        case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return edit_key(5);
+        default: return true;
+        }
+    }
     if (!awaiting_.empty()) {
         // The mirror of the keyboard case: only a gamepad page takes a button.
         // The fast-forward key wants a key; the pad's back button gives up.
@@ -1330,6 +1472,9 @@ bool Menu::on_pad(Uint8 button) {
 
 bool Menu::on_touch_down(float x, float y) {
     if (!open()) return false;
+    // A tap anywhere ends the typing, keeping the text (the on-screen
+    // keyboard's own return key does too).
+    if (editing_) end_edit(true);
     drag_y_ = y;
     drag_total_ = 0;
     for (const Hit& h : hits_) {
@@ -1641,6 +1786,7 @@ void Menu::draw_options(ui::Ui& g) {
                                                    : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))
                         : page_ == Page::Mods ? "MODS"
                         : page_ == Page::Music ? "MUSIC PLAYER"
+                        : page_ == Page::Netplay ? "NETPLAY"
                         : "OPTIONS";
     std::string pack_heading;
     if (page_ == Page::ModInfo) {
