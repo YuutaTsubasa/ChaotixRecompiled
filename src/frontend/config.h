@@ -148,6 +148,19 @@ struct Config {
     // (the track again, for ever), 1 ONCE (stop), 2 ALL (the next one).
     int music_repeat = 0;
     int music_fade_after = 120;
+    // [Speedrun] Issue #47 (frontend/speedrun.h, docs/SPEEDRUN.md): the
+    // timer and splits overlay, the input display, where each is drawn and
+    // how opaque, which time the splits compare, and the keys that start and
+    // reset a run (SDL key names). All off: the game as it was.
+    bool sr_timer = false;
+    bool sr_splits = false;
+    bool sr_compare_game = false;  // false: real time, true: game time
+    bool sr_input = false;
+    std::string sr_timer_corner = "TopRight";
+    std::string sr_input_corner = "BottomLeft";
+    int sr_opacity = 85;  // percent
+    std::string sr_start_key = "Home";
+    std::string sr_reset_key = "End";
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

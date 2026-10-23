@@ -783,6 +783,84 @@ TEST(menu, lobby_shortcuts_are_set_from_extras_and_kept) {
     std::filesystem::remove(path);
 }
 
+TEST(menu, speedrun_tools_are_set_from_extras_and_kept) {
+    // Issue #47: OPTIONS > EXTRAS > SPEEDRUN. Everything off to begin with,
+    // and an old settings file without the section keeps it that way.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK(!cfg.sr_timer && !cfg.sr_splits && !cfg.sr_input && !cfg.sr_compare_game);
+    int started = 0, reset = 0;
+    Menu m;
+    Menu::Hooks hooks;
+    hooks.speedrun_start = [&] { ++started; };
+    hooks.speedrun_reset = [&] { ++reset; };
+    m.set_hooks(hooks);
+    m.bind(cfg);
+    open_category(m, "EXTRAS");
+    CHECK(select_row(m, "SPEEDRUN"));
+    CHECK_STR(m.selected_value(), "OFF");
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "speedrun");
+    CHECK(select_row(m, "TIMER"));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(cfg.sr_timer);
+    CHECK(select_row(m, "SPLITS"));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(cfg.sr_splits);
+    CHECK(select_row(m, "COMPARE"));
+    CHECK_STR(m.selected_value(), "REAL TIME");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(cfg.sr_compare_game);
+    CHECK(select_row(m, "INPUT DISPLAY"));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(cfg.sr_input);
+    CHECK(select_row(m, "TIMER CORNER"));
+    CHECK_STR(m.selected_value(), "TOP RIGHT");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "BOTTOM LEFT");
+    CHECK_STR(cfg.sr_timer_corner, "BottomLeft");
+    CHECK(select_row(m, "INPUT CORNER"));
+    CHECK_STR(m.selected_value(), "BOTTOM LEFT");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(cfg.sr_input_corner, "TopRight");
+    CHECK(select_row(m, "OPACITY"));
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_EQ(cfg.sr_opacity, 80);
+    // The keys are captured like the other host keys.
+    CHECK(select_row(m, "RESET RUN KEY"));
+    CHECK_STR(m.selected_value(), "END");
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.selected_value(), "PRESS A KEY");
+    CHECK(m.on_key(SDLK_DELETE));
+    CHECK_STR(cfg.sr_reset_key, "Delete");
+    // Starting and resetting by hand close the menu, for the game.
+    CHECK(select_row(m, "START RUN"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_EQ(started, 1);
+    CHECK(!m.open());
+    CHECK(m.show_page("speedrun"));
+    CHECK(select_row(m, "RESET RUN"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_EQ(reset, 1);
+    CHECK(m.show_page("speedrun"));
+    CHECK(m.on_key(SDLK_ESCAPE));
+    CHECK_STR(m.page_name(), "extras");
+    CHECK(select_row(m, "SPEEDRUN"));
+    CHECK_STR(m.selected_value(), "ON");
+    // Kept across a restart.
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_speedrun_test.ini").string();
+    CHECK(cfg.save(path));
+    Config back;
+    CHECK(back.load(path));
+    CHECK(back.sr_timer && back.sr_splits && back.sr_input && back.sr_compare_game);
+    CHECK_STR(back.sr_timer_corner, "BottomLeft");
+    CHECK_STR(back.sr_input_corner, "TopRight");
+    CHECK_EQ(back.sr_opacity, 80);
+    CHECK_STR(back.sr_start_key, "Home");
+    CHECK_STR(back.sr_reset_key, "Delete");
+    std::filesystem::remove(path);
+}
+
 TEST(menu, options_is_split_into_pages_that_fit) {
     // OPTIONS had grown to about twenty rows and ran off a phone's screen; it
     // is now a list of categories, each a short page that steps back to it.

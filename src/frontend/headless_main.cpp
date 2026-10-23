@@ -36,6 +36,9 @@
 #include "frontend/ghost.h"
 #include "frontend/jukebox.h"
 #include "frontend/time_attack.h"
+#include "frontend/input_display.h"
+#include "frontend/livesplit.h"
+#include "frontend/speedrun.h"
 #include "renderer/game_font.h"
 #include "runtime/system.h"
 #include <chrono>
@@ -418,6 +421,17 @@ int main(int argc, char** argv) {
     bool want_audio = false;          // --audio: the frontend runs with it on
     int stage_kick = -1;              // frames since the request, while it waits
     time_attack::Run ta;              // the same run tracking the frontend uses
+    // --speedrun: the speedrun timer (frontend/speedrun.h) follows the session
+    // as the frontend's does, on a clock of emulated frames (60 a second),
+    // with the LiveSplit block published after every frame. --speedrun-start
+    // FRAME starts a run by hand then. --input-display draws the input
+    // display over the pictures written by --shot (a copy: the hashes are
+    // the machine's own picture's).
+    bool speedrun_on = false;
+    int64_t speedrun_start = -1;
+    bool input_display_on = false;
+    speedrun::Tracker run;
+    uint64_t input_display_shots = 0, input_display_outside = 0, input_display_changed = 0;
     // --replay-input FILE: a session recorded by the frontend, so that what a
     // person did can be studied here, deterministically, as often as needed.
     std::vector<uint32_t> replay;
@@ -638,6 +652,9 @@ int main(int argc, char** argv) {
         else if (a == "--lobby-partner") lobby_partner = std::atoi(next().c_str());
         else if (a == "--lobby-time") lobby_time = std::atoi(next().c_str());
         else if (a == "--ghost") ghost_path = next();
+        else if (a == "--speedrun") speedrun_on = true;
+        else if (a == "--speedrun-start") { speedrun_on = true; speedrun_start = std::atoll(next().c_str()); }
+        else if (a == "--input-display") input_display_on = true;
         else if (a == "--ghost-record") ghost_record_path = next();
         else if (a == "--ghost-log") ghost_log = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--ghost-threaded") ghost_threaded = true;
@@ -1356,6 +1373,29 @@ int main(int argc, char** argv) {
                 std::printf("replay: %s -- the session this came from ended at %d frames\n",
                             ta.time == replay_result ? "faithful" : "DRIFTED", replay_result);
         }
+        if (speedrun_on) {
+            const double now = double(m->frame_count) / 60.0;
+            if (speedrun_start >= 0 && f == uint64_t(speedrun_start)) {
+                run.set_place_names(stage_select::place_names(m->rom));
+                run.start(now, false);
+                std::printf("speedrun: run started by hand at frame %llu\n", (unsigned long long)m->frame_count);
+            }
+            const unsigned ev = run.update(*m, now);
+            if (ev & speedrun::kReset)
+                std::printf("speedrun: run reset at frame %llu after %zu split(s)\n", (unsigned long long)m->frame_count,
+                            run.ended_splits().size());
+            if (ev & speedrun::kStarted)
+                std::printf("speedrun: run started at frame %llu\n", (unsigned long long)m->frame_count);
+            if (ev & speedrun::kSplit) {
+                const speedrun::Split& s = run.splits().back();
+                std::printf("speedrun: split %zu %s at frame %llu, level %s (%d frames), game time %s (%d frames), real time %s\n",
+                            run.splits().size(), s.name.c_str(), (unsigned long long)s.frame,
+                            speedrun::format_game(s.level_frames).c_str(), s.level_frames,
+                            speedrun::format_game(s.igt_frames).c_str(), s.igt_frames,
+                            speedrun::format_rta(s.rta_ms).c_str());
+            }
+            livesplit::publish(m.get(), run);
+        }
         // The running clock, so a screenshot at the same frame can be held
         // against what the game's own HUD says.
         if (ta.running && ta.started && shots.count(f))
@@ -1460,6 +1500,24 @@ int main(int argc, char** argv) {
             std::snprintf(name, sizeof name, "%s/frame_%05llu.png", out_dir.c_str(), (unsigned long long)m->frame_count);
             // With a ghost, the picture as the player sees it.
             const uint32_t* pic = ghost_player.active() && !ghost_picture.empty() ? ghost_picture.data() : m->framebuffer;
+            std::vector<uint32_t> overlay;
+            if (input_display_on) {
+                // Bottom left of the picture, a pixel to a unit; every pixel
+                // outside its box is checked to be the picture's own.
+                overlay.assign(pic, pic + kScreenWidth * kScreenHeight);
+                const int x0 = m->fb_extra + 8, y0 = m->fb_height - 8 - input_display::kHeight;
+                input_display::draw(overlay.data(), kScreenWidth, m->fb_width, m->fb_height, x0, y0, 1, m->input.pad[0], 255);
+                for (int y = 0; y < m->fb_height; ++y)
+                    for (int x = 0; x < m->fb_width; ++x) {
+                        const size_t k = size_t(y) * kScreenWidth + size_t(x);
+                        if (overlay[k] == pic[k]) continue;
+                        const bool inside = x >= x0 && x < x0 + input_display::kWidth && y >= y0 &&
+                                            y < y0 + input_display::kHeight;
+                        if (inside) ++input_display_changed; else ++input_display_outside;
+                    }
+                ++input_display_shots;
+                pic = overlay.data();
+            }
             write_png(name, pic, m->fb_width, m->fb_height, kScreenWidth);
             std::printf("wrote %s hash=%016llx\n", name,
                         (unsigned long long)image_hash(pic, m->fb_width, m->fb_height, kScreenWidth));
@@ -1546,6 +1604,20 @@ int main(int argc, char** argv) {
                     gt.frames ? gt.ms / double(gt.frames) : 0.0, gt.worst_ms);
         if (ghost_waiting) std::printf("ghost: never started (the live run's stage was not taken)\n");
     }
+    if (speedrun_on) {
+        const livesplit::Block& b = livesplit::block();
+        std::printf("speedrun: %zu split(s), game time %s (%d frames), real time %s\n", run.splits().size(),
+                    speedrun::format_game(run.igt_frames()).c_str(), run.igt_frames(),
+                    speedrun::format_rta(run.rta_ms(double(m->frame_count) / 60.0)).c_str());
+        std::printf("livesplit: block \"%s\" version %u size %u, work RAM %s, state %u, run %u, %u split(s), game time %u frames\n",
+                    b.magic, b.version, b.size,
+                    b.wram == uint64_t(reinterpret_cast<uintptr_t>(m->wram)) ? "found" : "WRONG", b.state, b.run_id,
+                    b.splits, b.igt_frames);
+    }
+    if (input_display_on)
+        std::printf("input display: drawn on %llu shots, %llu pixels inside its box, %llu outside\n",
+                    (unsigned long long)input_display_shots, (unsigned long long)input_display_changed,
+                    (unsigned long long)input_display_outside);
     if (ref) std::printf("lockstep: %llu frames bit-identical between interpreter and recompiled execution\n", (unsigned long long)lockstep_ok_frames);
     if (character_palettes)
         std::printf("characters: displayed palette worked out %llu times (%llu blocks left as they were), %d colour block(s) replaced at the end\n",
