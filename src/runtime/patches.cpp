@@ -2,6 +2,7 @@
 #include "runtime/patches.h"
 #include "runtime/lobby.h"
 #include "runtime/system.h"
+#include "runtime/tether.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -94,6 +95,8 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         extend_backdrop(*m, c);
         return;
     case kModeDispatch:
+        // Issue #43: a partner called back in SOLO goes away again next scene.
+        tether::on_scene_change(*m);
         // The game is between scenes: a stage the host asked for can start.
         if (m->stage_pending) {
             m->stage_pending = false;
@@ -115,6 +118,16 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         // Issue #44: the partner and time of day the player chose, put in
         // place before the lobby or an attraction loads (runtime/lobby.h).
         lobby::apply(*m);
+        return;
+    // Issue #43: the ring tether options (runtime/tether.h).
+    case tether::kCharsUpdate: tether::on_chars_update(*m); return;
+    case tether::kForce: tether::on_force(*m, c); return;
+    case tether::kPartnerSide: tether::on_partner_side(*m, c); return;
+    case tether::kClampBefore: tether::on_clamp_before(*m, c); return;
+    case tether::kClampAfter: tether::on_clamp_after(*m, c); return;
+    case tether::kBothObjects[0].pc: case tether::kBothObjects[1].pc: case tether::kBothObjects[2].pc:
+    case tether::kBothObjects[3].pc: case tether::kBothObjects[4].pc: case tether::kBothObjects[5].pc:
+        tether::on_both_object(*m, c, pc);
         return;
     case kRingCullLo:
     case kRingCullHi:
@@ -614,6 +627,7 @@ void install(Machine& m) {
     m.radial_len = 0;
     m.cull_shift = 0;
     m.plane_fill_clamped = true;
+    m.tether_called = false;
 }
 
 } // namespace chaotix::patches

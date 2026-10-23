@@ -59,6 +59,7 @@ struct Options {
     uint32_t net_seed = 1;
     int64_t inject_desync = -1;  // the client's machine is changed at this session frame
     int client_volume = -1;      // the client's music level, percent (-1: as the host's)
+    int tether_strength = 0, tether_partner = 0;  // the host's ring tether options (runtime/tether.h)
     std::string dump_dir = ".";
     int wide = 0;
     double timeout_s = 120;
@@ -151,6 +152,9 @@ bool make_machine(const Options& o, std::unique_ptr<Machine>& m, bool host) {
     if (host) {
         m->wide_enabled = o.wide > 0;
         m->wide_extra = o.wide;
+        // The client takes these over from the host (net/machine_game.h).
+        m->tether_strength = uint8_t(o.tether_strength);
+        m->tether_partner = uint8_t(o.tether_partner);
     }
     return true;
 }
@@ -502,6 +506,8 @@ int netplay_headless_main(int argc, char** argv) {
         else if (a == "--netplay-inject-desync") o.inject_desync = std::atoll(next().c_str());
         else if (a == "--netplay-dump") o.dump_dir = next();
         else if (a == "--netplay-client-volume") o.client_volume = std::atoi(next().c_str());
+        else if (a == "--tether-strength") o.tether_strength = std::atoi(next().c_str());
+        else if (a == "--tether-partner") o.tether_partner = std::atoi(next().c_str());
         else if (a == "--netplay-timeout") o.timeout_s = std::atof(next().c_str());
         else if (a == "--wide") o.wide = std::atoi(next().c_str());
         else if (a == "--interp") o.interp = true;

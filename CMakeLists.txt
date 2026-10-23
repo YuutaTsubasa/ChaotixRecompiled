@@ -8,7 +8,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 else()
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
-project(ChaotixRecompiled VERSION 0.11.0 LANGUAGES C CXX)
+project(ChaotixRecompiled VERSION 0.11.1 LANGUAGES C CXX)
 if(APPLE)
     # SDL's Cocoa and UIKit code, and the iOS document picker.
     enable_language(OBJC OBJCXX)
@@ -51,6 +51,7 @@ add_library(chaotix_runtime STATIC
     src/runtime/patches.cpp
     src/runtime/stage_select.cpp
     src/runtime/lobby.cpp
+    src/runtime/tether.cpp
     src/runtime/md_bus.cpp
     src/runtime/sh2_bus.cpp
     src/runtime/sh2_onchip.cpp

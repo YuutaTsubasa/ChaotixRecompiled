@@ -99,6 +99,7 @@ template <class A> void transfer(A& a, Machine& m, unsigned flags) {
     a(m.stage_request.place); a(m.stage_request.level); a(m.stage_request.attime);
     a(m.stage_request.player); a(m.stage_request.combi); a(m.stage_request.two_players);
     a(m.stage_pending);
+    a(m.tether_called);  // runtime/tether.h (format 2)
     a(m.fb_margin);
     // Memory.
     a(m.wram); a(m.sdram); a(m.zram); a(m.bios_stub);

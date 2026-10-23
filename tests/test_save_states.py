@@ -26,6 +26,11 @@ SCENES = [
      ["--wide", "53", "--hud-edges", "--stage", "300:4:2:2:2:7:0", "--fuzz", "36:700:2000"]),
     ("widescreen_bonus_stage", 1000, 1300,
      ["--wide", "53", "--stage", "300:9:0:0:2:7:0", "--fuzz", "3:700:2400"]),
+    # Issue #43: SOLO with the partner called back (held CALL at 1100): the
+    # state keeps that, so the loaded run does not send it away again.
+    ("ring_tether_solo_called_back", 1250, 1500,
+     ["--tether-partner", "solo", "--tether-strength", "strong", "--stage", "300:0:1:0:2:7:0",
+      "--press", "880:right:200", "--press", "1100:a:40", "--press", "1300:right+b:120"]),
 ]
 
 HASH = re.compile(r"^(hash|statehash) (\d+) ([0-9a-f]+)$", re.M)

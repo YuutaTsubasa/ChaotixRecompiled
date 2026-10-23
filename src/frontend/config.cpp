@@ -2,6 +2,7 @@
 #include "frontend/backdrop.h"
 #include "frontend/ghost.h"
 #include "frontend/speedrun.h"
+#include "runtime/tether.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -173,6 +174,24 @@ bool Config::load(const std::string& path) {
             if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
             else if (k == "Partner") lobby_partner = std::clamp(std::atoi(v.c_str()), -1, 7);
             else if (k == "Time") lobby_time = std::clamp(std::atoi(v.c_str()), -1, 3);
+        } else if (section == "Tether") {
+            // A name from the menu (NORMAL, WEAK, ...), any case, or its number.
+            auto pick = [&](const char* const* names, int count, int was) {
+                std::string low;
+                for (char ch : v) low += char(std::tolower(static_cast<unsigned char>(ch)));
+                for (int i = 0; i < count; ++i) {
+                    std::string n = names[i];
+                    for (char& ch : n) ch = char(std::tolower(static_cast<unsigned char>(ch)));
+                    if (low == n) return i;
+                }
+                if (!low.empty() && std::isdigit(static_cast<unsigned char>(low[0]))) {
+                    const int i = std::atoi(low.c_str());
+                    if (i >= 0 && i < count) return i;
+                }
+                return was;
+            };
+            if (k == "Strength") tether_strength = pick(tether::kStrengthNames, tether::kStrengthCount, tether_strength);
+            else if (k == "Partner") tether_partner = pick(tether::kPartnerNames, tether::kPartnerCount, tether_partner);
         } else if (section == "MusicPlayer") {
             if (k == "Repeat") music_repeat = std::clamp(std::atoi(v.c_str()), 0, 2);
             else if (k == "FadeAfter") music_fade_after = std::clamp(std::atoi(v.c_str()), 0, 3600);
@@ -296,6 +315,13 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Time: -1 the game's own, else 0 morning 1 day 2 sunset 3 night.\n");
     std::fprintf(f, "Shortcuts = %s\nPartner = %d\nTime = %d\n", lobby_shortcuts ? "true" : "false", lobby_partner,
                  lobby_time);
+    std::fprintf(f, "\n[Tether]\n# The Combi Ring, in the five attractions' levels (not TIME ATTACK).\n");
+    std::fprintf(f, "# Strength: Normal, Weak or Strong (the pull halved, or half as strong again).\n");
+    std::fprintf(f, "# Partner (one player): Normal; Follow (the tether pulls only the partner, unless you hold it);\n");
+    std::fprintf(f, "# Solo (no partner; hold CALL for half a second to bring it back for the rest of that life).\n");
+    std::fprintf(f, "Strength = %s\nPartner = %s\n",
+                 tether::kStrengthNames[std::clamp(tether_strength, 0, tether::kStrengthCount - 1)],
+                 tether::kPartnerNames[std::clamp(tether_partner, 0, tether::kPartnerCount - 1)]);
     std::fprintf(f, "\n[MusicPlayer]\n# When a track ends: 0 play it again, 1 stop, 2 the next track.\n");
     std::fprintf(f, "# FadeAfter: seconds a track plays before it fades out when Repeat is 1 or 2 (0: never).\n");
     std::fprintf(f, "Repeat = %d\nFadeAfter = %d\n", music_repeat, music_fade_after);

@@ -111,6 +111,8 @@ machines use the host's):
   window does not change the margins until the session ends,
 - 6-button pad,
 - lobby shortcuts (partner and time of day),
+- the ring tether options (OPTIONS > GAMEPLAY: TETHER and PARTNER,
+  [RING_TETHER.md](RING_TETHER.md); FOLLOW and SOLO are meant for one player),
 - the save data (the joiner plays the host's DATA slots).
 
 Free to differ: volume, music and effects levels, video settings, controls,

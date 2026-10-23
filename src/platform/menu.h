@@ -156,7 +156,7 @@ private:
     // OPTIONS is a list of categories; each category is a page of its own, so
     // that no page runs off a phone's screen.
     enum class Page { Closed, Front, Main, Options, Video, Sound, Input, Extras, Controls, Keys, TimeAttack,
-                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music, Speedrun, Netplay };
+                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music, Speedrun, Tether, Netplay };
 
     struct Item {
         std::string label;
@@ -192,6 +192,7 @@ private:
     static Page parent_of(Page p);
     void build_cheats();
     void build_lobby();
+    void build_tether();
     void build_speedrun();
     void build_controls();
     void build_time_attack();

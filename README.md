@@ -129,8 +129,9 @@ and dimmed. The art is the game drawing its own title screen, from your ROM,
 so nothing is extracted or shipped.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen),
-SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad) and EXTRAS (cheats,
-lobby shortcuts, the menu's look, awards, and MODS, the mod packs).
+SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad), EXTRAS (cheats,
+lobby shortcuts, the menu's look, awards, and MODS, the mod packs) and GAMEPLAY (the ring
+tether).
 
 The menu is written in the game's own font -- the white digits and shaded
 yellow capitals of its TRAINING and DATA LOAD screens -- and shows the game's
@@ -348,6 +349,26 @@ LiveSplit auto-splitter that follows the same timer and gives LiveSplit the
 game time. See [docs/SPEEDRUN.md](docs/SPEEDRUN.md) for the definitions, the
 memory block auto-splitters read and the game's RAM addresses.
 
+## Ring tether
+
+The Combi Ring that joins the two characters can be changed in OPTIONS >
+GAMEPLAY (also from the pause menu), in the five attractions' levels:
+
+| Field | What it does |
+| --- | --- |
+| TETHER | NORMAL (the game as it is), WEAK (half the pull) or STRONG (half as much again) |
+| PARTNER | NORMAL; FOLLOW: the ring never holds you back -- it only pulls your partner after you, unless you hold B (HOLD), so the slingshot still works; SOLO: no partner. One player only |
+
+SOLO sends your partner away the way the game does when you are hit
+without rings, and keeps it away: no ring, the camera on you alone, and a
+hit without rings ends the run, as for Sonic. The lifts that wait for both
+characters take you alone. If anything else needs two, hold CALL (A) for
+half a second: your partner comes back for the rest of that life.
+
+TIME ATTACK always plays the original tether, and achievements are not
+earned while any of these is changed. See
+[docs/RING_TETHER.md](docs/RING_TETHER.md) for how the tether works.
+
 ## Netplay (online two-player)
 
 NETPLAY on the front menu plays the game's two-player mode with a friend on
@@ -361,8 +382,8 @@ in the game. The two games are compared every second, and a difference stops
 the session with DESYNC (both states are written to `Netplay/`).
 
 Both players need the same release, ROM and game-changing mods (patches,
-character stats, replacement music); the joiner takes the host's widescreen
-and pad settings for the session. There is no NAT traversal: the host
+character stats, replacement music); the joiner takes the host's widescreen,
+pad, lobby and ring tether settings for the session. There is no NAT traversal: the host
 forwards UDP port 7845, or both use a VPN such as Tailscale or ZeroTier.
 Save states, rewind, fast-forward, TIME ATTACK and cheats are off during a
 session. See [docs/NETPLAY.md](docs/NETPLAY.md).

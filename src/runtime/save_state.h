@@ -15,8 +15,10 @@
 //    sprite replacements, character colours, the sprite recorder, tooling
 //    hooks, executors, input, volume gains, which music the host replaces,
 //    audio output not yet played, the vestigial PWM sample log, and the
-//    lobby shortcuts' choice (lobby_partner/lobby_time), which nothing
-//    latches: the app gives it again before every frame.
+//    lobby shortcuts' choice (lobby_partner/lobby_time) and the ring tether
+//    options (tether_strength/tether_partner), which nothing latches: the
+//    app gives them again before every frame. (What the SOLO partner's hook
+//    latches, tether_called, is in the state.)
 //  - the recompiled code's SH-2 validation epochs: a load moves them on to a
 //    value no validation has seen, so code in SDRAM is checked again
 //    (game/recomp_dispatch.cpp caches results by epoch).
@@ -41,7 +43,7 @@ class Machine;
 namespace savestate {
 
 // Bumped whenever the raw layout changes (a field added, moved or removed).
-constexpr uint32_t kFormatVersion = 1;
+constexpr uint32_t kFormatVersion = 2;  // 2: tether_called (issue #43)
 
 // The output picture (framebuffer) is optional: a file keeps it so the
 // game is on screen at once after a load; rewind snapshots leave it out and

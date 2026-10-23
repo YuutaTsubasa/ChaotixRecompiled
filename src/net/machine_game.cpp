@@ -40,6 +40,8 @@ NetSettings NetSettings::of(const Machine& m) {
     s.six_button[1] = m.input.six_button[1];
     s.lobby_partner = m.lobby_partner;
     s.lobby_time = m.lobby_time;
+    s.tether_strength = m.tether_strength;
+    s.tether_partner = m.tether_partner;
     return s;
 }
 
@@ -53,19 +55,22 @@ void NetSettings::apply(Machine& m) const {
     m.input.six_button[1] = six_button[1];
     m.lobby_partner = lobby_partner;
     m.lobby_time = lobby_time;
+    m.tether_strength = uint8_t(tether_strength);
+    m.tether_partner = uint8_t(tether_partner);
 }
 
 std::string NetSettings::encode() const {
     char buf[256];
-    std::snprintf(buf, sizeof buf, "wide=%d;wide_bottom=%d;wide_on=%d;wide_everywhere=%d;hud_edges=%d;six=%d%d;lobby=%d,%d",
+    std::snprintf(buf, sizeof buf,
+                  "wide=%d;wide_bottom=%d;wide_on=%d;wide_everywhere=%d;hud_edges=%d;six=%d%d;lobby=%d,%d;tether=%d,%d",
                   wide_extra, wide_extra_bottom, int(wide_enabled), int(wide_everywhere), int(wide_hud_edges),
-                  int(six_button[0]), int(six_button[1]), lobby_partner, lobby_time);
+                  int(six_button[0]), int(six_button[1]), lobby_partner, lobby_time, tether_strength, tether_partner);
     return buf;
 }
 
 bool NetSettings::decode(const std::string& s, std::string* why) {
     const auto f = fields(s);
-    for (const char* k : {"wide", "wide_bottom", "wide_on", "wide_everywhere", "hud_edges", "six", "lobby"})
+    for (const char* k : {"wide", "wide_bottom", "wide_on", "wide_everywhere", "hud_edges", "six", "lobby", "tether"})
         if (!f.count(k)) {
             if (why) *why = std::string("no ") + k + " in the host's settings";
             return false;
@@ -81,6 +86,11 @@ bool NetSettings::decode(const std::string& s, std::string* why) {
     n.six_button[1] = six.size() > 1 && six[1] == '1';
     if (std::sscanf(f.at("lobby").c_str(), "%d,%d", &n.lobby_partner, &n.lobby_time) != 2) {
         if (why) *why = "the host's lobby setting is unreadable";
+        return false;
+    }
+    if (std::sscanf(f.at("tether").c_str(), "%d,%d", &n.tether_strength, &n.tether_partner) != 2 ||
+        n.tether_strength < 0 || n.tether_strength > 255 || n.tether_partner < 0 || n.tether_partner > 255) {
+        if (why) *why = "the host's ring tether setting is unreadable";
         return false;
     }
     if (n.wide_extra < 0 || n.wide_extra > 256 || n.wide_extra_bottom < 0 || n.wide_extra_bottom > 64) {

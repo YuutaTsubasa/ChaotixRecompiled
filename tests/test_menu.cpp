@@ -783,6 +783,69 @@ TEST(menu, lobby_shortcuts_are_set_from_extras_and_kept) {
     std::filesystem::remove(path);
 }
 
+TEST(menu, ring_tether_options_are_set_from_extras_and_kept) {
+    // Issue #43: OPTIONS > GAMEPLAY, the original game by default.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK_EQ(cfg.tether_strength, 0);
+    CHECK_EQ(cfg.tether_partner, 0);
+    Menu m;
+    m.bind(cfg);
+    open_category(m, "GAMEPLAY");
+    CHECK_STR(m.page_name(), "gameplay");
+    CHECK(select_row(m, "TETHER"));
+    CHECK_STR(m.selected_value(), "NORMAL");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "WEAK");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "STRONG");
+    CHECK(m.on_key(SDLK_RIGHT));  // wraps
+    CHECK_STR(m.selected_value(), "NORMAL");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "STRONG");
+    CHECK_EQ(cfg.tether_strength, 2);
+    CHECK(select_row(m, "PARTNER"));
+    CHECK_STR(m.selected_value(), "NORMAL");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "SOLO");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "FOLLOW");
+    CHECK_EQ(cfg.tether_partner, 1);
+    CHECK(m.on_key(SDLK_ESCAPE));
+    CHECK_STR(m.page_name(), "options");
+    // Kept across a restart, by name; a number or another case reads too.
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_tether_test.ini").string();
+    CHECK(cfg.save(path));
+    Config back;
+    CHECK(back.load(path));
+    CHECK_EQ(back.tether_strength, 2);
+    CHECK_EQ(back.tether_partner, 1);
+    {
+        FILE* f = std::fopen(path.c_str(), "w");
+        CHECK(f != nullptr);
+        if (f) {
+            std::fputs("[Tether]\nStrength = weak\nPartner = 2\n", f);
+            std::fclose(f);
+        }
+    }
+    Config other;
+    CHECK(other.load(path));
+    CHECK_EQ(other.tether_strength, 1);
+    CHECK_EQ(other.tether_partner, 2);
+    {
+        FILE* f = std::fopen(path.c_str(), "w");
+        if (f) {
+            std::fputs("[Tether]\nStrength = tight\nPartner = 9\n", f);
+            std::fclose(f);
+        }
+    }
+    Config bad;
+    CHECK(bad.load(path));
+    CHECK_EQ(bad.tether_strength, 0);  // not a setting: the original
+    CHECK_EQ(bad.tether_partner, 0);
+    std::filesystem::remove(path);
+}
+
 TEST(menu, speedrun_tools_are_set_from_extras_and_kept) {
     // Issue #47: OPTIONS > EXTRAS > SPEEDRUN. Everything off to begin with,
     // and an old settings file without the section keeps it that way.
@@ -874,7 +937,7 @@ TEST(menu, options_is_split_into_pages_that_fit) {
     open_options(m);
     CHECK(select_row(m, "VIDEO"));
     CHECK(!select_row(m, "WIDESCREEN"));
-    for (const char* cat : {"VIDEO", "SOUND", "INPUT", "EXTRAS"}) {
+    for (const char* cat : {"VIDEO", "SOUND", "INPUT", "EXTRAS", "GAMEPLAY"}) {
         CHECK(select_row(m, cat));
         CHECK(m.on_key(SDLK_RETURN));
         int rows = 0;

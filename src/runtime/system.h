@@ -213,6 +213,20 @@ public:
     // in lockstep must have the same values.
     int lobby_partner = -1;
     int lobby_time = -1;
+    // Ring tether options (issue #43, runtime/tether.h): tether::Strength
+    // and tether::Partner, 0 the original game. Settings like the lobby
+    // shortcuts': the app gives them again before every frame, and machines
+    // compared in lockstep must have the same values.
+    uint8_t tether_strength = 0;
+    uint8_t tether_partner = 0;
+    // Latched by the SOLO partner's hook: CALL brought the partner back, so
+    // it stays until the next scene. In save states.
+    bool tether_called = false;
+    // FOLLOW's note of where the player stood before the game put one of the
+    // two back on the tether's circle; used and dropped by the next
+    // instruction's hook, within the same routine, so never in a save state.
+    bool tether_clamp_saved = false;
+    uint32_t tether_clamp_x = 0, tether_clamp_y = 0;
     // Music replaced by files (audio/music_mods.h): which music ids the host
     // plays itself, and the music requests and commands the game has made
     // since the host last drained them (patches.h, kSoundRequest).
@@ -358,6 +372,14 @@ public:
     uint8_t z80_bus_read(uint16_t a);
     void z80_bus_write(uint16_t a, uint8_t v);
     void set_z80_reset(bool held);
+    void set_z80_busreq(bool requested);
+    // Runs the Z80 (unless it is held in reset or stopped by a bus request)
+    // up to the given master-clock time. Called at the end of every slice
+    // and, before the 68K changes BUSREQ or RESET, at the 68K's current time,
+    // so the Z80 runs exactly until the 68K stops it (or from when it starts
+    // it), as on the hardware.
+    void z80_sync(uint64_t now_mclk);
+    void z80_catch_up();
 private:
 
     // Per-instance bus glue and time-slice bookkeeping (no globals, so several

@@ -10,7 +10,8 @@
 //
 // The host settings that change what the game does without being part of
 // the hardware's state are fixed for the session: the client takes the
-// host's (widescreen margins, the 6-button pad, lobby shortcuts) and both
+// host's (widescreen margins, the 6-button pad, lobby shortcuts, the ring
+// tether options of issue #43) and both
 // apply them before every frame; the replacement music must already be the
 // same on both (it is in the identity's must-match lines).
 #pragma once
@@ -32,6 +33,7 @@ struct NetSettings {
     bool wide_enabled = false, wide_everywhere = false, wide_hud_edges = false;
     bool six_button[2] = {true, false};
     int lobby_partner = -1, lobby_time = -1;
+    int tether_strength = 0, tether_partner = 0;  // runtime/tether.h
     static NetSettings of(const Machine& m);
     void apply(Machine& m) const;
     std::string encode() const;
