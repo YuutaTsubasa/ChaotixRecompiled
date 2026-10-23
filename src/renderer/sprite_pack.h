@@ -25,6 +25,11 @@ std::string sprite_file_name(int bank, int frame, uint64_t hash);
 // Returns how many graphics have a replacement; `messages` says why any file
 // was skipped.
 int load_sprite_pack(SpritePack& pack, const std::string& dir, std::vector<std::string>* messages);
+// Mod packs (issue #42): several Textures folders, lowest priority first,
+// each loaded as above over the ones before it, so a graphic from a later
+// folder (its own file or a sheet's cell) replaces an earlier folder's.
+// Returns how many graphics have a replacement in all.
+int load_sprite_packs(SpritePack& pack, const std::vector<std::string>& dirs, std::vector<std::string>* messages);
 
 // Writes the graphics the recorder has collected for dumping to `dir`
 // (created if needed) and clears them. Returns how many files were written.

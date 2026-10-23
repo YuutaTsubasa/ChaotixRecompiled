@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <sstream>
 
 namespace chaotix {
@@ -64,7 +65,21 @@ int write_tile_dumps(TileReplacer& tiles, const std::string& dir) {
     return written;
 }
 
-int load_text_pack(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages) {
+namespace {
+
+// Whether `taken` (mod packs, issue #42) already has this file name, case
+// ignored as Windows ignores it; if not, it has from now on.
+bool already_taken(std::set<std::string>* taken, const std::string& name) {
+    if (!taken) return false;
+    std::string key = name;
+    for (auto& c : key) c = char(std::tolower(static_cast<unsigned char>(c)));
+    return !taken->insert(key).second;
+}
+
+} // namespace
+
+int load_text_pack(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages,
+                   std::set<std::string>* taken) {
     auto say = [messages](std::string m) { if (messages) messages->push_back(std::move(m)); };
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -76,6 +91,10 @@ int load_text_pack(TileReplacer& tiles, const std::string& dir, std::vector<std:
             files.push_back(e.path());
     }
     std::sort(files.begin(), files.end());  // the loading order breaks ties between patterns
+    // A pattern a pack above this one has already given is left to it.
+    files.erase(std::remove_if(files.begin(), files.end(),
+                               [taken](const fs::path& f) { return already_taken(taken, f.filename().u8string()); }),
+                files.end());
     auto lower = [](std::string s) {
         for (auto& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
         return s;
@@ -160,10 +179,11 @@ int load_text_pack(TileReplacer& tiles, const std::string& dir, std::vector<std:
         if (!tiles.text.add(std::move(p), &error)) { say(name + ": " + error); continue; }
         ++loaded;
     }
-    return loaded + load_sprite_text(tiles, dir, messages);
+    return loaded + load_sprite_text(tiles, dir, messages, taken);
 }
 
-int load_sprite_text(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages) {
+int load_sprite_text(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages,
+                     std::set<std::string>* taken) {
     auto say = [messages](std::string m) { if (messages) messages->push_back(std::move(m)); };
     namespace fs = std::filesystem;
     std::error_code ec;
@@ -175,6 +195,9 @@ int load_sprite_text(TileReplacer& tiles, const std::string& dir, std::vector<st
             files.push_back(e.path());
     }
     std::sort(files.begin(), files.end());  // the loading order breaks ties between patterns
+    files.erase(std::remove_if(files.begin(), files.end(),
+                               [taken](const fs::path& f) { return already_taken(taken, f.filename().u8string()); }),
+                files.end());
     auto lower = [](std::string s) {
         for (auto& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));
         return s;
@@ -339,6 +362,23 @@ int write_text_dumps(TileReplacer& tiles, const std::string& dir, const uint32_t
                      int stride_pixels, int extra) {
     return write_dumps(tiles.text.pending, "text", dir, pixels, width, height, stride_pixels, extra) +
            write_dumps(tiles.sprite_text.pending, "sprites", dir, pixels, width, height, stride_pixels, extra);
+}
+
+int load_tile_packs(TileReplacer& tiles, const std::vector<std::string>& dirs, std::vector<std::string>* messages) {
+    // Lowest first: a later folder's tile replaces an earlier one's (add()
+    // assigns by hash).
+    int loaded = 0;
+    for (const auto& dir : dirs) loaded += load_tile_pack(tiles, dir, messages);
+    return loaded;
+}
+
+int load_text_packs(TileReplacer& tiles, const std::vector<std::string>& dirs, std::vector<std::string>* messages) {
+    // Highest first, each skipping the names a folder above it gave: where
+    // two patterns match equally the one loaded first wins.
+    std::set<std::string> taken;
+    int loaded = 0;
+    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) loaded += load_text_pack(tiles, *it, messages, &taken);
+    return loaded;
 }
 
 } // namespace chaotix

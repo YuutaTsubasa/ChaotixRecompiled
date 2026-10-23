@@ -85,6 +85,10 @@ void parse_character_mod(const std::string& text, CharacterMod& mod, const std::
 
 // Every <name>.ini in `dir`, in id order. A missing folder is no mods.
 std::vector<CharacterMod> load_character_mods(const std::string& dir, std::vector<std::string>* messages);
+// Mod packs (issue #42): several Characters folders, lowest priority first.
+// A character's file from a later folder replaces an earlier folder's whole
+// (colours and stats alike); in id order.
+std::vector<CharacterMod> load_character_mods(const std::vector<std::string>& dirs, std::vector<std::string>* messages);
 
 // The ROM offset of a character's movement record, read from the table at
 // $88BE58 (so a ROM patch that moves one is followed); 0 if it is not a

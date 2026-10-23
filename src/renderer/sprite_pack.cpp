@@ -84,6 +84,12 @@ int load_sprite_pack(SpritePack& pack, const std::string& dir, std::vector<std::
     return int(pack.size() - before);
 }
 
+int load_sprite_packs(SpritePack& pack, const std::vector<std::string>& dirs, std::vector<std::string>* messages) {
+    const size_t before = pack.size();
+    for (const auto& dir : dirs) load_sprite_pack(pack, dir, messages);
+    return int(pack.size() - before);
+}
+
 int write_sprite_dumps(SpriteRecorder& sprites, const std::string& dir) {
     if (sprites.pending.empty()) return 0;
     std::error_code ec;

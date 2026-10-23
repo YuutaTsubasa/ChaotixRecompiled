@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "platform/ui.h"
+#include "runtime/mod_packs.h"
 #include "runtime/stage_select.h"
 
 namespace chaotix {
@@ -59,6 +60,18 @@ public:
         std::function<void(int slot)> load_state;
         std::function<std::string(int slot)> state_info;
         std::function<std::string()> states_locked;
+        // Mod packs (issue #42, OPTIONS > EXTRAS > MODS): the list in the
+        // player's order, which the page reorders and switches in place
+        // (null: no mods here); a change made there, so the app can say
+        // whether it waits for a restart (mods_need_restart: patches or
+        // character stats); reading the Mods folder again and applying what
+        // can be applied at once, which the page also asks for when it is
+        // left after a change; and a pack's preview image, with its size.
+        std::function<std::vector<mod_packs::Pack>*()> mod_packs;
+        std::function<void()> mods_changed;
+        std::function<void()> reload_mods;
+        std::function<bool()> mods_need_restart;
+        std::function<SDL_Texture*(const mod_packs::Pack&, float* w, float* h)> mod_preview;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -82,7 +95,7 @@ public:
     std::string selected_value() const;
     // What that entry is for, for tests and screenshots.
     std::string selected_note() const;
-    void close() { page_ = Page::Closed; }
+    void close();
 
     // Each returns true when the menu consumed the input.
     bool on_key(SDL_Keycode key);
@@ -109,7 +122,7 @@ private:
     // OPTIONS is a list of categories; each category is a page of its own, so
     // that no page runs off a phone's screen.
     enum class Page { Closed, Front, Main, Options, Video, Sound, Input, Extras, Controls, Keys, TimeAttack,
-                      Achievements, Cheats, States, StateKeys };
+                      Achievements, Cheats, States, StateKeys, Mods, ModInfo };
 
     struct Item {
         std::string label;
@@ -149,6 +162,10 @@ private:
     void build_keys();
     void build_states();
     void build_state_keys();
+    void build_mods();
+    void build_mod_info();
+    // Leaving the MODS pages after a change: the app applies it.
+    void leave_mods();
     // The setting a host-key capture writes (fast-forward, save state, ...),
     // or null when awaiting_ is a Mega Drive button.
     std::string* capture_target(const std::string& what) const;
@@ -186,6 +203,14 @@ private:
     std::string awaiting_;         // button being rebound, empty when not capturing
     bool confirm_reset_ = false;   // the reset row is asking a second time
     std::vector<std::string> characters_;  // see set_character_names
+    size_t mod_index_ = 0;         // the pack the MODS details page shows
+    bool mods_dirty_ = false;      // a pack was switched or moved since the last reload
+    // Lines of text under the heading (the pack's description on its page),
+    // wrapped to the panel when drawn.
+    std::vector<std::string> info_lines_;
+    std::vector<mod_packs::Pack>* packs() const { return hooks_.mod_packs ? hooks_.mod_packs() : nullptr; }
+    // Rebuilds the page in place, keeping the selection.
+    void refresh();
     std::vector<Item> items_;
     int selected_ = 0;
     int scroll_ = 0;          // achievements page
@@ -199,6 +224,8 @@ private:
         float back_x = 0, back_w = 0;
     };
     std::vector<Hit> hits_;
+    // Hit indices of the markers a list too long for the screen shows.
+    static constexpr int kScrollUp = -2, kScrollDown = -3;
     float drag_y_ = 0, drag_total_ = 0;
     // Drives the little bounce on the selected entry.
     float anim_ = 0;

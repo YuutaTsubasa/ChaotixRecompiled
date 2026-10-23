@@ -2,6 +2,7 @@
 // and the dumps the game writes for modders to start from.
 #pragma once
 #include <cstdint>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -27,12 +28,25 @@ int write_tile_dumps(TileReplacer& tiles, const std::string& dir);
 // indexed, 8 pixels high per row of the pattern) in `dir`; and text replaced
 // by sprite (load_sprite_text). Returns how many were loaded; `messages`
 // says why any was skipped.
-int load_text_pack(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages);
+// With `taken` (mod packs, issue #42), a file whose name (case ignored) is
+// already in it is skipped, as one a pack above has given; the others are
+// added to it.
+int load_text_pack(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages,
+                   std::set<std::string>* taken = nullptr);
 
 // Text replaced by sprite (runtime/sprite_text.h): every pair of
 // mdsprite_<name>.txt (the sprites) and mdsprite_<name>.png (the image,
 // palette-indexed, any size) in `dir`. Returns how many were loaded.
-int load_sprite_text(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages);
+int load_sprite_text(TileReplacer& tiles, const std::string& dir, std::vector<std::string>* messages,
+                     std::set<std::string>* taken = nullptr);
+// Mod packs (issue #42): several Textures folders as one, given lowest
+// priority first. A tile from a later folder replaces an earlier one's; a
+// text pattern (mdtext_ or mdsprite_) comes from the last folder with a file
+// of its name, and the later folders' patterns are loaded first, so they
+// also win where two different patterns match equally. Each returns how
+// many files were loaded.
+int load_tile_packs(TileReplacer& tiles, const std::vector<std::string>& dirs, std::vector<std::string>* messages);
+int load_text_packs(TileReplacer& tiles, const std::vector<std::string>& dirs, std::vector<std::string>* messages);
 
 // Writes the lists of on-screen tile runs and sprite groups the replacers
 // have collected for dumping to `dir` (created if needed) as text_<n>.txt
