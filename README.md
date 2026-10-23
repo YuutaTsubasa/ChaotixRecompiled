@@ -124,11 +124,11 @@ and the app's Documents on iOS (the Files app's On My iPhone > Chaotix).
 
 The menu is the front end: it is up as soon as the program starts, a screen of
 its own with the game's title art framed on the left and the list beside it —
-START GAME, TIME ATTACK, OPTIONS, CONTROLS, AWARDS, QUIT — over the same picture enlarged
-and dimmed. The art is the game drawing its own title screen, from your ROM,
-so nothing is extracted or shipped.
+START GAME, TIME ATTACK, LEVEL SELECT, OPTIONS, CONTROLS, MUSIC PLAYER, AWARDS, QUIT —
+over the same picture enlarged and dimmed. The art is the game drawing its own
+title screen, from your ROM, so nothing is extracted or shipped.
 
-OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen),
+OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen, menu size),
 SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad) and EXTRAS (cheats,
 lobby shortcuts, the menu's look, awards, and MODS, the mod packs).
 
@@ -147,6 +147,17 @@ SPEED SLIDER, AMAZING ARENA or TECHNO TOWER; only that picture is made), or
 PLAIN. MENU FONT (GAME / PIXEL) and MENU BACKGROUND on PLAIN, `MenuFont` and
 `MenuBackground` in `[Video]`, bring back the earlier look. How it works:
 [docs/MENU_ART.md](docs/MENU_ART.md).
+
+OPTIONS > VIDEO > MENU SIZE makes the menu's rows, letters and panels -- and
+so the area a finger can tap -- larger: NORMAL, LARGE (half as large again)
+or EXTRA LARGE (twice NORMAL). AUTO, the default, is LARGE on phones and
+tablets, where a landscape screen is only a few centimetres tall and
+NORMAL's rows come out a few millimetres high, and NORMAL elsewhere. The
+letters stay on whole pixels: each size takes the game's font up by at least
+a whole step. A page with more rows than fit shows a window of them that
+follows the selection, with a marker where there are more; the pause menu's
+row carries on onto a second line instead of running off the screen. It is
+`MenuSize` (Auto, Normal, Large, ExtraLarge) in `[Video]`.
 
 START GAME hands the game control, and it proceeds into its own menus exactly
 as it would have on the console, so nothing the original offers is out of
@@ -207,6 +218,19 @@ on a second machine from the moment the stage started; it never changes your
 run. Copy the files to export or import ghosts. It starts as BEST on
 computers, where it costs no frame rate, and OFF on phones, which may not
 have the time for a second game. See [docs/GHOSTS.md](docs/GHOSTS.md).
+
+LEVEL SELECT starts any level the same way, as practice: no clock, no record,
+no ghost, no speedrun split, and no awards, and save states, rewind and
+fast-forward all work. Beside TIME ATTACK's places it offers WORLD ENTRANCE
+(the lobby with all five attractions open), the six SPECIAL STAGEs and the
+BONUS STAGE, with the same AT-TIME, PLAYER, COMBI and PLAYERS. It is NO SAVE
+too, so finishing a level writes nothing to your DATA slots. When the level
+is over -- the game sends you to its lobby, or a special stage ends -- you are
+brought back to the LEVEL SELECT page; in WORLD ENTRANCE you play on until
+you go BACK TO TITLE. Loading a save state from story mode (one with a DATA
+slot) during it lets that game go on as it was. The choice is kept apart
+from TIME ATTACK's, in `[LevelSelect]`. See
+[docs/LEVEL_SELECT.md](docs/LEVEL_SELECT.md).
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
 gamepad, which is the default for player 1), the keyboard alone, one gamepad
@@ -506,7 +530,9 @@ open your game is held, untouched, and it carries on when you leave. See
   asks the game to start a level the way the front end's TIME ATTACK does, and
   `--replay-input` plays back a session the program recorded with
   `--record-input`, so that something only a person can do — finishing a level,
-  say — can be studied here as often as needed. `--lobby-partner ID` and
+  say — can be studied here as often as needed. `--level-select` makes the
+  requests LEVEL SELECT ones and prints the scene reached and when the level
+  is over. `--lobby-partner ID` and
   `--lobby-time 0-3` stand in for the lobby shortcuts' choices.
 - `chaotix_headless --ghost-record FILE` writes a `--stage` or replayed run
   as a TIME ATTACK ghost when it ends, and `--ghost FILE` races one, drawn

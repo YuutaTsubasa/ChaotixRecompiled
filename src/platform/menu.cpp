@@ -12,6 +12,7 @@
 #include "frontend/backdrop.h"
 #include "frontend/config.h"
 #include "frontend/ghost.h"
+#include "frontend/level_select.h"
 #include "frontend/speedrun.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
@@ -47,7 +48,7 @@ bool Menu::is_list_page(Page p) {
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
            p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo ||
-           p == Page::Music || p == Page::Speedrun;
+           p == Page::Music || p == Page::Speedrun || p == Page::LevelSelect;
 }
 
 // Where BACK and Escape go from a page below another one.
@@ -86,6 +87,7 @@ void Menu::set_page(Page p) {
     else if (p == Page::States) build_states();
     else if (p == Page::StateKeys) build_state_keys();
     else if (p == Page::TimeAttack) build_time_attack();
+    else if (p == Page::LevelSelect) build_level_select();
     else if (p == Page::Cheats) build_cheats();
     else if (p == Page::Lobby) build_lobby();
     else if (p == Page::Speedrun) build_speedrun();
@@ -123,6 +125,7 @@ void Menu::show_achievements() { set_page(Page::Achievements); }
 bool Menu::show_page(const std::string& name) {
     if (name == "front") set_page(Page::Front);
     else if (name == "timeattack") set_page(Page::TimeAttack);
+    else if (name == "levelselect") set_page(Page::LevelSelect);
     else if (name == "cheats") set_page(Page::Cheats);
     else if (name == "lobby") set_page(Page::Lobby);
     else if (name == "speedrun") set_page(Page::Speedrun);
@@ -159,6 +162,7 @@ std::string Menu::page_name() const {
     case Page::Controls: return "controls";
     case Page::Keys: return "keys";
     case Page::TimeAttack: return "timeattack";
+    case Page::LevelSelect: return "levelselect";
     case Page::Achievements: return "awards";
     case Page::Cheats: return "cheats";
     case Page::States: return "states";
@@ -187,6 +191,15 @@ std::string Menu::selected_note() const {
     return items_[size_t(selected_)].note;
 }
 
+int Menu::zoom() const { return open() && cfg_ ? cfg_->menu_zoom() : 0; }
+
+std::vector<std::pair<int, SDL_FRect>> Menu::drawn_rows() const {
+    std::vector<std::pair<int, SDL_FRect>> out;
+    for (const Hit& h : hits_)
+        if (h.index >= 0) out.push_back({h.index, h.r});
+    return out;
+}
+
 // The front end: what pressing Start on the title screen reaches. START GAME
 // hands over to the game's own menus, so nothing the original offers is lost.
 void Menu::build_front() {
@@ -196,6 +209,7 @@ void Menu::build_front() {
         if (hooks_.start_game) hooks_.start_game();
     }});
     items_.push_back({"TIME ATTACK", {}, [this](int) { set_page(Page::TimeAttack); }});
+    items_.push_back({"LEVEL SELECT", {}, [this](int) { set_page(Page::LevelSelect); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"MUSIC PLAYER", {}, [this](int) { set_page(Page::Music); }});
@@ -512,6 +526,74 @@ void Menu::build_state_keys() {
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Controls); }});
 }
 
+void Menu::add_character_rows(int* player, int* combi, bool* two_players) {
+    using namespace stage_select;
+    // The names are the ROM's, so a ROM patch that renames a character shows
+    // here. The two character rows skip the gap in the game's table, which
+    // loads broken art, for as long as it has only the game's placeholder
+    // for a name.
+    std::vector<std::string> names = characters_;
+    if (names.size() != size_t(kCharacterCount)) names.assign(std::begin(kCharacters), std::end(kCharacters));
+    auto name_of = [names](int who) {
+        return who >= 0 && who < kCharacterCount ? names[size_t(who)] : std::string();
+    };
+    auto step_character = [names](int& who, int s) {
+        for (int i = 0; i < kCharacterCount; ++i) {
+            who = (who + s + kCharacterCount) % kCharacterCount;
+            if (!is_placeholder_name(names[size_t(who)])) return;
+        }
+    };
+    items_.push_back({"PLAYER",
+                      [player, name_of] { return name_of(*player); },
+                      [player, step_character](int s) { if (s) step_character(*player, s); }});
+    items_.push_back({"COMBI",
+                      [combi, name_of] { return name_of(*combi); },
+                      [combi, step_character](int s) { if (s) step_character(*combi, s); }});
+    items_.push_back({"PLAYERS",
+                      [two_players] { return std::string(*two_players ? "2 PLAYERS" : "1 PLAYER"); },
+                      [two_players](int s) { if (s) *two_players = !*two_players; }});
+}
+
+// LEVEL SELECT (issue #51, frontend/level_select.h): TIME ATTACK's choices
+// without its clock, over more places -- the hub, the special stages and the
+// bonus stage as well. Kept apart from TIME ATTACK's in the settings file.
+void Menu::build_level_select() {
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    if (!level_select::offered(c->ls_place)) c->ls_place = level_select::kPlaces[0];
+    if (!level_select::has_level(c->ls_place, c->ls_level)) c->ls_level = level_select::first_level(c->ls_place);
+
+    items_.push_back({"PLACE",
+                      [c] { return std::string(stage_select::kPlaces[c->ls_place].name); },
+                      [c](int s) {
+                          if (!s) return;
+                          c->ls_place = level_select::step_place(c->ls_place, s);
+                          if (!level_select::has_level(c->ls_place, c->ls_level))
+                              c->ls_level = level_select::first_level(c->ls_place);
+                      }});
+    items_.push_back({"LEVEL",
+                      [c] { return level_select::level_label(c->ls_place, c->ls_level); },
+                      [c](int s) { if (s) c->ls_level = level_select::step_level(c->ls_place, c->ls_level, s); }});
+    items_.push_back({"AT-TIME",
+                      [c] { return std::string(stage_select::kTimes[(c->ls_time >> 1) & 3]); },
+                      [c](int s) { if (s) c->ls_time = ((c->ls_time / 2 + s + 4) % 4) * 2; }});
+    add_character_rows(&c->ls_player, &c->ls_combi, &c->ls_two_players);
+    items_.push_back({"START", {}, [this, c](int) {
+        stage_select::Request r;
+        r.place = uint16_t(c->ls_place);
+        r.level = uint16_t(c->ls_level);
+        r.attime = uint16_t(c->ls_time);
+        r.player = uint16_t(c->ls_player);
+        r.combi = uint16_t(c->ls_combi);
+        r.two_players = c->ls_two_players;
+        if (!level_select::valid(r)) return;
+        close();
+        if (hooks_.start_level) hooks_.start_level(r);
+    }, "practice: no clock, records or saving"});
+    items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
+}
+
 // TIME ATTACK: the fields the game's own stage select offers, in its order, so
 // the choices are the game's rather than an invention of ours. Everything is
 // kept in the settings file, so the same run can be set up again in one go.
@@ -548,30 +630,7 @@ void Menu::build_time_attack() {
     items_.push_back({"AT-TIME",
                       [c] { return std::string(kTimes[(c->ta_time >> 1) & 3]); },
                       [c](int s) { if (s) c->ta_time = ((c->ta_time / 2 + s + 4) % 4) * 2; }});
-    // The names are the ROM's, so a ROM patch that renames a character shows
-    // here. The two character rows skip the gap in the game's table, which
-    // loads broken art, for as long as it has only the game's placeholder
-    // for a name.
-    std::vector<std::string> names = characters_;
-    if (names.size() != size_t(kCharacterCount)) names.assign(std::begin(kCharacters), std::end(kCharacters));
-    auto name_of = [names](int who) {
-        return who >= 0 && who < kCharacterCount ? names[size_t(who)] : std::string();
-    };
-    auto step_character = [names](int& who, int s) {
-        for (int i = 0; i < kCharacterCount; ++i) {
-            who = (who + s + kCharacterCount) % kCharacterCount;
-            if (!is_placeholder_name(names[size_t(who)])) return;
-        }
-    };
-    items_.push_back({"PLAYER",
-                      [c, name_of] { return name_of(c->ta_player); },
-                      [c, step_character](int s) { if (s) step_character(c->ta_player, s); }});
-    items_.push_back({"COMBI",
-                      [c, name_of] { return name_of(c->ta_combi); },
-                      [c, step_character](int s) { if (s) step_character(c->ta_combi, s); }});
-    items_.push_back({"PLAYERS",
-                      [c] { return std::string(c->ta_two_players ? "2 PLAYERS" : "1 PLAYER"); },
-                      [c](int s) { if (s) c->ta_two_players = !c->ta_two_players; }});
+    add_character_rows(&c->ta_player, &c->ta_combi, &c->ta_two_players);
     // Not a setting: the record for whatever is selected above, so choosing a
     // stage shows what there is to beat. Left and right do nothing.
     Item best{"BEST TIME",
@@ -675,6 +734,22 @@ void Menu::build_video() {
     items_.push_back({"V-SYNC",
                       [c] { return on_off(c->vsync); },
                       [c, video](int s) { if (s) { c->vsync = !c->vsync; video(); } }});
+    // Issue #49: this menu's rows, letters and touch targets. AUTO is LARGE
+    // on a phone or tablet and says so. It changes as soon as it is stepped,
+    // so the row being stepped grows under the finger.
+    items_.push_back({"MENU SIZE",
+                      [c] {
+                          static const char* names[] = {"NORMAL", "LARGE", "EXTRA LARGE"};
+                          const std::string zoom = names[std::clamp(c->menu_zoom(), 0, ui::kMenuSizes - 1)];
+                          return c->menu_size < 0 ? "AUTO (" + zoom + ")" : zoom;
+                      },
+                      [c](int s) {
+                          if (!s) return;
+                          // -1 AUTO, then 0 .. kMenuSizes-1.
+                          int at = c->menu_size + 1;
+                          cycle(at, ui::kMenuSizes + 1, s);
+                          c->menu_size = at - 1;
+                      }});
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Options); }});
 }
 
@@ -1367,14 +1442,54 @@ bool Menu::on_touch_up() {
 // else the menu sits over the game, so the image keeps the whole window.
 bool Menu::art_panel(ui::Ui& g, SDL_FRect* out) const {
     if (page_ != Page::Front) return false;
+    *out = front_layout(g).art;
+    return true;
+}
+
+Menu::FrontLayout Menu::front_layout(ui::Ui& g) const {
+    FrontLayout l;
+    const float W = g.width(), H = g.height();
     const float margin = g.px(34);
-    // The 4:3 image gets the left side, as large as the height allows.
-    const float max_w = g.width() * 0.54f - margin * 2;
-    const float max_h = g.height() - margin * 2;
+    const float gutter = g.px(40);     // between the picture and the list
+    const float right_pad = g.px(28);
+    // The list needs its longest entry, the bar behind the selected one and
+    // the room its marker bobs in -- measured in the letters it is drawn in,
+    // which the app asks for (art_panel) before the menu has switched them on.
+    const bool game_font_was = g.game_font_enabled();
+    g.enable_game_font(cfg_ && cfg_->menu_game_font);
+    float need = g.text_width(ui::Font::PixelBig, "CHAOTIX");
+    for (const Item& it : items_) need = std::max(need, g.text_width(ui::Font::PixelBig, it.label));
+    need += g.px(48);
+    g.enable_game_font(game_font_was);
+    const float hint_room = g.line_height(ui::Font::Small) + g.px(34);
+
+    // The 4:3 image gets the left side, as large as the height allows, and
+    // no wider than leaves the list its room.
+    const float max_w = std::min(W * 0.54f - margin * 2, W - right_pad - need - gutter - margin);
+    const float max_h = H - margin * 2;
     float w = max_w, h = w * 3.0f / 4.0f;
     if (h > max_h) { h = max_h; w = h * 4.0f / 3.0f; }
-    *out = {margin + (max_w - w) * 0.5f, (g.height() - h) * 0.5f, w, h};
-    return true;
+    // A portrait window, or one too narrow for the two side by side: the
+    // picture across the top, the list below it.
+    if (H > W || w < W * 0.25f) {
+        w = W - margin * 2;
+        h = w * 3.0f / 4.0f;
+        const float cap = H * 0.36f;
+        if (h > cap) { h = cap; w = h * 4.0f / 3.0f; }
+        l.art = {(W - w) * 0.5f, margin, w, h};
+        // The whole width but a little: a narrow window has no room to spare.
+        l.column = W - g.px(16) * 2;
+        l.left = (W - l.column) * 0.5f + g.px(12);
+        l.top = l.art.y + l.art.h + g.px(24);
+        l.bottom = H - hint_room;
+        return l;
+    }
+    l.art = {margin + (max_w - w) * 0.5f, (H - h) * 0.5f, w, h};
+    l.left = l.art.x + l.art.w + gutter;
+    l.column = std::max(g.px(120), W - right_pad - l.left);
+    l.top = g.px(24);
+    l.bottom = H - hint_room;
+    return l;
 }
 
 void Menu::set_backdrop(SDL_Texture* texture, float width, float height, ui::Color tint, ui::Color accent) {
@@ -1442,21 +1557,55 @@ void Menu::draw_front(ui::Ui& g) {
     g.outline({art.x - g.px(3), art.y - g.px(3), art.w + g.px(6), art.h + g.px(6)},
               accent(), g.px(3), g.px(3));
 
-    const float left = art.x + art.w + g.px(40);
-    const float right = g.width() - g.px(28);
-    const float column = std::max(g.px(120), right - left);
+    const FrontLayout l = front_layout(g);
+    const float left = l.left;
+    const float column = l.column;
 
     const float row_h = g.line_height(ui::Font::PixelBig) + g.px(14);
     const float title_h = g.line_height(ui::Font::PixelBig) + g.px(26);
-    const float total = title_h + row_h * float(items_.size());
-    float y = std::max(g.px(24), (g.height() - total) * 0.5f);
+    const float title_block = g.line_height(ui::Font::Pixel) + g.px(2) + title_h;
+    const float room = l.bottom - l.top;
+    // Issue #49: at a larger MENU SIZE on a short screen the list may not
+    // fit. The title goes first; then the list shows a window of its rows
+    // that follows the selection, with a marker where there are more.
+    const bool titled = title_block + row_h * float(items_.size()) <= room;
+    const float rows_room = room - (titled ? title_block : 0.0f);
+    const size_t n = items_.size();
+    const size_t fit = std::max<size_t>(1, size_t(std::max(0.0f, rows_room) / row_h));
+    size_t first = 0, last = n;
+    if (fit < n) {
+        const int sel = std::clamp(selected_, 0, int(n) - 1);
+        int top = std::clamp(scroll_, 0, int(n - fit));
+        if (sel < top) top = sel;
+        if (sel >= top + int(fit)) top = sel - int(fit) + 1;
+        scroll_ = top;
+        first = size_t(top);
+        last = first + fit;
+    }
+    const float total = (titled ? title_block : 0.0f) + row_h * float(last - first);
+    // Centred in the window, as it always was, unless that would run it past
+    // the hint at the bottom.
+    float y = std::max(l.top, std::min((g.height() - total) * 0.5f, l.bottom - total));
 
-    g.text(ui::Font::Pixel, left, y, "KNUCKLES", ui::theme::text_dim);
-    y += g.line_height(ui::Font::Pixel) + g.px(2);
-    g.text(ui::Font::PixelBig, left, y, "CHAOTIX", accent());
-    y += title_h;
+    if (titled) {
+        g.text(ui::Font::Pixel, left, y, "KNUCKLES", ui::theme::text_dim);
+        y += g.line_height(ui::Font::Pixel) + g.px(2);
+        g.text(ui::Font::PixelBig, left, y, "CHAOTIX", accent());
+        y += title_h;
+    }
 
-    for (size_t i = 0; i < items_.size(); ++i) {
+    const float mark_w = g.px(56);
+    if (first > 0) {
+        g.text(ui::Font::PixelBig, left + column - g.text_width(ui::Font::PixelBig, "^"), y, "^", accent());
+        hits_.push_back({{left + column - mark_w, y - g.px(6), mark_w + g.px(12), row_h}, kScrollUp});
+    }
+    if (last < n) {
+        const float my = y + row_h * float(last - first - 1);
+        g.text(ui::Font::PixelBig, left + column - g.text_width(ui::Font::PixelBig, "v"), my, "v", accent());
+        hits_.push_back({{left + column - mark_w, my - g.px(6), mark_w + g.px(12), row_h}, kScrollDown});
+    }
+
+    for (size_t i = first; i < last; ++i) {
         const bool sel = int(i) == selected_;
         const float w = g.text_width(ui::Font::PixelBig, items_[i].label);
         if (sel) {
@@ -1466,25 +1615,38 @@ void Menu::draw_front(ui::Ui& g) {
             g.rect({left - g.px(12), y - g.px(6), std::min(column, w + g.px(36)),
                     g.line_height(ui::Font::PixelBig) + g.px(12)},
                    backdrop_on() ? zone_accent_.alpha(80) : ui::theme::accent_dim, g.px(4));
-            g.text(ui::Font::PixelBig, left + bob, y, items_[i].label, ui::theme::text);
+            g.text_fit(ui::Font::PixelBig, left + bob, y, column - g.px(4), items_[i].label, ui::theme::text);
         } else {
-            g.text(ui::Font::PixelBig, left, y, items_[i].label, ui::theme::text_faint);
+            g.text_fit(ui::Font::PixelBig, left, y, column - g.px(4), items_[i].label, ui::theme::text_faint);
         }
         hits_.push_back({{left - g.px(12), y - g.px(6), column, row_h}, int(i)});
         y += row_h;
     }
 
-    g.text(ui::Font::Small, left, g.height() - g.px(26),
-           "Up/Down choose    Enter select", faint());
+    g.text_fit(ui::Font::Small, left, g.height() - g.px(26), g.width() - left - g.px(8),
+               "Up/Down choose    Enter select", faint());
 }
 
 void Menu::draw_row_page(ui::Ui& g, const char* hint) {
     const float item_h = g.line_height(ui::Font::Pixel);
     const float hint_h = g.line_height(ui::Font::Small);
+    const float gap = g.px(34);
+    // Measure first so each line can be centred as a whole. A row too wide for
+    // the window (a larger MENU SIZE, a narrow window) carries on onto a
+    // second line rather than running off both sides.
+    const float room = g.width() - g.px(32) * 2;
+    std::vector<std::pair<size_t, float>> lines;  // first entry, width
+    for (size_t i = 0; i < items_.size(); ++i) {
+        const float w = g.text_width(ui::Font::Pixel, items_[i].label);
+        if (lines.empty() || lines.back().second + gap + w > room) lines.push_back({i, w});
+        else lines.back().second += gap + w;
+    }
+    if (lines.empty()) lines.push_back({0, 0.0f});
+    const float line_h = item_h + g.px(22);
     // A band across the lower part, tall enough to hold the row and the hint,
     // so the art above it stays visible.
-    const float band_h = g.px(26) + item_h + g.px(14) + hint_h + g.px(16);
-    const float band_y = g.height() - band_h - g.px(24);
+    const float band_h = g.px(26) + item_h + line_h * float(lines.size() - 1) + g.px(14) + hint_h + g.px(16);
+    const float band_y = std::max(0.0f, g.height() - band_h - g.px(24));
     // Solid, or a zone's picture under a heavy tint: the title screen behind
     // it is bright, and a bar across the bottom is what these menus looked
     // like anyway.
@@ -1492,42 +1654,52 @@ void Menu::draw_row_page(ui::Ui& g, const char* hint) {
     g.rect({0, band_y, g.width(), g.px(3)}, accent());
     g.rect({0, band_y + band_h - g.px(3), g.width(), g.px(3)}, accent());
 
-    // Measure first so the row can be centred as a whole.
-    const float gap = g.px(34);
-    float total = 0;
+    size_t line = 0;
+    float x = 0, y = band_y + g.px(26);
     for (size_t i = 0; i < items_.size(); ++i) {
-        total += g.text_width(ui::Font::Pixel, items_[i].label);
-        if (i + 1 < items_.size()) total += gap;
-    }
-    float x = (g.width() - total) * 0.5f;
-    const float y = band_y + g.px(26);
-
-    for (size_t i = 0; i < items_.size(); ++i) {
+        if (line < lines.size() && lines[line].first == i) {
+            if (i > 0) y += line_h;
+            // A single entry wider than the window is shortened rather than
+            // centred off both of its sides.
+            x = std::max(g.px(28), (g.width() - lines[line].second) * 0.5f);
+            ++line;
+        }
         const bool sel = int(i) == selected_;
-        const float w = g.text_width(ui::Font::Pixel, items_[i].label);
+        const float fit = std::max(0.0f, g.width() - x - g.px(8));
+        const float w = std::min(g.text_width(ui::Font::Pixel, items_[i].label), fit);
         if (sel) {
             // The selected entry gets a marker that bobs, the way these menus
             // have always done it.
             const float bob = std::sin(anim_ * 3.0f) * g.px(2);
             g.text(ui::Font::Pixel, x - g.px(24) + bob, y, ">", accent());
-            g.text(ui::Font::Pixel, x, y, items_[i].label, ui::theme::text);
+            g.text_fit(ui::Font::Pixel, x, y, fit, items_[i].label, ui::theme::text);
             g.rect({x, y + item_h + g.px(4), w, g.px(3)}, accent());
         } else {
-            g.text(ui::Font::Pixel, x, y, items_[i].label, ui::theme::text_faint);
+            g.text_fit(ui::Font::Pixel, x, y, fit, items_[i].label, ui::theme::text_faint);
         }
-        hits_.push_back({{x - g.px(24), y - g.px(10), w + g.px(34), item_h + g.px(20)}, int(i)});
+        SDL_FRect r{x - g.px(24), y - g.px(10), w + g.px(34), item_h + g.px(20)};
+        r.x = std::max(0.0f, r.x);
+        r.w = std::min(r.w, g.width() - r.x);
+        hits_.push_back({r, int(i)});
         x += w + gap;
     }
 
-    g.text(ui::Font::Small, (g.width() - g.text_width(ui::Font::Small, hint)) * 0.5f,
-           band_y + band_h - g.px(16) - hint_h, hint, faint());
+    g.text_fit(ui::Font::Small, std::max(g.px(8), (g.width() - g.text_width(ui::Font::Small, hint)) * 0.5f),
+               band_y + band_h - g.px(16) - hint_h, g.width() - g.px(16), hint, faint());
 }
 
 void Menu::draw_options(ui::Ui& g) {
-    const float pad = g.px(34);   // room for the selection marker inside the panel
-    const float column = std::min(g.width() - pad * 2 - g.px(24), g.px(560));
+    // Room for the selection marker inside the panel, and a margin outside
+    // it; on a window too narrow for the whole panel (a portrait one, a larger
+    // MENU SIZE) both shrink before the column does.
+    const bool narrow = g.width() < g.px(560 + 34 * 2 + 24);
+    const float pad = narrow ? g.px(28) : g.px(34);
+    const float column = std::min(g.width() - pad * 2 - (narrow ? g.px(8) : g.px(24)), g.px(560));
     const float x = (g.width() - column) * 0.5f;
-    const float row_h = g.line_height(ui::Font::Pixel) + g.px(16);
+    // A larger MENU SIZE (issue #49) spaces the rows a little more as well,
+    // so a finger has more to land on than the letters alone would give it.
+    const float extra = g.px(4.0f * float(g.zoom()));
+    const float row_h = g.line_height(ui::Font::Pixel) + g.px(16) + extra;
     const float head_h = g.line_height(ui::Font::PixelBig) + g.px(22);
     const float hint_h = g.line_height(ui::Font::Small);
     // A value too wide to sit beside its label - a controller's own name, say
@@ -1628,6 +1800,7 @@ void Menu::draw_options(ui::Ui& g) {
     }
 
     const char* heading = page_ == Page::TimeAttack ? "TIME ATTACK"
+                        : page_ == Page::LevelSelect ? "LEVEL SELECT"
                         : page_ == Page::Cheats ? "CHEATS"
                         : page_ == Page::Video ? "VIDEO"
                         : page_ == Page::Sound ? "SOUND"
@@ -1648,7 +1821,7 @@ void Menu::draw_options(ui::Ui& g) {
         pack_heading = list && mod_index_ < list->size() ? upper((*list)[mod_index_].title()) : "MOD";
         g.text_fit(ui::Font::PixelBig, x, y, column, pack_heading, accent());
     } else {
-        g.text(ui::Font::PixelBig, x, y, heading, accent());
+        g.text_fit(ui::Font::PixelBig, x, y, column, heading, accent());
     }
     // More rows above the window: a marker at the heading's right.
     if (first > 0) {
@@ -1673,6 +1846,7 @@ void Menu::draw_options(ui::Ui& g) {
         y += info_h;
     }
 
+    y += extra * 0.5f;  // the rows' extra room, half above the letters
     for (size_t i = first; i < last; ++i) {
         const bool sel = int(i) == selected_;
         const Item& it = items_[i];
@@ -1680,16 +1854,17 @@ void Menu::draw_options(ui::Ui& g) {
             const float bob = std::sin(anim_ * 3.0f) * g.px(2);
             g.text(ui::Font::Pixel, x - g.px(24) + bob, y, ">", accent());
         }
-        const float label_w = g.text(ui::Font::Pixel, x, y, it.label,
+        const float label_w = g.text_fit(ui::Font::Pixel, x, y, column, it.label,
                                      sel ? ui::theme::text : ui::theme::text_dim);
         if (!it.note.empty()) {
             // Smaller and dimmer than the label, on the same middle line, so
             // it reads as a caption rather than as a second entry.
             const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(ui::Font::Small)) * 0.5f;
-            g.text(ui::Font::Small, x + label_w + g.px(16), ny, it.note, faint());
+            // Shortened rather than run out of the panel on a narrow window.
+            g.text_fit(ui::Font::Small, x + label_w + g.px(16), ny, column - label_w - g.px(16), it.note, faint());
         }
         const float this_h = wrapped[i] ? row_h * 2 : row_h;
-        Hit hit{{x - g.px(24), y - g.px(4), column + g.px(48), this_h}, int(i)};
+        Hit hit{{x - g.px(24), y - g.px(4) - extra * 0.5f, column + g.px(48), this_h}, int(i)};
         if (it.value) {
             const std::string v = it.value();
             const float vw = g.text_width(ui::Font::Pixel, v);
@@ -1721,12 +1896,13 @@ void Menu::draw_options(ui::Ui& g) {
         y += this_h;
     }
 
+    y -= extra * 0.5f;
     const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
                            ? "Up/Down choose    Enter rebind    Esc back"
                        : page_ == Page::Mods ? "Up/Down choose    Left/Right on/off    Enter details"
                        : page_ == Page::Music ? "Up/Down choose    Enter play    Esc back"
                                              : "Up/Down choose    Left/Right change    Esc back";
-    g.text(ui::Font::Small, x, y + g.px(8), hint, faint());
+    g.text_fit(ui::Font::Small, x, y + g.px(8), column, hint, faint());
     // More rows below the window: a marker at the hint's right.
     if (last < items_.size()) {
         const float mw = g.text_width(ui::Font::Pixel, "v");

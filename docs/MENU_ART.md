@@ -64,6 +64,41 @@ face; the touch controls and notifications keep the pixel face.
 
 `chaotix_headless --game-font FILE.png` writes the atlas.
 
+**MENU SIZE (issue #49).** OPTIONS > VIDEO > MENU SIZE lays the menu out
+larger: `ui::Ui::set_zoom` multiplies the layout scale by 1, 1.5 or 2 for
+NORMAL, LARGE and EXTRA LARGE (the app sets it before each frame while the
+menu is open, NORMAL otherwise, so the speedrun overlay, the rewind label and
+the touch controls are untouched). The pixel faces cannot follow a factor:
+they snap to their 8-pixel grid and the game's font to whole scales, so the
+1.5 of LARGE and the 2 of EXTRA LARGE could round to the same letters. So
+`ui::pixel_steps` keeps NORMAL exactly as it was and, for each size above,
+takes the game's font to the whole scale the factor reaches (rounded down:
+rounding up made LARGE's headings 80 pixels tall on a 1080-line phone, 48 at
+NORMAL), but at least one scale more than the size below, with the pixel face
+about as tall. On a 1080-line phone the rows' letters are 32, 48 and 64
+pixels tall; in a 720-line window 16, 32 and 48. Glyphs stay on whole pixels
+at every size. The rows are also spaced a little more at each size (4 units
+a step), so the touch targets grow faster than the letters.
+
+AUTO, the default, is LARGE on Android and iOS and NORMAL elsewhere. A phone
+in landscape is about 1080 pixels and 6-7 cm tall: at NORMAL a settings row is
+56 pixels, about 21 dp and under 4 mm, well below the 48 dp a touch target
+should be and the "too small, too much empty space" of the report; LARGE's is
+about 93 pixels (35 dp), EXTRA LARGE's 136 (52 dp).
+
+Pages with more rows than fit (the front end, at a larger size on a short
+screen, as well as the settings lists) show a window of them that follows the
+selection, with a marker that steps it; the front end drops its KNUCKLES
+CHAOTIX title first. The front end's picture gives way to the list's width,
+and on a portrait window goes across the top with the list below it. The
+pause menu's row carries on onto a second line rather than off the screen.
+Anything still too wide for its column is shortened with an ellipsis.
+`tests/test_menu_size.py` runs the program at each size in an 800x360, a
+412x860 and a 1280x720 window and checks every touch target is on the screen
+and taller than at the size below; `menu_size.*` in `tests/test_menu.cpp`
+does the same for every page kind on an off-screen renderer, 2400x1080
+included.
+
 ## The backdrops
 
 A backdrop is a picture of a zone at a time of day, made by the game itself:

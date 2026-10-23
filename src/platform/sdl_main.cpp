@@ -16,6 +16,7 @@
 #include "frontend/ghost.h"
 #include "frontend/jukebox.h"
 #include "frontend/time_attack.h"
+#include "frontend/level_select.h"
 #include "frontend/input_display.h"
 #include "frontend/livesplit.h"
 #include "frontend/speedrun.h"
@@ -172,6 +173,9 @@ struct App {
     // ones it asked for the run is over -- and the level clock at that moment
     // is the time.
     time_attack::Run ta;
+    // A LEVEL SELECT session (issue #51): not timed; watched only to bring
+    // the player back to the page when the level is over.
+    level_select::Session ls;
     // Speedrun tools (issue #47): the run being timed, and its best splits
     // (Splits/ in the user data folder, per ROM).
     speedrun::Tracker run;
@@ -369,7 +373,7 @@ std::vector<std::string> rom_search_dirs(const App& app) {
 bool option_takes_value(const std::string& a) {
     static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
                                        "--press", "--user-dir", "--install", "--menu", "--keys", "--shots", "--hold", "--record-input", "--mods-dir", "--stage",
-                                       "--rewind-hold"};
+                                       "--rewind-hold", "--menu-size"};
     for (const char* o : with_value)
         if (a == o) return true;
     return false;
@@ -575,6 +579,7 @@ bool return_to_title(App& app) {
     app.m->stage_pending = false;
     app.stage_kick = -1;
     app.ta.cancel();
+    app.ls.cancel();
     stop_ghost(app);
     app.m->remap_m68k();
     app.m->remap_sh2();
@@ -708,6 +713,10 @@ void load_state(App& app, int slot) {
         return;
     }
     app.music.load_position(host);
+    // A state saved in story mode (a DATA slot in FFE01C) is the game going
+    // on as it was: a LEVEL SELECT session does not send it back to the
+    // page. One saved in practice (NO SAVE, 0xFFFF) keeps the session.
+    if (app.ls.running && (app.m->wram[0xE01C] << 8 | app.m->wram[0xE01D]) != 0xFFFF) app.ls.cancel();
     app.rewind.clear();
     app.rewind_music.clear();
     after_time_jump(app);
@@ -808,9 +817,10 @@ void apply_cheats(App& app) {
 }
 
 // Issue #44: the lobby shortcuts, set before each frame like the cheats. A
-// TIME ATTACK run picks its own characters and time, so they are off for it.
+// TIME ATTACK run picks its own characters and time, so they are off for it,
+// as they are for LEVEL SELECT (issue #51), which does too.
 void apply_lobby_shortcuts(App& app) {
-    const bool on = app.cfg.lobby_shortcuts && !app.ta.running;
+    const bool on = app.cfg.lobby_shortcuts && !app.ta.running && !app.ls.running;
     const int partner = on ? app.cfg.lobby_partner : -1;
     const int time = on ? app.cfg.lobby_time : -1;
     if (partner == app.m->lobby_partner && time == app.m->lobby_time) return;
@@ -870,7 +880,23 @@ void follow_time_attack(App& app) {
     // game showed can then be looked into without anyone having had to set up
     // a recording beforehand.
     write_recording(app, app.store.save_dir() + "last_run.txt", frames);
-    if (return_to_title(app)) app.menu.show_page("timeattack");
+    // From the front end, so BACK goes there even if the pause menu was opened
+    // during the run.
+    if (return_to_title(app)) { app.menu.open_front(); app.menu.show_page("timeattack"); }
+}
+
+// LEVEL SELECT (issue #51): when the level is over -- the game has sent the
+// player to its lobby, or left the stage it was asked for -- back to the page,
+// so the next level is a press away and nobody plays on into a lobby the
+// level select gave no story progress. Nothing was saved on the way: the
+// request made it NO SAVE.
+void follow_level_select(App& app) {
+    if (!app.ls.update(*app.m)) return;
+    LOGI("stage", "level select: over at frame %llu", (unsigned long long)app.m->frame_count);
+    if (!return_to_title(app)) return;
+    app.menu.open_front();
+    app.menu.show_page("levelselect");
+    notice(app, "LEVEL SELECT", "LEVEL OVER", "Pick the next one, or press BACK.");
 }
 
 // The ghost being raced, once a pass: its end, its time at the goal, and a
@@ -1804,6 +1830,9 @@ int main(int argc, char** argv) {
         // Opens a menu page straight away, so it can be captured without a
         // keyboard (the same reason --autotest exists).
         else if (a == "--menu" && i + 1 < argc) menu_page = argv[++i];
+        // MENU SIZE for this run (auto, normal, large, extralarge), for
+        // screenshots of each.
+        else if (a == "--menu-size" && i + 1 < argc) app.cfg.menu_size = parse_menu_size(argv[++i]);
         else if (a == "--keys" && i + 1 < argc) {
             // FRAME:KEYNAME[,FRAME:KEYNAME...]
             std::string spec = argv[++i];
@@ -1935,6 +1964,7 @@ int main(int argc, char** argv) {
             // dispatcher on its own.
             app.inject_start = 0;
             app.stage_kick = 0;
+            app.ls.cancel();
             app.ta.begin(r);
             app.ta_cheated = false;
             // The speedrun timer times it too (its timer only; no best).
@@ -1955,6 +1985,30 @@ int main(int argc, char** argv) {
                     LOGI("ghost", "no ghost: %s", why.c_str());
                 }
             }
+            app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
+                                           app.m->wide_extra_bottom, app.cfg.six_button});
+        };
+        hooks.start_level = [&app](const stage_select::Request& r) {
+            // LEVEL SELECT (issue #51): TIME ATTACK's hand-over, without its
+            // clock, records, ghost or speedrun timer. The request is the
+            // game's own stage select's, so it is NO SAVE (FFE01C = 0xFFFF):
+            // the end of the level writes no DATA slot.
+            if (app.handed_over) return_to_title(app);
+            if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
+            *app.title_snapshot = *app.m;
+            app.m->stage_request = r;
+            app.m->stage_pending = true;
+            app.handed_over = true;
+            app.rewind.clear();
+            app.rewind_music.clear();
+            app.inject_start = 0;
+            app.stage_kick = 0;  // Start is tapped until the request is taken
+            app.ta.cancel();
+            stop_ghost(app);
+            // A speedrun going on is over: practice is not part of it.
+            speedrun_reset(app);
+            app.ls.begin(r);
+            LOGI("stage", "level select: place %u level %u", unsigned(r.place), unsigned(r.level));
             app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
                                            app.m->wide_extra_bottom, app.cfg.six_button});
         };
@@ -2039,7 +2093,7 @@ int main(int argc, char** argv) {
     // behind it and its title screen and attract demo are the backdrop.
     app.menu.open_front();
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
-        LOGW("app", "--menu: unknown page '%s' (front, main, options, video, sound, input, extras, controls, cheats, awards, music)",
+        LOGW("app", "--menu: unknown page '%s' (front, main, options, video, sound, input, extras, controls, cheats, awards, music, timeattack, levelselect)",
              menu_page.c_str());
 
     // An explicit ROM (including an Explorer drop onto the EXE) is installed
@@ -2446,10 +2500,11 @@ int main(int argc, char** argv) {
             app.music.set_volume(app.cfg.mod_music_volume * app.cfg.music_volume / 100);
             app.music.after_frame(*app.m, first_sample);
             follow_time_attack(app);
+            follow_level_select(app);
             follow_speedrun(app);
             if (app.cfg.rewind && states_locked(app).empty() && app.m->frame_count % kRewindInterval == 0)
                 rewind_push(app);
-            if (app.achievements_on && !app.cheating) {
+            if (app.achievements_on && !app.cheating && !app.ls.running) {
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {
                     app.toasts.push_back({a.title, a.description, SDL_GetTicks() + 5000});
                     app.achievements.save_progress(achievements_progress_path(app));
@@ -2532,6 +2587,8 @@ int main(int argc, char** argv) {
         SDL_FRect art{};
         bool panelled = false;
         if (app.ui.ready()) {
+            // MENU SIZE (issue #49): the menu, and only the menu, larger.
+            app.ui.set_zoom(app.menu.zoom());
             app.ui.begin_frame();
             panelled = app.menu.art_panel(app.ui, &art);
             app.backdrops.choose(app.cfg.menu_backdrop_zone());
@@ -2600,6 +2657,23 @@ int main(int argc, char** argv) {
         }
         if (app.autotest_frames && app.m->frame_count + app.held_frames >= app.autotest_frames) {
             if (!app.autotest_shot.empty()) capture_output(app);
+            if (app.menu.open()) {
+                // Where the menu's touch targets were, for tests of MENU SIZE
+                // (issue #49): how tall, and whether all are on the screen.
+                const auto rows = app.menu.drawn_rows();
+                float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f, sum = 0;
+                for (const auto& [index, r] : rows) {
+                    x0 = std::min(x0, r.x);
+                    y0 = std::min(y0, r.y);
+                    x1 = std::max(x1, r.x + r.w);
+                    y1 = std::max(y1, r.y + r.h);
+                    sum += r.h;
+                }
+                LOGI("menu", "autotest: page %s, size %d, %zu rows, %.1f tall on average, within %.0f,%.0f-%.0f,%.0f of %.0fx%.0f",
+                     app.menu.page_name().c_str(), app.menu.zoom(), rows.size(),
+                     double(rows.empty() ? 0.0f : sum / float(rows.size())), double(x0), double(y0), double(x1),
+                     double(y1), double(app.ui.width()), double(app.ui.height()));
+            }
             app.running = false;
         }
         // Emulated frames advance in batches, so fire on "reached" rather

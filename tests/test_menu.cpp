@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <iterator>
@@ -12,6 +13,7 @@
 #include <vector>
 
 #include "frontend/config.h"
+#include "frontend/level_select.h"
 #include "game/achievements.h"
 #include "platform/backdrops.h"
 #include "renderer/game_font.h"
@@ -626,8 +628,8 @@ struct Drawn {
     ui::Ui g;
     achievements::Tracker ach;
     bool ok = false;
-    Drawn() {
-        surface = SDL_CreateSurface(1280, 720, SDL_PIXELFORMAT_ARGB8888);
+    explicit Drawn(int w = 1280, int h = 720) {
+        surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_ARGB8888);
         renderer = surface ? SDL_CreateSoftwareRenderer(surface) : nullptr;
         ok = renderer && g.init(renderer);
     }
@@ -637,6 +639,7 @@ struct Drawn {
         if (surface) SDL_DestroySurface(surface);
     }
     void draw(Menu& m) {
+        g.set_zoom(m.zoom());  // as the app does (MENU SIZE)
         g.begin_frame();
         m.draw(g, ach);
         g.end_frame();
@@ -1360,3 +1363,269 @@ TEST(menu, a_chosen_zone_is_made_first_and_alone) {
     std::filesystem::remove_all(dir, ec);
 }
 #endif
+
+// ---------------------------------------------------------------------------
+// MENU SIZE (issue #49)
+// ---------------------------------------------------------------------------
+
+TEST(menu_size, every_size_is_larger_than_the_one_before) {
+    // The pixel faces come in steps of 8 and the game's font in whole scales,
+    // so a factor alone could round two sizes to the same letters. From a
+    // phone-sized window to 4K, each size is a whole game-font scale and a
+    // grid step past the one before, and NORMAL is what it always was.
+    for (float scale : {0.62f, 0.75f, 1.0f, 1.19f, 1.5f, 2.0f, 3.0f}) {
+        for (float design : {16.0f, 32.0f}) {
+            const ui::PixelSize n = ui::pixel_steps(design, scale, 0);
+            CHECK_EQ(int(n.face), int(std::max(8.0f, std::round(design * scale / 8.0f) * 8.0f)));
+            CHECK_EQ(n.game, ui::game_font_scale(n.face));
+            ui::PixelSize before = n;
+            for (int z = 1; z < ui::kMenuSizes; ++z) {
+                const ui::PixelSize at = ui::pixel_steps(design, scale, z);
+                CHECK(at.game > before.game);
+                CHECK(at.face > before.face);
+                CHECK_EQ(int(at.face) % 8, 0);  // still on the face's grid
+                before = at;
+            }
+        }
+    }
+    // A 1080-line phone: the rows' letters 32, 48 and 64 pixels tall.
+    CHECK_EQ(ui::pixel_steps(16, 1.5f, 0).game, 2);
+    CHECK_EQ(ui::pixel_steps(16, 1.5f, 1).game, 3);
+    CHECK_EQ(ui::pixel_steps(16, 1.5f, 2).game, 4);
+}
+
+TEST(menu_size, is_a_video_setting_and_is_kept) {
+    Config cfg;
+    cfg.set_defaults();
+    CHECK_EQ(cfg.menu_size, -1);  // AUTO
+    CHECK_EQ(cfg.menu_zoom(), menu_size_default());
+    Menu m;
+    m.bind(cfg);
+    open_category(m, "VIDEO");
+    CHECK(select_row(m, "MENU SIZE"));
+    CHECK_STR(m.selected_value(), menu_size_default() ? "AUTO (LARGE)" : "AUTO (NORMAL)");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "NORMAL");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "LARGE");
+    CHECK_EQ(m.zoom(), 1);  // the drawing layer is told at once
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "EXTRA LARGE");
+    CHECK_EQ(cfg.menu_size, 2);
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_EQ(cfg.menu_size, -1);  // round to AUTO again
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_EQ(cfg.menu_size, 2);
+    m.close();
+    CHECK_EQ(m.zoom(), 0);  // nothing but the menu is drawn larger
+
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_menu_size_test.ini").string();
+    for (int size : {-1, 0, 1, 2}) {
+        cfg.menu_size = size;
+        CHECK(cfg.save(path));
+        Config back;
+        back.set_defaults();
+        back.menu_size = 5;
+        CHECK(back.load(path));
+        CHECK_EQ(back.menu_size, size);
+    }
+    std::filesystem::remove(path);
+    CHECK_EQ(parse_menu_size("Extra Large"), 2);
+    CHECK_EQ(parse_menu_size("large"), 1);
+    CHECK_EQ(parse_menu_size("huge"), -1);
+}
+
+namespace {
+
+// Draws `page` at each MENU SIZE in a window of w x h, stepping through every
+// entry so a list that scrolls is seen all the way down, and checks each touch
+// target is on the screen and the selected entry is among them. Returns the
+// targets' mean height at each size.
+std::vector<float> row_heights(int w, int h, const std::string& page, bool game_font) {
+    std::vector<float> out;
+    Drawn d(w, h);
+    CHECK(d.ok);
+    if (!d.ok) return out;
+    if (game_font) CHECK(d.g.set_game_font(block_font()));
+    for (int z = 0; z < ui::kMenuSizes; ++z) {
+        Config cfg;
+        cfg.set_defaults();
+        cfg.menu_size = z;
+        cfg.menu_game_font = game_font;
+        Menu m;
+        m.bind(cfg);
+        CHECK(m.show_page(page));
+        const SDL_Keycode step = page == "main" ? SDLK_RIGHT : SDLK_DOWN;
+        float sum = 0;
+        int count = 0;
+        for (int i = 0; i < 16; ++i) {
+            d.draw(m);
+            const auto rows = m.drawn_rows();
+            CHECK(!rows.empty());
+            bool selected_shown = false;
+            for (const auto& [index, r] : rows) {
+                if (r.x < -0.5f || r.y < -0.5f || r.x + r.w > float(w) + 0.5f || r.y + r.h > float(h) + 0.5f) {
+                    std::printf("    %s %dx%d size %d: row %d at %.1f,%.1f %.1fx%.1f is off the screen\n",
+                                page.c_str(), w, h, z, index, double(r.x), double(r.y), double(r.w), double(r.h));
+                    CHECK(false);
+                }
+                selected_shown = selected_shown || index == m.selected_index();
+                sum += r.h;
+                ++count;
+            }
+            CHECK(selected_shown);
+            m.on_key(step);
+        }
+        out.push_back(count ? sum / float(count) : 0.0f);
+    }
+    return out;
+}
+
+} // namespace
+
+TEST(menu_size, rows_grow_and_stay_on_the_screen) {
+    // A desktop window, a phone in landscape (in its own pixels, and as an
+    // 800x360 window) and a portrait window; the front end, the pause menu's
+    // row, two lists of settings and LEVEL SELECT; the game's font and the
+    // pixel face.
+    const std::pair<int, int> windows[] = {{1280, 720}, {800, 360}, {2400, 1080}, {412, 860}};
+    for (const auto& [w, h] : windows) {
+        for (const char* page : {"front", "main", "video", "extras", "levelselect"}) {
+            for (bool game_font : {true, false}) {
+                const std::vector<float> hs = row_heights(w, h, page, game_font);
+                CHECK_EQ(int(hs.size()), ui::kMenuSizes);
+                if (hs.size() != size_t(ui::kMenuSizes)) continue;
+                // The touch targets grow with the rows.
+                for (int z = 1; z < ui::kMenuSizes; ++z) {
+                    if (hs[size_t(z)] <= hs[size_t(z - 1)] + 1.0f)
+                        std::printf("    %s %dx%d%s: size %d rows %.1f, size %d rows %.1f\n", page, w, h,
+                                    game_font ? " (game font)" : "", z - 1, double(hs[size_t(z - 1)]), z,
+                                    double(hs[size_t(z)]));
+                    CHECK(hs[size_t(z)] > hs[size_t(z - 1)] + 1.0f);
+                }
+            }
+        }
+    }
+}
+
+TEST(menu_size, the_front_end_picture_gives_way_on_a_portrait_window) {
+    // On a portrait window the list used to run off the right-hand side
+    // beside a postage stamp of a picture: there the picture goes across the
+    // top and the list below it.
+    Drawn d(412, 860);
+    CHECK(d.ok);
+    if (!d.ok) return;
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    m.open_front();
+    d.draw(m);
+    SDL_FRect art{};
+    CHECK(m.art_panel(d.g, &art));
+    CHECK(art.w > 412 * 0.6f);
+    for (const auto& [index, r] : m.drawn_rows()) CHECK(r.y >= art.y + art.h);
+}
+
+// ---------------------------------------------------------------------------
+// LEVEL SELECT (issue #51)
+// ---------------------------------------------------------------------------
+
+TEST(level_select, the_page_starts_the_level_chosen) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    int started = 0, timed = 0;
+    stage_select::Request got;
+    Menu::Hooks h;
+    h.start_level = [&](const stage_select::Request& r) { ++started; got = r; };
+    h.start_stage = [&](const stage_select::Request&) { ++timed; };
+    m.set_hooks(h);
+
+    m.open_front();
+    CHECK(select_row(m, "LEVEL SELECT"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "levelselect");
+    CHECK(select_row(m, "PLACE"));
+    CHECK_STR(m.selected_value(), "BOTANIC BASE");
+    // Back from BOTANIC BASE: the last place, a special stage, then the bonus
+    // stage and the hub; NOT USED is never offered.
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "SPECIAL STAGE");
+    CHECK(select_row(m, "LEVEL"));
+    CHECK_STR(m.selected_value(), "2");  // level 1 kept: the second stage
+    for (int i = 0; i < 4; ++i) m.on_key(SDLK_RIGHT);
+    CHECK_STR(m.selected_value(), "6");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "1");  // six special stages, no more
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK(select_row(m, "PLACE"));
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "BONUS STAGE");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "WORLD ENTRANCE");
+    CHECK_EQ(cfg.ls_level, 1);  // the hub
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "BOTANIC BASE");
+    CHECK_EQ(cfg.ls_level, 1);
+    for (int i = 0; i < 4; ++i) m.on_key(SDLK_RIGHT);
+    CHECK_STR(m.selected_value(), "MARINA MADNESS");
+    CHECK(select_row(m, "LEVEL"));
+    m.on_key(SDLK_LEFT);  // 1 -> 5
+    CHECK_STR(m.selected_value(), "5");
+    CHECK(select_row(m, "AT-TIME"));
+    m.on_key(SDLK_LEFT);
+    CHECK_STR(m.selected_value(), "NIGHT");
+    CHECK(select_row(m, "COMBI"));
+    m.on_key(SDLK_LEFT);
+    CHECK_STR(m.selected_value(), "HEAVY");
+    // TIME ATTACK's own choice is left alone.
+    CHECK_EQ(cfg.ta_place, 0);
+    CHECK_EQ(cfg.ta_combi, 7);
+
+    CHECK(select_row(m, "START"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_EQ(started, 1);
+    CHECK_EQ(timed, 0);  // not a TIME ATTACK run
+    CHECK_EQ(got.place, 4);
+    CHECK_EQ(got.level, 5);
+    CHECK_EQ(got.attime, 6);
+    CHECK_EQ(got.player, 2);
+    CHECK_EQ(got.combi, 6);
+    CHECK(level_select::valid(got));
+    CHECK(!m.open());
+
+    // Kept, apart from TIME ATTACK's.
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_level_select_test.ini").string();
+    CHECK(cfg.save(path));
+    Config back;
+    back.set_defaults();
+    CHECK(back.load(path));
+    CHECK_EQ(back.ls_place, 4);
+    CHECK_EQ(back.ls_level, 5);
+    CHECK_EQ(back.ls_time, 6);
+    CHECK_EQ(back.ls_combi, 6);
+    CHECK_EQ(back.ta_place, 0);
+    std::filesystem::remove(path);
+}
+
+TEST(level_select, a_kept_choice_it_does_not_offer_is_put_right) {
+    // A hand-edited settings file: NOT USED, or a level the place lacks.
+    Config cfg;
+    cfg.set_defaults();
+    cfg.ls_place = 8;
+    cfg.ls_level = 0;
+    Menu m;
+    m.bind(cfg);
+    CHECK(m.show_page("levelselect"));
+    CHECK_EQ(cfg.ls_place, 0);
+    CHECK_EQ(cfg.ls_level, 1);  // BOTANIC BASE has no level 0
+    cfg.ls_place = 10;
+    cfg.ls_level = 7;  // the wireframe copy of the second stage
+    CHECK(m.show_page("levelselect"));
+    CHECK_EQ(cfg.ls_place, 10);
+    CHECK_EQ(cfg.ls_level, 0);
+}

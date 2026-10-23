@@ -49,6 +49,9 @@ public:
         // Starts a level straight away, the way the game's own stage select
         // would: TIME ATTACK.
         std::function<void(const stage_select::Request&)> start_stage;
+        // LEVEL SELECT (issue #51, frontend/level_select.h): the same way in,
+        // untimed and unrecorded, NO SAVE, back to the page when it is over.
+        std::function<void(const stage_select::Request&)> start_level;
         // The front menu was closed (Escape, the menu button or the pad's back
         // button) instead of START GAME: the player goes on from the game's
         // own title screen.
@@ -100,6 +103,10 @@ public:
     void bind(Config& cfg) { cfg_ = &cfg; }
 
     bool open() const { return page_ != Page::Closed; }
+    // MENU SIZE (issue #49): what the drawing layer's zoom should be for the
+    // next frame (ui::Ui::set_zoom) -- the setting while the menu is open,
+    // NORMAL while it is not, so nothing else drawn over the game changes.
+    int zoom() const;
     // The menu the title screen leads to, with the game still running behind.
     void open_front();
     void toggle();
@@ -113,6 +120,10 @@ public:
     std::string selected_value() const;
     // What that entry is for, for tests and screenshots.
     std::string selected_note() const;
+    // Where the last draw put each entry's touch target, by entry, for tests
+    // (MENU SIZE, issue #49). Entries scrolled out of view are not there.
+    std::vector<std::pair<int, SDL_FRect>> drawn_rows() const;
+    int selected_index() const { return selected_; }
     void close();
 
     // Each returns true when the menu consumed the input.
@@ -140,7 +151,8 @@ private:
     // OPTIONS is a list of categories; each category is a page of its own, so
     // that no page runs off a phone's screen.
     enum class Page { Closed, Front, Main, Options, Video, Sound, Input, Extras, Controls, Keys, TimeAttack,
-                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music, Speedrun };
+                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music, Speedrun,
+                      LevelSelect };
 
     struct Item {
         std::string label;
@@ -179,6 +191,11 @@ private:
     void build_speedrun();
     void build_controls();
     void build_time_attack();
+    // LEVEL SELECT (issue #51).
+    void build_level_select();
+    // The PLAYER, COMBI and PLAYERS rows TIME ATTACK and LEVEL SELECT share,
+    // editing the settings given.
+    void add_character_rows(int* player, int* combi, bool* two_players);
     void build_keys();
     void build_states();
     void build_state_keys();
@@ -195,6 +212,15 @@ private:
     // Escape, the menu button or the pad's back button: one level up, or
     // closed.
     void back_out();
+    // The front end's layout: the game's picture, and the column its list
+    // goes in. Beside each other on a landscape screen, the list under the
+    // picture on a portrait one; the picture gives way to the list's width.
+    struct FrontLayout {
+        SDL_FRect art{};
+        float left = 0, column = 0;   // the list's column
+        float top = 0, bottom = 0;    // and the height it has
+    };
+    FrontLayout front_layout(ui::Ui& g) const;
     void draw_front(ui::Ui& g);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);

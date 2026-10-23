@@ -20,6 +20,15 @@ enum class TouchMode { Auto, On, Off };
 bool rewind_default();
 // TIME ATTACK ghosts (issue #41): ghost::Mode as a number, off on phones.
 int ghost_default();
+// MENU SIZE (issue #49): what AUTO means here. LARGE on phones and tablets,
+// whose screens are a few centimetres tall in landscape, so NORMAL's rows
+// come out a few millimetres high -- small to read and smaller than a finger;
+// NORMAL elsewhere.
+int menu_size_default();
+// The MenuSize setting's names, by value (0 NORMAL, 1 LARGE, 2 EXTRA LARGE;
+// -1 is AUTO), and back; anything unknown is AUTO.
+const char* menu_size_name(int size);
+int parse_menu_size(const std::string& v);
 constexpr int kStateSlots = 4;
 
 struct Config {
@@ -49,6 +58,11 @@ struct Config {
     // each time the menu opens), "Plain", or one zone's `zone` key from
     // frontend/backdrop.h ("WorldEntrance", "MarinaMadness", ...).
     std::string menu_background = "Cycle";
+    // MENU SIZE (issue #49): -1 AUTO (menu_size_default), 0 NORMAL, 1 LARGE,
+    // 2 EXTRA LARGE: the menu's rows, letters and panels, and so its touch
+    // targets. menu_zoom() is the size in effect.
+    int menu_size = -1;
+    int menu_zoom() const { return menu_size < 0 ? menu_size_default() : menu_size; }
     bool menu_backdrop_on() const { return menu_background != "Plain"; }
     // The chosen zone's index in backdrop_specs(); -1 for Cycle and Plain.
     int menu_backdrop_zone() const;
@@ -128,6 +142,15 @@ struct Config {
     // The ghost a run races (frontend/ghost.h, ghost::Mode): 0 OFF, 1 BEST,
     // 2 LAST.
     int ta_ghost = ghost_default();
+    // [LevelSelect] Issue #51 (frontend/level_select.h): the level the front
+    // end's LEVEL SELECT offers next time, apart from TIME ATTACK's so that
+    // practising one does not move the other. The game's own values.
+    int ls_place = 0;
+    int ls_level = 1;
+    int ls_time = 0;
+    int ls_player = 2;   // KNUCKLES
+    int ls_combi = 7;    // ESPIO
+    bool ls_two_players = false;
     // [Cheats] (game/cheats.h): the built-in ones switched on, by key, and
     // Action Replay codes of the player's own ("FFE009:63 + FFADFC:01").
     std::set<std::string> cheats;

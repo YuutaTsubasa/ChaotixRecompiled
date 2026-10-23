@@ -82,6 +82,13 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_rom_startup.py"
                         $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
             set_tests_properties(rom_startup PROPERTIES TIMEOUT 180)
+            # MENU SIZE (issue #49) in the program itself: each size's touch
+            # targets taller than the last, and all of them on the screen, in
+            # a phone-shaped, a portrait and a desktop window.
+            add_test(NAME menu_size_rows_grow_and_stay_on_the_screen
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_menu_size.py"
+                        $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
+            set_tests_properties(menu_size_rows_grow_and_stay_on_the_screen PROPERTIES TIMEOUT 900)
         endif()
     endif()
     # Issue #35: ROM patches from the Mods folder, over data and over code.
@@ -466,6 +473,51 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(stage_select_starts_the_chosen_level PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION
         "stage: taken after ([0-9]|[1-9][0-9]|1[0-9][0-9]) frames, pending=0 mode=0018 zone=4 level=3 player=20 combi=28 padoff=10")
+
+    # LEVEL SELECT (issue #51, frontend/level_select.h): TIME ATTACK's way in,
+    # over more places. Each zone's first level (with a different time of day
+    # and pair of characters each), the hub, the last special stage and the
+    # bonus stage: the game reaches the scene asked for (mode:zone:level, as
+    # patches::scene_key has it) NO SAVE, writes nothing to the cartridge
+    # save, and the interpreter and the recompiled code agree.
+    foreach(_ls "0:1:0:2:7:0:0018:0000:0001" "1:1:2:0:3:0:0018:0001:0001" "2:1:4:3:4:0:0018:0002:0001"
+                "3:1:6:4:5:0:0018:0003:0001" "4:1:0:5:6:0:0018:0004:0001" "5:0:2:6:7:0:0018:0005:0000"
+                "6:0:0:7:2:0:0018:0006:0000" "7:1:0:2:7:0:0018:0007:0000" "10:5:0:2:7:0:0020:0007:0005"
+                "9:0:0:2:7:0:0050:0007:0000")
+        string(REPLACE ":" ";" _f "${_ls}")
+        list(GET _f 0 _place)
+        list(GET _f 1 _level)
+        list(SUBLIST _f 0 6 _req)
+        list(SUBLIST _f 6 3 _scene)
+        string(REPLACE ";" ":" _req "${_req}")
+        string(REPLACE ";" ":" _scene "${_scene}")
+        add_test(NAME level_select_starts_place_${_place}_level_${_level}
+            COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 900 --lockstep --level-select
+                    --stage 300:${_req})
+        set_tests_properties(level_select_starts_place_${_place}_level_${_level} PROPERTIES TIMEOUT 600
+            PASS_REGULAR_EXPRESSION
+            "level select: reached scene ${_scene} at frame [0-9]+, save slot FFFF.*save RAM changed on 0 frames.*lockstep: 900 frames bit-identical"
+            FAIL_REGULAR_EXPRESSION "level is over")
+    endforeach()
+    # A level played to its goal from LEVEL SELECT (the recorded run below,
+    # BOTANIC BASE 1) is over when the game reaches its lobby, which is when
+    # the frontend takes the player back to the page -- and nothing was saved:
+    # the slot is still NO SAVE and the cartridge save never changed, where
+    # the same run played into DATA 1 saves at frame 4639. Lockstep holds.
+    add_test(NAME level_select_a_finished_level_saves_nothing
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4800 --lockstep --level-select
+                --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt --peek-every 4800:E01C:2)
+    set_tests_properties(level_select_a_finished_level_saves_nothing PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION
+        "level select: reached scene 0018:0000:0001 at frame [0-9]+, save slot FFFF\n.*level select: the level is over at frame 4639 \\(mode 0018 zone 7 level 0\\).*peek 4800 E01C FFFF.*save RAM changed on 0 frames.*lockstep: 4800 frames bit-identical")
+    # A special stage is over when it is left: started this way the game goes
+    # on to its title screen (mode 8). Cut short as the results test does.
+    add_test(NAME level_select_a_special_stage_ends_at_the_title
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1800 --level-select
+                --stage 300:10:0:0:2:7:0 --poke-sdram 1000:7DF0:03 --poke-fb 1200:1500:1FF:01)
+    set_tests_properties(level_select_a_special_stage_ends_at_the_title PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION
+        "level select: reached scene 0020:0007:0000.*level select: the level is over at frame 1643 \\(mode 0008.*save RAM changed on 0 frames")
 
     # A run has to end somewhere, and be timed. The game does not tell anyone
     # a run is over -- it just moves the player on -- so the frontend watches

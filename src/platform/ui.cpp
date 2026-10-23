@@ -125,13 +125,37 @@ void Ui::drop_cache() {
     cache_.clear();
 }
 
+PixelSize pixel_steps(float design, float scale, int zoom) {
+    zoom = std::clamp(zoom, 0, kMenuSizes - 1);
+    // Snap the pixel face to a whole multiple of its 8-pixel design grid, so
+    // every glyph pixel lands on a screen pixel.
+    auto snap = [](float size) { return std::max(8.0f, std::round(size / 8.0f) * 8.0f); };
+    PixelSize at{snap(design * scale), 0};
+    at.game = game_font_scale(at.face);
+    for (int z = 1; z <= zoom; ++z) {
+        // The game's letters set the size: the whole scale the factor reaches
+        // (rounding up would make LARGE half again as large as asked for on a
+        // 1080-line phone, 48 to 80 pixels for a heading), but at least one
+        // more than the size below.
+        PixelSize next;
+        next.game = std::max(at.game + 1, int(design * scale * kMenuZoom[z] / 16.0f));
+        // The face about as tall as those letters, so that the strings the
+        // game's font cannot draw ("65%") do not look a size behind the rest.
+        next.face = std::max(at.face + 8.0f, float(16 * next.game - 8));
+        at = next;
+    }
+    return at;
+}
+
 void Ui::set_sizes() {
     for (size_t i = 0; i < size_t(Font::Count_); ++i) {
         if (!fonts_[i]) continue;
         float size = kSizes[i] * scale_;
-        // Snap the pixel face to a whole multiple of its 8-pixel design grid,
-        // so every glyph pixel lands on a screen pixel.
-        if (is_pixel(Font(i))) size = std::max(8.0f, std::round(size / 8.0f) * 8.0f);
+        if (is_pixel(Font(i))) {
+            const PixelSize p = pixel_steps(kSizes[i], base_scale_, sized_zoom_);
+            size = p.face;
+            game_scales_[i] = p.game;
+        }
         TTF_SetFontSize(fonts_[i], size);
         pixel_sizes_[i] = size;
     }
@@ -147,8 +171,10 @@ void Ui::begin_frame() {
     // Scale from the height, but do not let a very wide, short window (or a
     // phone in landscape) shrink the text below legibility.
     const float want = std::clamp(std::max(float(oh), float(ow) * 0.42f) / 720.0f, 0.62f, 3.0f);
-    if (std::fabs(want - scale_) > 0.01f) {
-        scale_ = want;
+    if (std::fabs(want - base_scale_) > 0.01f || zoom_ != sized_zoom_ || frame_ == 1) {
+        base_scale_ = want;
+        sized_zoom_ = zoom_;
+        scale_ = want * kMenuZoom[zoom_];
         set_sizes();
     }
     SDL_SetRenderDrawBlendMode(renderer_, SDL_BLENDMODE_BLEND);
