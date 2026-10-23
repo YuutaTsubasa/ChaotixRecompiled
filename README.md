@@ -369,6 +369,25 @@ TIME ATTACK always plays the original tether, and achievements are not
 earned while any of these is changed. See
 [docs/RING_TETHER.md](docs/RING_TETHER.md) for how the tether works.
 
+## Netplay (online two-player)
+
+NETPLAY on the front menu plays the game's two-player mode with a friend on
+another machine, with rollback netcode: your buttons act at once (after an
+input delay of 0-4 frames, 2 to begin with), theirs are predicted until they
+arrive, and a wrong guess is put right by running the last few frames again.
+One player chooses HOST A GAME (they are player 1), the other types the
+host's address and chooses JOIN A GAME (player 2); the host's game, saves
+included, is sent over and both play on from there, choosing PLAY STYLE 2P
+in the game. The two games are compared every second, and a difference stops
+the session with DESYNC (both states are written to `Netplay/`).
+
+Both players need the same release, ROM and game-changing mods (patches,
+character stats, replacement music); the joiner takes the host's widescreen,
+pad, lobby and ring tether settings for the session. There is no NAT traversal: the host
+forwards UDP port 7845, or both use a VPN such as Tailscale or ZeroTier.
+Save states, rewind, fast-forward, TIME ATTACK and cheats are off during a
+session. See [docs/NETPLAY.md](docs/NETPLAY.md).
+
 ## Volume and touch controls
 
 OPTIONS > SOUND has VOLUME (everything), MUSIC and EFFECTS. The sound driver's sound
@@ -544,6 +563,11 @@ open your game is held, untouched, and it carries on when you leave. See
   `--frames`); `--state-hash-every N` prints a fingerprint of the whole
   machine and `--rewind INTERVAL[:MB]` times the rewind buffer and checks
   every snapshot it holds (docs/SAVE_STATES.md).
+- `chaotix_headless --netplay-loopback LATENCY:JITTER:LOSS` plays both sides
+  of a netplay session in one process over a simulated network with fuzzed
+  pads, and checks both end identical to a single machine fed the confirmed
+  pads; `--netplay-host PORT` / `--netplay-join ADDRESS` do it over real UDP,
+  one side per process (docs/NETPLAY.md).
 
 ## Tests
 

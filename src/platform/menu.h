@@ -88,6 +88,14 @@ public:
         // run now, or reset the one going.
         std::function<void()> speedrun_start;
         std::function<void()> speedrun_reset;
+        // Netplay (issue #46, NETPLAY page): host a game on the port in the
+        // settings, join the address there, leave the session; how it is
+        // going, in a few words; and whether there is one.
+        std::function<void()> netplay_host;
+        std::function<void()> netplay_join;
+        std::function<void()> netplay_leave;
+        std::function<std::string()> netplay_status;
+        std::function<bool()> netplay_active;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -120,6 +128,14 @@ public:
     bool on_pad(Uint8 button);
     bool on_touch_down(float x, float y);
     bool on_touch_up();
+    // Typing into a text row (the NETPLAY address and port): while it lasts
+    // the app has the system's text input on (the on-screen keyboard on a
+    // phone) and hands the typed text here. The arrows and a pad's d-pad
+    // edit too: up and down change the last character, left deletes it,
+    // right adds one; Enter or the pad's confirm button keeps the text,
+    // Escape or its back button puts the old one back.
+    bool editing_text() const { return editing_ != nullptr; }
+    bool on_text(const char* text);
 
     void draw(ui::Ui& g, achievements::Tracker& ach);
     // The front end shows the game beside the list rather than behind it, so
@@ -140,7 +156,7 @@ private:
     // OPTIONS is a list of categories; each category is a page of its own, so
     // that no page runs off a phone's screen.
     enum class Page { Closed, Front, Main, Options, Video, Sound, Input, Extras, Controls, Keys, TimeAttack,
-                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music, Speedrun, Tether };
+                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music, Speedrun, Tether, Netplay };
 
     struct Item {
         std::string label;
@@ -186,6 +202,12 @@ private:
     void build_mods();
     void build_mod_info();
     void build_music();
+    void build_netplay();
+    // Text rows: start typing into `target` (only `allowed` characters, at
+    // most `max_len`); `done` runs when the text is kept.
+    void begin_edit(std::string* target, const char* allowed, size_t max_len, std::function<void()> done);
+    void end_edit(bool keep);
+    bool edit_key(int key);  // 0 keep, 1 cancel, 2 delete, 3 next char, 4 previous char, 5 add
     // Leaving the MODS pages after a change: the app applies it.
     void leave_mods();
     // The setting a host-key capture writes (fast-forward, save state, ...),
@@ -253,6 +275,13 @@ private:
     float drag_y_ = 0, drag_total_ = 0;
     // Drives the little bounce on the selected entry.
     float anim_ = 0;
+    // The text row being typed into (begin_edit).
+    std::string* editing_ = nullptr;
+    std::string edit_before_;
+    const char* edit_allowed_ = "";
+    size_t edit_max_ = 0;
+    std::function<void()> edit_done_;
+    std::string port_text_;  // the PORT row's text while it is typed
 };
 
 } // namespace chaotix

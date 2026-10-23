@@ -33,6 +33,7 @@ add_executable(chaotix_tests
     test_ghost.cpp
     test_jukebox.cpp
     test_speedrun.cpp
+    test_netplay.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
@@ -165,6 +166,13 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_music_player.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(music_player PROPERTIES TIMEOUT 900)  # fails by its exit code
+        # Netplay over real UDP (issue #46): two processes on this machine,
+        # host and client, end a stretch of a 2P level with the same state as
+        # each other and as one machine fed the confirmed pads.
+        add_test(NAME netplay_udp_localhost
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_netplay_udp.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
+        set_tests_properties(netplay_udp_localhost PROPERTIES TIMEOUT 600 RUN_SERIAL TRUE)  # fails by its exit code
         # The game's own SOUND TEST (issue #50): a song and a sound effect
         # are heard after A (the Z80 runs up to the 68K's time when its bus
         # is requested, so it takes its V-blank interrupt first), the same
@@ -174,6 +182,32 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(sound_test_plays PROPERTIES TIMEOUT 600)  # fails by its exit code
     endif()
+    # Netplay (issue #46, docs/NETPLAY.md): both peers in one process over a
+    # simulated network, playing a level in two-player mode with fuzzed pads:
+    # 50-100 ms each way (3-6 frames), 5% of datagrams lost; then with no
+    # input delay at all, widescreen, and a worse network, so that nearly
+    # every remote pad is mispredicted at first, and the second player at
+    # other music and effects levels (which shape only the sound), the host's
+    # ring tether STRONG (issue #43; taken over by the client). Both must
+    # end with the same state as each other and as a single machine fed the
+    # confirmed pads.
+    add_test(NAME netplay_loopback_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --stage 300:4:2:2:2:7:1
+                --netplay-loopback 75:25:5 --netplay-fuzz 3)
+    add_test(NAME netplay_loopback_no_delay_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --stage 300:0:1:0:2:7:1 --wide 53
+                --netplay-loopback 100:40:8 --netplay-delay 0 --netplay-fuzz 11 --netplay-seed 4
+                --netplay-client-volume 30 --tether-strength 2)
+    # A divergence (a byte of the second player's work RAM changed) is caught
+    # by the hashes and reported on both sides, with the states written out.
+    add_test(NAME netplay_desync_is_detected
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1200 --stage 300:4:2:2:2:7:1
+                --netplay-loopback 60:20:5 --netplay-inject-desync 500
+                --netplay-dump "${CMAKE_CURRENT_BINARY_DIR}")
+    set_tests_properties(netplay_loopback_level netplay_loopback_no_delay_widescreen PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "netplay: frame [0-9]+: player 1 [0-9a-f]+, player 2 [0-9a-f]+, reference [0-9a-f]+: identical")
+    set_tests_properties(netplay_desync_is_detected PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "DESYNC at frame 540.*state at that frame: .*netplay_desync_player1_frame540\\.state.*injected divergence at frame 500 detected by both players")
     # Rewind (issue #40): every snapshot still held is stepped back to and
     # must be exactly the state it was taken from; the buffer keeps to its
     # memory budget (the special stage changes most between frames).

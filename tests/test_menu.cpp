@@ -1333,6 +1333,96 @@ TEST(menu, a_zone_picture_fills_the_panel_when_asked) {
     SDL_DestroyTexture(red);
 }
 
+// Issue #46: the NETPLAY page, from the front end: HOST and JOIN ask the app,
+// the address is typed (keyboard text, or the arrows as a pad would), the
+// port and input delay step, and the status comes from the app.
+TEST(menu, netplay_page_hosts_joins_and_takes_an_address) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    Menu::Hooks h;
+    int hosted = 0, joined = 0, left = 0;
+    bool active = false;
+    h.netplay_host = [&] { ++hosted; active = true; };
+    h.netplay_join = [&] { ++joined; };
+    h.netplay_leave = [&] { ++left; active = false; };
+    h.netplay_active = [&] { return active; };
+    h.netplay_status = [&] { return std::string(active ? "WAITING FOR PLAYER 2" : "OFF"); };
+    m.set_hooks(h);
+    m.open_front();
+    CHECK(select_row(m, "NETPLAY"));
+    m.on_key(SDLK_RETURN);
+    CHECK_STR(m.page_name(), "netplay");
+    CHECK_STR(m.selected_label(), "HOST A GAME");
+    m.on_key(SDLK_RETURN);
+    CHECK_EQ(hosted, 1);
+    // STATUS only shows: the selection steps over it.
+    CHECK(!select_row(m, "STATUS"));
+    CHECK(select_row(m, "DISCONNECT"));
+    m.on_key(SDLK_RETURN);
+    CHECK_EQ(left, 1);
+
+    // The address: typed (a space is not taken), with a backspace; Enter
+    // keeps it.
+    CHECK(select_row(m, "ADDRESS"));
+    CHECK_STR(m.selected_value(), "TYPE ONE");
+    m.on_key(SDLK_RETURN);
+    CHECK(m.editing_text());
+    CHECK(m.on_text("192.168.1.2x"));
+    m.on_key(SDLK_BACKSPACE);
+    CHECK(m.on_text("0:7845 "));
+    m.on_key(SDLK_RETURN);
+    CHECK(!m.editing_text());
+    CHECK_STR(cfg.netplay_address, "192.168.1.20:7845");
+    // Escape puts the old text back, and leaves the page where it was.
+    m.on_key(SDLK_RETURN);
+    m.on_text("junk");
+    m.on_key(SDLK_ESCAPE);
+    CHECK(!m.editing_text());
+    CHECK_STR(cfg.netplay_address, "192.168.1.20:7845");
+    CHECK_STR(m.page_name(), "netplay");
+    // A pad: left deletes, up and down step the last character through the
+    // ones allowed, right adds one, and the confirm button keeps it.
+    m.on_pad(SDL_GAMEPAD_BUTTON_SOUTH);
+    CHECK(m.editing_text());
+    m.on_pad(SDL_GAMEPAD_BUTTON_DPAD_LEFT);   // ...:784
+    m.on_pad(SDL_GAMEPAD_BUTTON_DPAD_UP);     // ...:785
+    m.on_pad(SDL_GAMEPAD_BUTTON_DPAD_RIGHT);  // ...:7855
+    m.on_pad(SDL_GAMEPAD_BUTTON_DPAD_DOWN);   // ...:7854
+    m.on_pad(SDL_GAMEPAD_BUTTON_SOUTH);
+    CHECK_STR(cfg.netplay_address, "192.168.1.20:7854");
+
+    // The port: digits only, kept in range; left and right step it.
+    CHECK(select_row(m, "PORT"));
+    m.on_key(SDLK_RETURN);
+    for (int i = 0; i < 4; ++i) m.on_key(SDLK_BACKSPACE);
+    m.on_text("9a0b0c1");
+    m.on_key(SDLK_RETURN);
+    CHECK_EQ(cfg.netplay_port, 9001);
+    m.on_key(SDLK_RIGHT);
+    CHECK_EQ(cfg.netplay_port, 9002);
+    m.on_key(SDLK_RETURN);
+    m.on_text("99999");  // 90029: too high, the old port stays
+    m.on_key(SDLK_RETURN);
+    CHECK_EQ(cfg.netplay_port, 9002);
+
+    CHECK(select_row(m, "INPUT DELAY"));
+    CHECK_STR(m.selected_value(), "2 FRAMES");
+    for (int i = 0; i < 6; ++i) m.on_key(SDLK_RIGHT);
+    CHECK_EQ(cfg.netplay_delay, 4);
+    for (int i = 0; i < 3; ++i) m.on_key(SDLK_LEFT);
+    CHECK_STR(m.selected_value(), "1 FRAME");
+
+    CHECK(select_row(m, "JOIN A GAME"));
+    m.on_key(SDLK_RETURN);
+    CHECK_EQ(joined, 1);
+    // BACK returns to the front end it came from.
+    CHECK(select_row(m, "BACK"));
+    m.on_key(SDLK_RETURN);
+    CHECK_STR(m.page_name(), "front");
+}
+
 #ifdef CHAOTIX_TEST_ROM
 TEST(menu, zone_pictures_are_made_only_while_a_menu_is_open) {
     // The worker must not compete with the game (issue #31's slow machines):

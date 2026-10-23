@@ -205,6 +205,10 @@ bool Config::load(const std::string& path) {
             else if (k == "Opacity") sr_opacity = std::clamp(std::atoi(v.c_str()), 10, 100);
             else if (k == "StartKey") sr_start_key = v;
             else if (k == "ResetKey") sr_reset_key = v;
+        } else if (section == "Netplay") {
+            if (k == "Port") netplay_port = std::clamp(std::atoi(v.c_str()), 1, 65535);
+            else if (k == "Address") netplay_address = v;
+            else if (k == "InputDelay") netplay_delay = std::clamp(std::atoi(v.c_str()), 0, 4);
         } else if (section == "TimeAttack") {
             if (k == "Place") ta_place = std::atoi(v.c_str());
             else if (k == "Level") ta_level = std::atoi(v.c_str());
@@ -329,6 +333,9 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "TimerCorner = %s\nInputCorner = %s\nOpacity = %d\nStartKey = %s\nResetKey = %s\n",
                  sr_timer_corner.c_str(), sr_input_corner.c_str(), sr_opacity, sr_start_key.c_str(),
                  sr_reset_key.c_str());
+    std::fprintf(f, "\n[Netplay]\n# Online two-player (docs/NETPLAY.md): the UDP port to host on, the address last joined\n");
+    std::fprintf(f, "# (host:port), and frames of input delay, 0-4 (more: fewer rollbacks, slower controls).\n");
+    std::fprintf(f, "Port = %d\nAddress = %s\nInputDelay = %d\n", netplay_port, netplay_address.c_str(), netplay_delay);
     std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");

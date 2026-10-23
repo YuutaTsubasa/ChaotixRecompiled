@@ -166,6 +166,12 @@ struct Config {
     int sr_opacity = 85;  // percent
     std::string sr_start_key = "Home";
     std::string sr_reset_key = "End";
+    // [Netplay] Issue #46 (net/netplay.h, docs/NETPLAY.md): the UDP port a
+    // host waits on, the address last joined ("host:port"), and the frames
+    // of input delay (0-4).
+    int netplay_port = 7845;
+    std::string netplay_address;
+    int netplay_delay = 2;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

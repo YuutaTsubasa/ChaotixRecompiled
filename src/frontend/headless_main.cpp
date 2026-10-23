@@ -13,6 +13,8 @@
 //                                 (mod packs as the app loads them, issue #42, runtime/mod_packs.h)
 //                    [--ghost FILE] [--ghost-record FILE] [--ghost-log N] [--ghost-threaded]
 //                    (issue #41, frontend/ghost.h)
+//                    [--netplay-loopback MS:MS:PCT | --netplay-host PORT | --netplay-join ADDR ...]
+//                                 (issue #46, frontend/netplay_headless.cpp)
 #include "audio/music_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
@@ -41,6 +43,7 @@
 #include "frontend/time_attack.h"
 #include "frontend/input_display.h"
 #include "frontend/livesplit.h"
+#include "frontend/netplay_headless.h"
 #include "frontend/speedrun.h"
 #include "renderer/game_font.h"
 #include "runtime/system.h"
@@ -342,6 +345,9 @@ void dump_state(const Machine& m) {
 } // namespace
 
 int main(int argc, char** argv) {
+    // Netplay runs (issue #46, frontend/netplay_headless.cpp) are a mode of
+    // their own: two peers, through the netplay session.
+    if (is_netplay_headless(argc, argv)) return netplay_headless_main(argc, argv);
     std::string rom_path, out_dir = ".";
     uint64_t frames = 600;
     std::set<uint64_t> shots;

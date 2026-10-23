@@ -87,11 +87,21 @@ add_library(chaotix_runtime STATIC
     src/frontend/ghost.cpp
     src/input/input.cpp
     src/input/touch_controls.cpp
+    src/net/rollback.cpp
+    src/net/protocol.cpp
+    src/net/netplay.cpp
+    src/net/loopback.cpp
+    src/net/udp_socket.cpp
+    src/net/machine_game.cpp
 )
 target_include_directories(chaotix_runtime PUBLIC src)
 # TIME ATTACK ghosts run their machine on a thread of their own (frontend/ghost.h).
 find_package(Threads REQUIRED)
 target_link_libraries(chaotix_runtime PUBLIC chaotix_cpu Threads::Threads)
+# Netplay (issue #46) talks UDP through Winsock on Windows (net/udp_socket.cpp).
+if(WIN32)
+    target_link_libraries(chaotix_runtime PUBLIC ws2_32)
+endif()
 # Save states record the version that wrote them (runtime/save_state.h).
 set_source_files_properties(src/runtime/save_state.cpp PROPERTIES
     COMPILE_DEFINITIONS CHAOTIX_VERSION_STRING="${PROJECT_VERSION}")
@@ -135,7 +145,7 @@ if(CHAOTIX_GENERATED_SOURCES)
 endif()
 
 # Headless runner: deterministic frame execution, screenshots, validation.
-add_executable(chaotix_headless src/frontend/headless_main.cpp)
+add_executable(chaotix_headless src/frontend/headless_main.cpp src/frontend/netplay_headless.cpp)
 target_link_libraries(chaotix_headless PRIVATE chaotix_game)
 chaotix_set_warnings(chaotix_headless)
 

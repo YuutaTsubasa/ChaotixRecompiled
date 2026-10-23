@@ -20,6 +20,9 @@ public:
     template <class A> void state_io(A& a) {
         a(tone_); a(vol_); a(noise_); a(latch_); a(counter_); a(out_); a(lfsr_); a(div_); a(last_);
     }
+    // The last output sample: after the gains, so sound only (netplay leaves
+    // it out of the states it compares, savestate::output_only_ranges).
+    const int16_t* output_sample() const { return &last_; }
 
 private:
     uint16_t tone_[3] = {0, 0, 0};
