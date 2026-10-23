@@ -126,6 +126,13 @@ struct Config {
     // (1..kStateSlots).
     bool rewind = rewind_default();
     int state_slot = 1;
+    // [Lobby] Lobby shortcuts (issue #44, runtime/lobby.h): in story mode,
+    // the partner (a character id, -1 the Combi Catcher's) and the time of
+    // day (0 MORNING .. 3 NIGHT, -1 the game's own) each time the game
+    // starts the lobby or an attraction. Off: the game as it was.
+    bool lobby_shortcuts = false;
+    int lobby_partner = -1;
+    int lobby_time = -1;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

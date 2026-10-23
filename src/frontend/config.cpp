@@ -160,6 +160,10 @@ bool Config::load(const std::string& path) {
         } else if (section == "Extras") {
             if (k == "Rewind") rewind = parse_bool(v, rewind);
             else if (k == "StateSlot") state_slot = std::clamp(std::atoi(v.c_str()), 1, kStateSlots);
+        } else if (section == "Lobby") {
+            if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
+            else if (k == "Partner") lobby_partner = std::clamp(std::atoi(v.c_str()), -1, 7);
+            else if (k == "Time") lobby_time = std::clamp(std::atoi(v.c_str()), -1, 3);
         } else if (section == "TimeAttack") {
             if (k == "Place") ta_place = std::atoi(v.c_str());
             else if (k == "Level") ta_level = std::atoi(v.c_str());
@@ -253,6 +257,11 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Rewind = %s\n# The save state slot quick save and quick load use, 1-%d (States/ in this folder)\n",
                  rewind ? "true" : "false", kStateSlots);
     std::fprintf(f, "StateSlot = %d\n", state_slot);
+    std::fprintf(f, "\n[Lobby]\n# Story mode: choose the partner and the time of day instead of the Combi Catcher and the clock.\n");
+    std::fprintf(f, "# Partner: -1 the catcher's, else 0 Mighty 2 Knuckles 3 Charmy 4 Vector 5 Bomb 6 Heavy 7 Espio.\n");
+    std::fprintf(f, "# Time: -1 the game's own, else 0 morning 1 day 2 sunset 3 night.\n");
+    std::fprintf(f, "Shortcuts = %s\nPartner = %d\nTime = %d\n", lobby_shortcuts ? "true" : "false", lobby_partner,
+                 lobby_time);
     std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");

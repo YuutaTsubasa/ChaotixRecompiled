@@ -50,6 +50,7 @@ add_library(chaotix_runtime STATIC
     src/runtime/system.cpp
     src/runtime/patches.cpp
     src/runtime/stage_select.cpp
+    src/runtime/lobby.cpp
     src/runtime/md_bus.cpp
     src/runtime/sh2_bus.cpp
     src/runtime/sh2_onchip.cpp

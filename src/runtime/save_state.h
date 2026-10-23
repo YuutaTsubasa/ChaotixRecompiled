@@ -14,7 +14,9 @@
 //  - the host's resources and settings that are not hardware: tile and
 //    sprite replacements, character colours, the sprite recorder, tooling
 //    hooks, executors, input, volume gains, which music the host replaces,
-//    audio output not yet played, the vestigial PWM sample log.
+//    audio output not yet played, the vestigial PWM sample log, and the
+//    lobby shortcuts' choice (lobby_partner/lobby_time), which nothing
+//    latches: the app gives it again before every frame.
 //  - the recompiled code's SH-2 validation epochs: a load moves them on to a
 //    value no validation has seen, so code in SDRAM is checked again
 //    (game/recomp_dispatch.cpp caches results by epoch).

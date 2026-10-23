@@ -1,5 +1,6 @@
 // Runtime game patches (see patches.h).
 #include "runtime/patches.h"
+#include "runtime/lobby.h"
 #include "runtime/system.h"
 #include <algorithm>
 #include <cmath>
@@ -97,7 +98,11 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         if (m->stage_pending) {
             m->stage_pending = false;
             stage_select::apply(*m, m->stage_request);
+            return;
         }
+        // Issue #44: the partner and time of day the player chose, put in
+        // place before the lobby or an attraction loads (runtime/lobby.h).
+        lobby::apply(*m);
         return;
     case kRingCullLo:
     case kRingCullHi:

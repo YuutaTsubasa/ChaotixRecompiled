@@ -44,14 +44,14 @@ bool Menu::is_list_page(Page p) {
     return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys ||
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
-           p == Page::Input || p == Page::Extras;
+           p == Page::Input || p == Page::Extras || p == Page::Lobby;
 }
 
 // Where BACK and Escape go from a page below another one.
 Menu::Page Menu::parent_of(Page p) {
     switch (p) {
     case Page::Video: case Page::Sound: case Page::Input: case Page::Extras: return Page::Options;
-    case Page::Cheats: return Page::Extras;
+    case Page::Cheats: case Page::Lobby: return Page::Extras;
     case Page::Keys: case Page::StateKeys: return Page::Controls;
     default: return Page::Closed;
     }
@@ -78,6 +78,7 @@ void Menu::set_page(Page p) {
     else if (p == Page::StateKeys) build_state_keys();
     else if (p == Page::TimeAttack) build_time_attack();
     else if (p == Page::Cheats) build_cheats();
+    else if (p == Page::Lobby) build_lobby();
     else items_.clear();
 }
 
@@ -93,6 +94,7 @@ bool Menu::show_page(const std::string& name) {
     if (name == "front") set_page(Page::Front);
     else if (name == "timeattack") set_page(Page::TimeAttack);
     else if (name == "cheats") set_page(Page::Cheats);
+    else if (name == "lobby") set_page(Page::Lobby);
     else if (name == "controls") set_page(Page::Controls);
     else if (name == "keys1" || name == "keys2" || name == "pad1" || name == "pad2") {
         keys_pad_ = name.rfind("pad", 0) == 0;
@@ -128,6 +130,7 @@ std::string Menu::page_name() const {
     case Page::Cheats: return "cheats";
     case Page::States: return "states";
     case Page::StateKeys: return "statekeys";
+    case Page::Lobby: return "lobby";
     default: return "";
     }
 }
@@ -695,6 +698,11 @@ void Menu::build_extras() {
     items_.push_back({"CHEATS", [c] { return c->cheats.empty() && c->cheat_codes.empty() ? std::string("OFF") : std::string("ON"); },
                       [this](int step) { if (step == 0) set_page(Page::Cheats); }});
     items_.back().pressed = true;
+    // Issue #44: a page of its own, as CHEATS is, so this one stays short.
+    items_.push_back({"LOBBY SHORTCUTS", [c] { return on_off(c->lobby_shortcuts); },
+                      [this](int step) { if (step == 0) set_page(Page::Lobby); },
+                      "pick your partner and the time of day"});
+    items_.back().pressed = true;
     if (hooks_.share_mods_folder) {
         Item mods{"MODS FOLDER",
                   [this] { return hooks_.mods_folder && !hooks_.mods_folder().empty() ? std::string("SHARED")
@@ -784,6 +792,53 @@ void Menu::build_cheats() {
     Item note{"NO AWARDS OR RECORDS WHILE ON", {}, {}};
     note.read_only = true;
     items_.push_back(std::move(note));
+    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
+}
+
+// Issue #44 (runtime/lobby.h): in story mode, the partner and the time of
+// day, put in place each time the game starts WORLD ENTRANCE or one of the
+// five attractions. CATCHER and GAME leave the choice to the game. Reachable
+// from the pause menu too, so it can be changed while walking the lobby.
+void Menu::build_lobby() {
+    using namespace stage_select;
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    std::vector<std::string> names = characters_;
+    if (names.size() != size_t(kCharacterCount)) names.assign(std::begin(kCharacters), std::end(kCharacters));
+    items_.push_back({"SHORTCUTS", [c] { return on_off(c->lobby_shortcuts); },
+                      [c](int s) { if (s) c->lobby_shortcuts = !c->lobby_shortcuts; },
+                      "story mode, not TIME ATTACK"});
+    // -1 is the catcher; the gap in the game's table (slot 1) is skipped
+    // while it has only the placeholder for a name, as TIME ATTACK does.
+    items_.push_back({"PARTNER",
+                      [c, names] {
+                          return c->lobby_partner < 0 || c->lobby_partner >= kCharacterCount
+                                     ? std::string("CATCHER")
+                                     : names[size_t(c->lobby_partner)];
+                      },
+                      [c, names](int s) {
+                          if (!s) return;
+                          for (int i = 0; i <= kCharacterCount; ++i) {
+                              c->lobby_partner += s;
+                              if (c->lobby_partner < -1) c->lobby_partner = kCharacterCount - 1;
+                              if (c->lobby_partner >= kCharacterCount) c->lobby_partner = -1;
+                              if (c->lobby_partner < 0 || !is_placeholder_name(names[size_t(c->lobby_partner)])) return;
+                          }
+                      },
+                      "your own character keeps the catcher's"});
+    items_.push_back({"TIME OF DAY",
+                      [c] {
+                          return c->lobby_time < 0 || c->lobby_time >= kTimeCount ? std::string("GAME")
+                                                                                 : std::string(kTimes[c->lobby_time]);
+                      },
+                      [c](int s) {
+                          if (!s) return;
+                          int t = c->lobby_time + 1 + s;  // -1..3 as 0..4
+                          t = (t + kTimeCount + 1) % (kTimeCount + 1);
+                          c->lobby_time = t - 1;
+                      },
+                      "GAME: it moves on every second level"});
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
 }
 

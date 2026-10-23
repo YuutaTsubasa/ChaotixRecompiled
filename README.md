@@ -129,7 +129,7 @@ so nothing is extracted or shipped.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen),
 SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad) and EXTRAS (cheats,
-the menu's look, awards, and on Android the Mods folder).
+lobby shortcuts, the menu's look, awards, and on Android the Mods folder).
 
 The menu is written in the game's own font -- the white digits and shaded
 yellow capitals of its TRAINING and DATA LOAD screens -- and shows the game's
@@ -294,6 +294,26 @@ supported: they patch the ROM's instructions, which the recompiled code does
 not read. Achievements and time attack records pause while any cheat is on.
 See [docs/CHEATS.md](docs/CHEATS.md).
 
+## Lobby shortcuts
+
+In story mode the game picks your partner (the Combi Catcher in WORLD
+ENTRANCE) and the time of day (it moves on every second level). OPTIONS >
+EXTRAS > LOBBY SHORTCUTS lets you pick them instead, also from the pause menu
+while you walk the lobby:
+
+| Field | What it does |
+| --- | --- |
+| SHORTCUTS | OFF (the default) is the game as it was |
+| PARTNER | CATCHER, or Mighty, Knuckles, Charmy Bee, Vector, Bomb, Heavy or Espio |
+| TIME OF DAY | GAME, or Morning, Day, Sunset, Night |
+
+The choice is put into the game each time it starts the lobby or one of the
+five attractions, so the next one you enter has them. Both are things the
+game itself produces, and your progress saves into your DATA slot as usual.
+Choosing your own character as the partner keeps the catcher's. TIME ATTACK
+has its own choices and ignores these. See
+[docs/LOBBY_SHORTCUTS.md](docs/LOBBY_SHORTCUTS.md).
+
 ## Volume and touch controls
 
 OPTIONS > SOUND has VOLUME (everything), MUSIC and EFFECTS. The sound driver's sound
@@ -408,7 +428,8 @@ you have the right to use, please.
   asks the game to start a level the way the front end's TIME ATTACK does, and
   `--replay-input` plays back a session the program recorded with
   `--record-input`, so that something only a person can do — finishing a level,
-  say — can be studied here as often as needed.
+  say — can be studied here as often as needed. `--lobby-partner ID` and
+  `--lobby-time 0-3` stand in for the lobby shortcuts' choices.
 - `chaotix_headless --save-state FRAME:FILE` writes a save state after that
   frame and `--load-state FILE` starts from one (the run then goes on to
   `--frames`); `--state-hash-every N` prints a fingerprint of the whole

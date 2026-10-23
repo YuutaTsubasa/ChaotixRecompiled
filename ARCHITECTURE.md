@@ -242,7 +242,7 @@ Machine（simulation）                                   Platform（SDL3）
 | 特殊關卡結算畫面、獎勵關卡 | 兩者都由特殊關卡的同一套 SH-2 多邊形程式繪製，但用整個畫面的矩形（0/319/0/223）。結算畫面：主 SH-2 閒置時每個 vblank 呼叫 `0x06007640`，畫 `0x06007688` 的固定 2D 多邊形表（背景多邊形都碰到 x = 0 或 319）。獎勵關卡：隧道是 MD plane A 的同心圓圖（只到 4:3 邊緣，色盤循環），道具與方塊側面由開機碼 `0x06000CD0` 以中心 X 160（`0x06000CE6` 的 `MOV #-96,R10`）繪製。 | 同特殊關卡的機制（矩形 [0, 319 + 2C]、多邊形像素移回 C）。結算畫面：表內頂點 x + C，邊緣頂點推到加寬後的邊緣；只在加寬的特殊關卡之後才判定。獎勵關卡：中心改為 160 + C，該處理常式呼叫的縮放 blit 由 SH-2 hook 把 X 移回；邊界的同心圓由畫面本身量出的「半徑→色號」表延伸（`Vdp::radial_lut`）。詳見 `docs/ISSUE_38_BONUS_STAGE.md`（issue #38、#39）。 |
 | 關卡邊界 | 鏡頭夾制（上）讓邊界通常落在關卡內。房間比畫面窄時鏡頭置中，邊界會超出該房間的鏡頭範圍，但那裡仍是引擎從關卡配置串流進來的圖塊。大廳（WORLD ENTRANCE）例外：旁邊是室外入口等其他區域，因此大廳保持 4:3（issue #13）。 | `patches::margin_cut` 只把「關卡原點左側」（沒有配置資料）的部分塗黑。 |
 | HUD | 由 32X 繪於固定位置 | 保持在原生 4:3 區域內（未移動）。 |
-| 遊戲模式分派器（68K `0x3262`） | `move.w $FFDFDE,d0; andi.w #$78,d0; jsr $883270(pc,d0.w)` — 16 個模式各一格 `jmp`。每個模式處理常式自己跑迴圈，只有在該場景結束時才回到這裡，因此這是遊戲在兩個場景之間唯一會經過的點。 | 不改變執行；只在此處套用 host 要求的關卡（TIME ATTACK，見 §8.3）。因為直譯器與生成碼在同一條指令前呼叫同一個 hook，lockstep 仍 bit-identical（測試 `stage_select_starts_the_chosen_level`）。 |
+| 遊戲模式分派器（68K `0x3262`） | `move.w $FFDFDE,d0; andi.w #$78,d0; jsr $883270(pc,d0.w)` — 16 個模式各一格 `jmp`。每個模式處理常式自己跑迴圈，只有在該場景結束時才回到這裡，因此這是遊戲在兩個場景之間唯一會經過的點。 | 不改變執行；只在此處套用 host 要求的關卡（TIME ATTACK，見 §8.3），以及開啟 LOBBY SHORTCUTS 時玩家選的搭檔（`$FFE03A`）與時段（`$FFDFF6`）（issue #44，`runtime/lobby.{h,cpp}`，見 docs/LOBBY_SHORTCUTS.md）。因為直譯器與生成碼在同一條指令前呼叫同一個 hook，lockstep 仍 bit-identical（測試 `stage_select_starts_the_chosen_level`）。 |
 
 **限制 / 已知差異**
 - E 上限 64（plane 環狀緩衝兩側至少保留 16 px 餘裕）。21:9 以上會在外側 pillarbox。

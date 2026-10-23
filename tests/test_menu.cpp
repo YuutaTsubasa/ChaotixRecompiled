@@ -731,6 +731,58 @@ TEST(menu, cheats_are_switched_on_from_options) {
     CHECK(cfg.cheats.count("speed") == 0);
 }
 
+TEST(menu, lobby_shortcuts_are_set_from_extras_and_kept) {
+    // Issue #44: OPTIONS > EXTRAS > LOBBY SHORTCUTS, from the pause menu too,
+    // so the choice can be changed while walking the lobby.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK(!cfg.lobby_shortcuts);
+    CHECK_EQ(cfg.lobby_partner, -1);
+    CHECK_EQ(cfg.lobby_time, -1);
+    Menu m;
+    m.bind(cfg);
+    open_category(m, "EXTRAS");
+    CHECK(select_row(m, "LOBBY SHORTCUTS"));
+    CHECK_STR(m.selected_value(), "OFF");
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.page_name(), "lobby");
+    CHECK(select_row(m, "SHORTCUTS"));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(cfg.lobby_shortcuts);
+    CHECK(select_row(m, "PARTNER"));
+    CHECK_STR(m.selected_value(), "CATCHER");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "MIGHTY");
+    CHECK(m.on_key(SDLK_RIGHT));  // slot 1, the placeholder, is skipped
+    CHECK_EQ(cfg.lobby_partner, 2);
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_EQ(cfg.lobby_partner, -1);
+    CHECK(m.on_key(SDLK_LEFT));  // wraps to the last character
+    CHECK_STR(m.selected_value(), "ESPIO");
+    CHECK(select_row(m, "TIME OF DAY"));
+    CHECK_STR(m.selected_value(), "GAME");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "NIGHT");
+    CHECK_EQ(cfg.lobby_time, 3);
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "MORNING");
+    CHECK(m.on_key(SDLK_ESCAPE));
+    CHECK_STR(m.page_name(), "extras");
+    CHECK(select_row(m, "LOBBY SHORTCUTS"));
+    CHECK_STR(m.selected_value(), "ON");
+    // Kept across a restart.
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_lobby_test.ini").string();
+    CHECK(cfg.save(path));
+    Config back;
+    CHECK(back.load(path));
+    CHECK(back.lobby_shortcuts);
+    CHECK_EQ(back.lobby_partner, 7);
+    CHECK_EQ(back.lobby_time, 0);
+    std::filesystem::remove(path);
+}
+
 TEST(menu, options_is_split_into_pages_that_fit) {
     // OPTIONS had grown to about twenty rows and ran off a phone's screen; it
     // is now a list of categories, each a short page that steps back to it.

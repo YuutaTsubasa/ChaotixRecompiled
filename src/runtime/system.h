@@ -199,6 +199,13 @@ public:
     // dispatcher, the one place the game passes through between scenes.
     stage_select::Request stage_request;
     bool stage_pending = false;
+    // Lobby shortcuts (issue #44, runtime/lobby.h): the partner (character
+    // id) and time of day (0-3) the player chose, put into the game by the
+    // same hook each time it starts the lobby or an attraction; -1 leaves
+    // the game's own. A setting like the widescreen ones: machines compared
+    // in lockstep must have the same values.
+    int lobby_partner = -1;
+    int lobby_time = -1;
     // Music replaced by files (audio/music_mods.h): which music ids the host
     // plays itself, and the music requests and commands the game has made
     // since the host last drained them (patches.h, kSoundRequest).

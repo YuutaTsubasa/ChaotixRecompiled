@@ -180,6 +180,13 @@ struct App {
         bool six_button = false;
     };
     std::vector<StageEvent> recorded_stages;
+    // Lobby shortcuts (issue #44) change what the game does too: each change
+    // of what the machine is given, from the frame it took effect.
+    struct LobbyEvent {
+        uint64_t frame;
+        int partner, time;
+    };
+    std::vector<LobbyEvent> recorded_lobby;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
@@ -263,6 +270,8 @@ void write_recording(const App& app, const std::string& path, int result_frames 
                      e.request.place, e.request.level, e.request.attime, e.request.player,
                      e.request.combi, int(e.request.two_players), e.wide, e.wide_bottom,
                      int(e.six_button));
+    for (const auto& e : app.recorded_lobby)
+        std::fprintf(f, "lobby %llu %d %d\n", (unsigned long long)e.frame, e.partner, e.time);
     for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
     std::fclose(f);
     LOGI("app", "session recorded to %s (%zu frames)", path.c_str(), app.recorded.size());
@@ -730,6 +739,18 @@ void apply_cheats(App& app) {
     app.cheating = !writes.empty();
     if (app.cheating && app.ta.running) app.ta_cheated = true;
     cheats::apply(*app.m, writes);
+}
+
+// Issue #44: the lobby shortcuts, set before each frame like the cheats. A
+// TIME ATTACK run picks its own characters and time, so they are off for it.
+void apply_lobby_shortcuts(App& app) {
+    const bool on = app.cfg.lobby_shortcuts && !app.ta.running;
+    const int partner = on ? app.cfg.lobby_partner : -1;
+    const int time = on ? app.cfg.lobby_time : -1;
+    if (partner == app.m->lobby_partner && time == app.m->lobby_time) return;
+    app.m->lobby_partner = partner;
+    app.m->lobby_time = time;
+    app.recorded_lobby.push_back({app.m->frame_count, partner, time});
 }
 
 // Settings and the cartridge save, written now. Android ends an app without
@@ -1879,6 +1900,7 @@ int main(int argc, char** argv) {
             app.recorded.push_back(uint32_t(uint16_t(buttons | scripted)) | uint32_t(raw2) << 16);
             app.m->input.pad[1] = raw2;
             apply_cheats(app);
+            apply_lobby_shortcuts(app);
             audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
                                                float(app.cfg.effects_volume) / 100.0f);
             const size_t first_sample = app.m->audio_out.size();

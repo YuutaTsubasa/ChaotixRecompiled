@@ -6,6 +6,7 @@
 //                    [--interp]   (force interpreter even if generated code exists)
 //                    [--save-state FRAME:FILE] [--load-state FILE] [--state-hash-every N]
 //                    [--rewind INTERVAL[:BUDGET_MB]]   (issue #40, runtime/save_state.h)
+//                    [--lobby-partner ID] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
 #include "audio/music_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
@@ -426,6 +427,12 @@ int main(int argc, char** argv) {
     // stepped back to and checked against the state it was taken from.
     int rewind_interval = 0;
     size_t rewind_budget_mb = 64;
+    // Lobby shortcuts (issue #44, runtime/lobby.h): --lobby-partner ID (a
+    // character id, as FFE038/4) and --lobby-time T (0 MORNING .. 3 NIGHT)
+    // stand in for the choices made on OPTIONS > EXTRAS > LOBBY. A recorded
+    // session carries its own ("lobby FRAME PARTNER TIME" lines).
+    int lobby_partner = -1, lobby_time = -1;
+    std::map<uint64_t, std::pair<int, int>> replay_lobby;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -575,6 +582,8 @@ int main(int argc, char** argv) {
         else if (a == "--three-button") six_button = 0;
         else if (a == "--audio") { want_audio = true; }
         else if (a == "--sram") sram_path = next();
+        else if (a == "--lobby-partner") lobby_partner = std::atoi(next().c_str());
+        else if (a == "--lobby-time") lobby_time = std::atoi(next().c_str());
         else if (a == "--peek-every") {
             // N:ADDR:BYTES, ADDR in hex: prints those 68K work RAM bytes every
             // N frames (tests measure what the game did, a player's speed say).
@@ -625,6 +634,14 @@ int main(int argc, char** argv) {
                 if (!std::strncmp(line, "result ", 7)) {
                     replay_result = std::atoi(line + 7);
                     continue;
+                }
+                {
+                    unsigned long long lf = 0;
+                    int lp = -1, lt = -1;
+                    if (std::sscanf(line, "lobby %llu %d %d", &lf, &lp, &lt) == 3) {
+                        replay_lobby[lf] = {lp, lt};
+                        continue;
+                    }
                 }
                 unsigned long long fr = 0;
                 unsigned pl = 0, lv = 0, at = 0, py = 0, cb = 0;
@@ -848,6 +865,12 @@ int main(int argc, char** argv) {
         nat->reset();
         centre_compare = true;
     }
+    // Every machine alike: the choice changes what the game does.
+    auto set_lobby = [&](int partner, int time) {
+        for (Machine* x : {m.get(), ref.get(), nat.get()})
+            if (x) { x->lobby_partner = partner; x->lobby_time = time; }
+    };
+    set_lobby(lobby_partner, lobby_time);
     uint64_t start_frame = 0;
     if (!load_state_path.empty()) {
         std::vector<uint8_t> file;
@@ -965,6 +988,8 @@ int main(int argc, char** argv) {
             // A recorded session drives everything: its pads replace the
             // scripted ones, and its stage requests are applied where they
             // were made.
+            auto lob = replay_lobby.find(f);
+            if (lob != replay_lobby.end()) set_lobby(lob->second.first, lob->second.second);
             auto it = replay_stages.find(f);
             if (it != replay_stages.end()) {
                 const ReplayStage& q = it->second;

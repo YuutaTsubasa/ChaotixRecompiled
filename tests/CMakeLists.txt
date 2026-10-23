@@ -13,6 +13,7 @@ add_executable(chaotix_tests
     test_setup.cpp
     test_achievements.cpp
     test_stage_select.cpp
+    test_lobby.cpp
     test_music_mods.cpp
     test_cheats.cpp
     test_volumes.cpp
@@ -473,6 +474,55 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --poke 1000:E01C:00 --poke 1000:E01D:00)
     set_tests_properties(lockstep_a_finished_level_saves_to_its_data_slot PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "save RAM changed on 1 frames, the last at frame 4639.*lockstep: 4700 frames bit-identical")
+
+    # Lobby shortcuts (issue #44, runtime/lobby.h, docs/LOBBY_SHORTCUTS.md).
+    # WORLD ENTRANCE as story mode leaves it after INTRODUCTION: DATA 1
+    # (FFE01C = 0) and every attraction at level 1 (FFDFFE-FFE002 = 1, as
+    # $890F28 sets them). The stage request only stands in for the walk through
+    # INTRODUCTION; from there it is the game's own lobby, walked into
+    # BOTANIC BASE. With VECTOR and NIGHT chosen the level starts with them --
+    # partner FFE03A = 4 x 4, FFDFF6 = 6 -- the DATA slot is left alone, and
+    # the interpreter and the recompiled code agree.
+    set(LOBBY_WALK --stage 300:7:0:0:2:7:0 --press 600:right:650 --press 1270:right:1130
+                   --poke 500:E01C:00 --poke 500:E01D:00 --poke 500:DFFE:01 --poke 500:DFFF:01
+                   --poke 500:E000:01 --poke 500:E001:01 --poke 500:E002:01)
+    add_test(NAME lobby_shortcuts_pick_the_partner_and_the_time
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --lockstep ${LOBBY_WALK}
+                --lobby-partner 4 --lobby-time 3
+                --peek-every 2400:E038:4 --peek-every 2400:DFF2:6 --peek-every 2400:E01C:2)
+    set_tests_properties(lobby_shortcuts_pick_the_partner_and_the_time PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION
+        "peek 2400 E038 00080010.*peek 2400 DFF2 000000010006.*peek 2400 E01C 0000.*lockstep: 2400 frames bit-identical")
+    # Off, the same walk and the Combi Catcher (Down on its box: the claw
+    # comes up with HEAVY, FFE03A = 6 x 4) give exactly the frames they gave
+    # before the shortcuts existed.
+    add_test(NAME lobby_shortcuts_off_leave_the_walk_as_it_was
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2600 ${LOBBY_WALK}
+                --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/lobby_walk_every50.txt)
+    add_test(NAME lobby_shortcuts_off_leave_the_combi_catcher_as_it_was
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3300 --stage 300:7:0:0:2:7:0
+                --press 600:right:200 --press 1100:left:35 --press 1300:down:10
+                --peek-every 3300:E038:4
+                --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/lobby_catcher_every50.txt)
+    set_tests_properties(lobby_shortcuts_off_leave_the_walk_as_it_was
+        lobby_shortcuts_off_leave_the_combi_catcher_as_it_was PROPERTIES TIMEOUT 600
+        FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    set_tests_properties(lobby_shortcuts_off_leave_the_combi_catcher_as_it_was PROPERTIES
+        PASS_REGULAR_EXPRESSION "peek 3300 E038 00080018")
+    # A level finished with the shortcuts on saves into its DATA slot exactly
+    # as before (the same frame, and the slot's record in work RAM at FFFA04
+    # byte for byte what the same run writes with them off), and the lobby it
+    # hands over to then starts with
+    # the choice: partner VECTOR, and DAY with the game's half step kept
+    # (FFDFF6 7 -> 3).
+    add_test(NAME lobby_shortcuts_a_finished_level_still_saves_to_its_data_slot
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4800 --lockstep
+                --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt
+                --poke 1000:E01C:00 --poke 1000:E01D:00 --lobby-partner 4 --lobby-time 1
+                --peek-every 4700:E038:4 --peek-every 4700:DFF2:6 --peek-every 4800:FA00:36)
+    set_tests_properties(lobby_shortcuts_a_finished_level_still_saves_to_its_data_slot PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION
+        "peek 4700 E038 00140010.*peek 4700 DFF2 000700000003.*peek 4800 FA00 0000C69E4000BC00000037DC000008A80000.*save RAM changed on 1 frames, the last at frame 4639.*lockstep: 4800 frames bit-identical")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)
