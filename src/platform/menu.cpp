@@ -1,4 +1,5 @@
 #include "platform/menu.h"
+#include "runtime/tether.h"
 
 #include <algorithm>
 #include <cmath>
@@ -47,7 +48,7 @@ bool Menu::is_list_page(Page p) {
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
            p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo ||
-           p == Page::Music || p == Page::Speedrun;
+           p == Page::Music || p == Page::Speedrun || p == Page::Tether;
 }
 
 // Where BACK and Escape go from a page below another one.
@@ -55,6 +56,7 @@ Menu::Page Menu::parent_of(Page p) {
     switch (p) {
     case Page::Video: case Page::Sound: case Page::Input: case Page::Extras: return Page::Options;
     case Page::Cheats: case Page::Lobby: return Page::Extras;
+    case Page::Tether: return Page::Options;
     case Page::Speedrun: return Page::Extras;
     case Page::Mods: return Page::Extras;
     case Page::ModInfo: return Page::Mods;
@@ -88,6 +90,7 @@ void Menu::set_page(Page p) {
     else if (p == Page::TimeAttack) build_time_attack();
     else if (p == Page::Cheats) build_cheats();
     else if (p == Page::Lobby) build_lobby();
+    else if (p == Page::Tether) build_tether();
     else if (p == Page::Speedrun) build_speedrun();
     else if (p == Page::Mods) {
         build_mods();
@@ -125,6 +128,7 @@ bool Menu::show_page(const std::string& name) {
     else if (name == "timeattack") set_page(Page::TimeAttack);
     else if (name == "cheats") set_page(Page::Cheats);
     else if (name == "lobby") set_page(Page::Lobby);
+    else if (name == "gameplay") set_page(Page::Tether);
     else if (name == "speedrun") set_page(Page::Speedrun);
     else if (name == "controls") set_page(Page::Controls);
     else if (name == "keys1" || name == "keys2" || name == "pad1" || name == "pad2") {
@@ -164,6 +168,7 @@ std::string Menu::page_name() const {
     case Page::States: return "states";
     case Page::StateKeys: return "statekeys";
     case Page::Lobby: return "lobby";
+    case Page::Tether: return "gameplay";
     case Page::Speedrun: return "speedrun";
     case Page::Mods: return "mods";
     case Page::ModInfo: return "modinfo";
@@ -639,6 +644,9 @@ void Menu::build_options() {
     items_.push_back({"SOUND", {}, [this](int) { set_page(Page::Sound); }});
     items_.push_back({"INPUT", {}, [this](int) { set_page(Page::Input); }});
     items_.push_back({"EXTRAS", {}, [this](int) { set_page(Page::Extras); }});
+    // Issue #43: how the game plays. A category of its own, as EXTRAS is as
+    // long as a phone's screen allows.
+    items_.push_back({"GAMEPLAY", {}, [this](int) { set_page(Page::Tether); }});
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
@@ -902,6 +910,28 @@ void Menu::build_lobby() {
                       },
                       "GAME: it moves on every second level"});
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
+}
+
+// OPTIONS > GAMEPLAY. Issue #43 (runtime/tether.h, docs/RING_TETHER.md): the
+// Combi Ring's strength and what the partner does, in the five attractions'
+// levels. Off in TIME ATTACK. Reachable from the pause menu too, so it can be
+// tried out in a level; a change applies from the next frame.
+void Menu::build_tether() {
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    auto name = [](const char* const* names, int count, int v) {
+        return std::string(names[std::clamp(v, 0, count - 1)]);
+    };
+    items_.push_back({"TETHER",
+                      [c, name] { return name(tether::kStrengthNames, tether::kStrengthCount, c->tether_strength); },
+                      [c](int s) { if (s) c->tether_strength = (c->tether_strength + s + tether::kStrengthCount) % tether::kStrengthCount; },
+                      "how hard the Combi Ring pulls"});
+    items_.push_back({"PARTNER",
+                      [c, name] { return name(tether::kPartnerNames, tether::kPartnerCount, c->tether_partner); },
+                      [c](int s) { if (s) c->tether_partner = (c->tether_partner + s + tether::kPartnerCount) % tether::kPartnerCount; },
+                      "1 player. SOLO: hold CALL to bring back"});
+    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Options); }});
 }
 
 // Issue #47 (frontend/speedrun.h, docs/SPEEDRUN.md): the overlays, where they

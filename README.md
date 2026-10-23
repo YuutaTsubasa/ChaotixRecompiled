@@ -129,8 +129,9 @@ and dimmed. The art is the game drawing its own title screen, from your ROM,
 so nothing is extracted or shipped.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen),
-SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad) and EXTRAS (cheats,
-lobby shortcuts, the menu's look, awards, and MODS, the mod packs).
+SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad), EXTRAS (cheats,
+lobby shortcuts, the menu's look, awards, and MODS, the mod packs) and GAMEPLAY (the ring
+tether).
 
 The menu is written in the game's own font -- the white digits and shaded
 yellow capitals of its TRAINING and DATA LOAD screens -- and shows the game's
@@ -347,6 +348,26 @@ goes back to its title screen. `tools/livesplit/ChaotixRecompiled.asl` is a
 LiveSplit auto-splitter that follows the same timer and gives LiveSplit the
 game time. See [docs/SPEEDRUN.md](docs/SPEEDRUN.md) for the definitions, the
 memory block auto-splitters read and the game's RAM addresses.
+
+## Ring tether
+
+The Combi Ring that joins the two characters can be changed in OPTIONS >
+GAMEPLAY (also from the pause menu), in the five attractions' levels:
+
+| Field | What it does |
+| --- | --- |
+| TETHER | NORMAL (the game as it is), WEAK (half the pull) or STRONG (half as much again) |
+| PARTNER | NORMAL; FOLLOW: the ring never holds you back -- it only pulls your partner after you, unless you hold B (HOLD), so the slingshot still works; SOLO: no partner. One player only |
+
+SOLO sends your partner away the way the game does when you are hit
+without rings, and keeps it away: no ring, the camera on you alone, and a
+hit without rings ends the run, as for Sonic. The lifts that wait for both
+characters take you alone. If anything else needs two, hold CALL (A) for
+half a second: your partner comes back for the rest of that life.
+
+TIME ATTACK always plays the original tether, and achievements are not
+earned while any of these is changed. See
+[docs/RING_TETHER.md](docs/RING_TETHER.md) for how the tether works.
 
 ## Volume and touch controls
 
