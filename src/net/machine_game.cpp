@@ -180,6 +180,12 @@ bool MachineGame::write_snapshot_as_state(const std::vector<uint8_t>& snapshot, 
     return savestate::write_file(path, file);
 }
 
-uint64_t snapshot_hash(const std::vector<uint8_t>& snapshot) { return hash_bytes(snapshot.data(), snapshot.size()); }
+uint64_t MachineGame::hash(const std::vector<uint8_t>& snapshot) {
+    static const std::vector<std::pair<size_t, size_t>> skip = savestate::output_only_ranges(0);
+    scratch_ = snapshot;
+    for (const auto& [at, n] : skip)
+        if (at + n <= scratch_.size()) std::memset(scratch_.data() + at, 0, n);
+    return hash_bytes(scratch_.data(), scratch_.size());
+}
 
 } // namespace chaotix::net

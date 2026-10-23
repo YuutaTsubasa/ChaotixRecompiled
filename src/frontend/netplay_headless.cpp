@@ -14,6 +14,7 @@
 // from the same state and fed the confirmed pads of both players.
 #include "frontend/netplay_headless.h"
 
+#include "audio/volumes.h"
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
 #include "net/loopback.h"
@@ -57,6 +58,7 @@ struct Options {
     uint32_t fuzz = 1;
     uint32_t net_seed = 1;
     int64_t inject_desync = -1;  // the client's machine is changed at this session frame
+    int client_volume = -1;      // the client's music level, percent (-1: as the host's)
     std::string dump_dir = ".";
     int wide = 0;
     double timeout_s = 120;
@@ -186,6 +188,12 @@ void prepare(const Options& o, Peer& p, bool host) {
         mp->audio_out.clear();
         mp->music_events.clear();
     };
+    if (!host && o.client_volume >= 0) {
+        // The second player listens at other music and effects levels: the
+        // games must not differ for it (the levels shape only the sound).
+        const float v = float(o.client_volume) / 100.0f;
+        p.game->before_frame = [mp, v](bool) { audio::set_music_and_effect_levels(*mp, v, v * 0.5f); };
+    }
     if (!host && o.inject_desync >= 0) {
         // The client's machine goes its own way at that frame, on every run
         // of it (a rollback re-runs it too): a byte of work RAM changed.
@@ -260,7 +268,7 @@ bool reference(const Options& o, const Game& from, const std::vector<std::array<
     }
     std::vector<uint8_t> snap;
     g.save(snap);
-    out = net::snapshot_hash(snap);
+    out = g.hash(snap);
     return true;
 }
 
@@ -493,6 +501,7 @@ int netplay_headless_main(int argc, char** argv) {
         else if (a == "--netplay-seed") o.net_seed = uint32_t(std::strtoul(next().c_str(), nullptr, 10));
         else if (a == "--netplay-inject-desync") o.inject_desync = std::atoll(next().c_str());
         else if (a == "--netplay-dump") o.dump_dir = next();
+        else if (a == "--netplay-client-volume") o.client_volume = std::atoi(next().c_str());
         else if (a == "--netplay-timeout") o.timeout_s = std::atof(next().c_str());
         else if (a == "--wide") o.wide = std::atoi(next().c_str());
         else if (a == "--interp") o.interp = true;

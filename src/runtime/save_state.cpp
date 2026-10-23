@@ -52,6 +52,17 @@ struct Counter {
     }
 };
 
+// Counts as Counter does, and notes the offset of the fields asked for.
+struct Locator : Counter {
+    const void* targets[3] = {};
+    std::vector<std::pair<size_t, size_t>> found;
+    template <class T> void operator()(const T& v) {
+        for (const void* t : targets)
+            if (static_cast<const void*>(&v) == t) found.emplace_back(n, sizeof v);
+        Counter::operator()(v);
+    }
+};
+
 struct Writer {
     uint8_t* p;
     template <class T> void operator()(const T& v) {
@@ -316,6 +327,17 @@ bool read_file(const std::string& path, std::vector<uint8_t>& bytes) {
     while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) bytes.insert(bytes.end(), buf, buf + n);
     std::fclose(f);
     return true;
+}
+
+std::vector<std::pair<size_t, size_t>> output_only_ranges(unsigned flags) {
+    // Counted as raw_size is, noting where the archive meets those fields.
+    static const auto probe = std::make_unique<Machine>();
+    Locator l;
+    l.targets[0] = probe->dc_x;
+    l.targets[1] = probe->dc_y;
+    l.targets[2] = probe->psg.output_sample();
+    transfer(l, *probe, flags & kPicture);
+    return l.found;
 }
 
 uint64_t state_hash(const Machine& m) {

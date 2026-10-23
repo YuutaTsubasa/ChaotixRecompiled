@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace chaotix {
@@ -90,6 +91,14 @@ bool read_file(const std::string& path, std::vector<uint8_t>& bytes);
 // FNV-1a over the raw state with the picture: a whole-machine fingerprint
 // for tests (chaotix_headless --state-hash-every).
 uint64_t state_hash(const Machine& m);
+
+// Where the raw state (of these flags) holds fields that only shape the
+// sound on its way out, after the host's volume levels (the output DC
+// filter, dc_x and dc_y, and the PSG's last sample): two machines that run
+// exactly the same game but
+// at different volumes differ there and nowhere else. (offset, size) pairs.
+// Netplay leaves them out of the states it compares (net/machine_game.h).
+std::vector<std::pair<size_t, size_t>> output_only_ranges(unsigned flags);
 
 } // namespace savestate
 } // namespace chaotix

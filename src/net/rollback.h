@@ -53,6 +53,9 @@ public:
     // the frame is being run again after a rollback (its picture and sound
     // were already shown once; the caller may drop its sound).
     virtual void advance(const Input pads[2], bool resimulating) = 0;
+    // The fingerprint the players compare: of everything in a snapshot that
+    // the game's future depends on (by default, all of it).
+    virtual uint64_t hash(const std::vector<uint8_t>& snapshot);
 };
 
 // A fast 64-bit hash of a snapshot (words at a time; the same on every

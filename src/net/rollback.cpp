@@ -24,6 +24,8 @@ uint64_t hash_bytes(const uint8_t* data, size_t n) {
     return h;
 }
 
+uint64_t Game::hash(const std::vector<uint8_t>& snapshot) { return hash_bytes(snapshot.data(), snapshot.size()); }
+
 Rollback::Rollback(Game& game, const RollbackConfig& cfg) : game_(game), cfg_(cfg) {
     cfg_.input_delay = std::clamp(cfg_.input_delay, 0, kMaxInputDelay);
     cfg_.max_rollback = std::max(cfg_.max_rollback, 1);
@@ -97,7 +99,7 @@ void Rollback::after_correct() {
     while (next_hash_ < current_ && next_hash_ <= done) {
         const Slot& s = slot_for(next_hash_);
         if (s.frame == next_hash_) {
-            local_hashes_[next_hash_] = hash_bytes(s.data.data(), s.data.size());
+            local_hashes_[next_hash_] = game_.hash(s.data);
             hashed_.emplace_back(next_hash_, s.data);
             while (hashed_.size() > 3) hashed_.pop_front();
             compare(next_hash_);

@@ -55,6 +55,9 @@ public:
     void save(std::vector<uint8_t>& out) override;
     void load(const std::vector<uint8_t>& in) override;
     void advance(const Input pads[2], bool resimulating) override;
+    // Leaves out the sound's output filter, which follows each player's own
+    // volume settings (savestate::output_only_ranges).
+    uint64_t hash(const std::vector<uint8_t>& snapshot) override;
     // SessionGame
     Identity identity() const override;
     std::string host_settings() const override { return settings_.encode(); }
@@ -74,10 +77,8 @@ private:
     Machine& m_;
     NetSettings settings_;
     std::vector<uint8_t> own_sram_;
+    std::vector<uint8_t> scratch_;
 };
-
-// The hash a session compares: of save()'s bytes.
-uint64_t snapshot_hash(const std::vector<uint8_t>& snapshot);
 
 } // namespace net
 } // namespace chaotix

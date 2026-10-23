@@ -47,7 +47,7 @@ public:
         ++advances;
         if (resim) ++resims;
     }
-    uint64_t hash() {
+    uint64_t fingerprint() {
         std::vector<uint8_t> b;
         save(b);
         return hash_bytes(b.data(), b.size());
@@ -91,7 +91,7 @@ uint64_t reference_hash(const Toy& start, const std::vector<std::array<Input, 2>
         const Input pads[2] = {log[f][0], log[f][1]};
         ref.advance(pads, false);
     }
-    return ref.hash();
+    return ref.fingerprint();
 }
 
 uint32_t rnd(uint32_t& s) {

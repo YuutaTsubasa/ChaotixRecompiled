@@ -177,14 +177,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     # simulated network, playing a level in two-player mode with fuzzed pads:
     # 50-100 ms each way (3-6 frames), 5% of datagrams lost; then with no
     # input delay at all, widescreen, and a worse network, so that nearly
-    # every remote pad is mispredicted at first. Both must end with the same
-    # state as each other and as a single machine fed the confirmed pads.
+    # every remote pad is mispredicted at first, and the second player at
+    # other music and effects levels (which shape only the sound). Both must
+    # end with the same state as each other and as a single machine fed the
+    # confirmed pads.
     add_test(NAME netplay_loopback_level
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --stage 300:4:2:2:2:7:1
                 --netplay-loopback 75:25:5 --netplay-fuzz 3)
     add_test(NAME netplay_loopback_no_delay_widescreen
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --stage 300:0:1:0:2:7:1 --wide 53
-                --netplay-loopback 100:40:8 --netplay-delay 0 --netplay-fuzz 11 --netplay-seed 4)
+                --netplay-loopback 100:40:8 --netplay-delay 0 --netplay-fuzz 11 --netplay-seed 4
+                --netplay-client-volume 30)
     # A divergence (a byte of the second player's work RAM changed) is caught
     # by the hashes and reported on both sides, with the states written out.
     add_test(NAME netplay_desync_is_detected

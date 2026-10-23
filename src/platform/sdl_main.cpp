@@ -2633,7 +2633,6 @@ int main(int argc, char** argv) {
             const int ran = netplay_pass(app, buttons, owned ? std::max(plan.frames, 1) : 0);
             if (owned) {
                 steps = ran;
-                app.recorded.clear();  // a session is not one player's to replay
                 if (autotest && !app.fast_forward) accumulator -= frame_ticks * std::max(plan.frames, 1);
             }
         }
