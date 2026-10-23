@@ -28,6 +28,7 @@ add_executable(chaotix_tests
     test_character_mods.cpp
     test_game_font.cpp
     test_save_state.cpp
+    test_mod_packs.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
@@ -40,6 +41,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         ${CMAKE_SOURCE_DIR}/src/platform/sdl_rom_import.cpp
         test_menu.cpp
         test_state_menu.cpp
+        test_mod_menu.cpp
         test_time_attack.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/ui.cpp
@@ -111,6 +113,14 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_character_mods.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(character_mods PROPERTIES TIMEOUT 1800)
+        # Mod packs (issue #42): two packs replacing the same sprites and
+        # tiles, made by the test, resolved by their order; a disabled one has
+        # no effect, loose files still load (above every pack), and a
+        # disabled pack's patch is not applied. Lockstep holds.
+        add_test(NAME mod_packs
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_mod_packs.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
+        set_tests_properties(mod_packs PROPERTIES TIMEOUT 1800)
         # Save states (issue #40): saved mid-level, in the special stage, in a
         # widescreen level and the widescreen bonus stage, and loaded again,
         # the game carries on with every picture and the whole machine

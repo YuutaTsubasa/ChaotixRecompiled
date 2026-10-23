@@ -8,8 +8,9 @@ changed, and taking a patch out undoes it.
 ## Using it
 
 1. Run the game once. It creates `Mods/Patches` in the user data folder (on
-   Android, `ChaotixRecompiled/Mods/Patches` once OPTIONS > EXTRAS > MODS
-   FOLDER has access; see [MUSIC_MODS.md](MUSIC_MODS.md)).
+   Android, `ChaotixRecompiled/Mods/Patches` once OPTIONS > EXTRAS > MODS >
+   MODS FOLDER has access; see [MUSIC_MODS.md](MUSIC_MODS.md)). A mod pack
+   keeps its patches in its own `Patches` folder ([MOD_PACKS.md](MOD_PACKS.md)).
 2. Put `.ips` or `.bps` files there. They are applied in name order, so
    `01_sprites.ips` comes before `02_palette.bps`.
 3. Start the game. The log lists each patch as applied or skipped, with the

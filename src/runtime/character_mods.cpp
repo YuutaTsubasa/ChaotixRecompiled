@@ -229,6 +229,16 @@ std::vector<CharacterMod> load_character_mods(const std::string& dir, std::vecto
     return mods;
 }
 
+std::vector<CharacterMod> load_character_mods(const std::vector<std::string>& dirs, std::vector<std::string>* messages) {
+    std::vector<CharacterMod> by_id(characters::kCount);
+    for (const auto& dir : dirs)
+        for (CharacterMod& m : load_character_mods(dir, messages)) by_id[size_t(m.id)] = std::move(m);
+    std::vector<CharacterMod> mods;
+    for (CharacterMod& m : by_id)
+        if (m.id >= 0) mods.push_back(std::move(m));
+    return mods;
+}
+
 namespace {
 
 // The 68K tables indexed by the character id ($8818E4 colours, $88BE58

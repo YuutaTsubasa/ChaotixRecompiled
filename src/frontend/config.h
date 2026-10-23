@@ -3,6 +3,7 @@
 #pragma once
 #include "frontend/fast_forward.h"
 #include "renderer/viewport.h"
+#include "runtime/mod_packs.h"
 #include <map>
 #include <set>
 #include <string>
@@ -53,6 +54,10 @@ struct Config {
     // Write each graphic drawn (Mega Drive tiles, 32X sprites) to
     // Mods/Textures/Dump (issue #35).
     bool dump_graphics = false;
+    // Mod packs (issue #42): their order, highest priority first, the ones
+    // turned off and whether the loose files in Mods/ count ([Mods] Order,
+    // Disabled, LooseFiles).
+    mod_packs::Order mod_order;
     // [Audio]
     bool audio = true;
     int volume = 80;  // percent: everything

@@ -122,6 +122,11 @@ bool Config::load(const std::string& path) {
         } else if (section == "Mods") {
             // DumpTiles is its name from before the 32X sprites were dumped too.
             if (k == "DumpGraphics" || k == "DumpTiles") dump_graphics = parse_bool(v, dump_graphics);
+            else if (k == "Order") mod_order.order = mod_packs::split_list(v);
+            else if (k == "Disabled") {
+                const std::vector<std::string> off = mod_packs::split_list(v);
+                mod_order.disabled = std::set<std::string>(off.begin(), off.end());
+            } else if (k == "LooseFiles") mod_order.loose = parse_bool(v, mod_order.loose);
         } else if (section == "Audio") {
             if (k == "Enabled") audio = parse_bool(v, audio);
             else if (k == "Volume") volume = std::clamp(std::atoi(v.c_str()), 0, 100);
@@ -222,7 +227,14 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "[Achievements]\n# Local achievements from assets/achievements.ini (nothing leaves this machine)\n");
     std::fprintf(f, "Enabled = %s\n\n", achievements ? "true" : "false");
     std::fprintf(f, "[Mods]\n# Write each graphic the game draws (Mega Drive tiles, 32X sprites) to Mods/Textures/Dump, for replacements\n");
-    std::fprintf(f, "DumpGraphics = %s\n\n", dump_graphics ? "true" : "false");
+    std::fprintf(f, "DumpGraphics = %s\n", dump_graphics ? "true" : "false");
+    std::fprintf(f, "# Mod packs (folders in Mods with a mod.ini, docs/MOD_PACKS.md), by folder name: their order,\n");
+    std::fprintf(f, "# highest priority first, and the ones turned off (also OPTIONS > EXTRAS > MODS). LooseFiles:\n");
+    std::fprintf(f, "# whether Mods/Textures, Mods/Music, ... are used; they always come before every pack.\n");
+    std::fprintf(f, "Order = %s\n", mod_packs::join_list(mod_order.order).c_str());
+    std::fprintf(f, "Disabled = %s\n",
+                 mod_packs::join_list(std::vector<std::string>(mod_order.disabled.begin(), mod_order.disabled.end())).c_str());
+    std::fprintf(f, "LooseFiles = %s\n\n", mod_order.loose ? "true" : "false");
     std::fprintf(f, "[Input]\n# Auto | On | Off\nTouchControls = %s\n", touch == TouchMode::On ? "On" : touch == TouchMode::Off ? "Off" : "Auto");
     std::fprintf(f, "SixButtonPad = %s\n", six_button ? "true" : "false");
     std::fprintf(f, "# The touch directions as a joystick instead of a d-pad\nTouchStick = %s\n", touch_stick ? "true" : "false");

@@ -44,7 +44,7 @@ bool Menu::is_list_page(Page p) {
     return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys ||
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
-           p == Page::Input || p == Page::Extras || p == Page::Lobby;
+           p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo;
 }
 
 // Where BACK and Escape go from a page below another one.
@@ -52,19 +52,24 @@ Menu::Page Menu::parent_of(Page p) {
     switch (p) {
     case Page::Video: case Page::Sound: case Page::Input: case Page::Extras: return Page::Options;
     case Page::Cheats: case Page::Lobby: return Page::Extras;
+    case Page::Mods: return Page::Extras;
+    case Page::ModInfo: return Page::Mods;
     case Page::Keys: case Page::StateKeys: return Page::Controls;
     default: return Page::Closed;
     }
 }
 
 void Menu::set_page(Page p) {
+    if (p != Page::Mods && p != Page::ModInfo) leave_mods();
     if (is_row_page(p) || p == Page::Front) return_to_ = p;
+    const Page from = page_;
     page_ = p;
     selected_ = 0;
     scroll_ = 0;
     anim_ = 0;
     awaiting_.clear();
     confirm_reset_ = false;
+    info_lines_.clear();
     if (p == Page::Front) build_front();
     else if (p == Page::Main) build_main();
     else if (p == Page::Options) build_options();
@@ -79,7 +84,23 @@ void Menu::set_page(Page p) {
     else if (p == Page::TimeAttack) build_time_attack();
     else if (p == Page::Cheats) build_cheats();
     else if (p == Page::Lobby) build_lobby();
+    else if (p == Page::Mods) {
+        build_mods();
+        // Back from a pack's page: on that pack again.
+        if (from == Page::ModInfo && mod_index_ < items_.size()) selected_ = int(mod_index_);
+    } else if (p == Page::ModInfo) build_mod_info();
     else items_.clear();
+}
+
+void Menu::close() {
+    leave_mods();
+    page_ = Page::Closed;
+}
+
+void Menu::leave_mods() {
+    if (!mods_dirty_) return;
+    mods_dirty_ = false;
+    if (hooks_.reload_mods) hooks_.reload_mods();
 }
 
 void Menu::open_front() { set_page(Page::Front); }
@@ -109,6 +130,7 @@ bool Menu::show_page(const std::string& name) {
     else if (name == "sound") set_page(Page::Sound);
     else if (name == "input") set_page(Page::Input);
     else if (name == "extras") set_page(Page::Extras);
+    else if (name == "mods") set_page(Page::Mods);
     else if (name == "awards") set_page(Page::Achievements);
     else return false;
     return true;
@@ -131,6 +153,8 @@ std::string Menu::page_name() const {
     case Page::States: return "states";
     case Page::StateKeys: return "statekeys";
     case Page::Lobby: return "lobby";
+    case Page::Mods: return "mods";
+    case Page::ModInfo: return "modinfo";
     default: return "";
     }
 }
@@ -703,15 +727,18 @@ void Menu::build_extras() {
                       [this](int step) { if (step == 0) set_page(Page::Lobby); },
                       "pick your partner and the time of day"});
     items_.back().pressed = true;
-    if (hooks_.share_mods_folder) {
-        Item mods{"MODS FOLDER",
-                  [this] { return hooks_.mods_folder && !hooks_.mods_folder().empty() ? std::string("SHARED")
-                                                                                     : std::string("ALLOW ACCESS"); },
-                  [this](int step) { if (step == 0 && hooks_.share_mods_folder) hooks_.share_mods_folder(); },
-                  "ChaotixRecompiled/Mods in your phone's storage"};
-        mods.pressed = true;
-        items_.push_back(std::move(mods));
-    }
+    // Issue #42: the mod packs, on a page of their own (with the Android
+    // MODS FOLDER row, which used to be here).
+    items_.push_back({"MODS",
+                      [this] {
+                          const std::vector<mod_packs::Pack>* packs = hooks_.mod_packs ? hooks_.mod_packs() : nullptr;
+                          int on = 0;
+                          if (packs)
+                              for (const auto& p : *packs) on += p.enabled ? 1 : 0;
+                          return on ? std::to_string(on) + " ON" : std::string("NONE");
+                      },
+                      [this](int step) { if (step == 0) set_page(Page::Mods); }});
+    items_.back().pressed = true;
     // Issue #8: this menu's own look. Both are made from the ROM, so they are
     // the game's rather than ours; PIXEL and PLAIN are the earlier look. Here
     // rather than under VIDEO, which is as long as a phone's screen allows.
@@ -840,6 +867,153 @@ void Menu::build_lobby() {
                       },
                       "GAME: it moves on every second level"});
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
+}
+
+void Menu::refresh() {
+    const int keep = selected_, top = scroll_;
+    info_lines_.clear();
+    if (page_ == Page::Mods) build_mods();
+    else if (page_ == Page::ModInfo) build_mod_info();
+    selected_ = items_.empty() ? 0 : std::clamp(keep, 0, int(items_.size()) - 1);
+    scroll_ = top;
+}
+
+namespace {
+
+// What a pack holds, in words.
+std::string pack_contents(const mod_packs::Pack& p) {
+    std::vector<std::string> what;
+    if (p.textures) what.push_back("graphics");
+    if (p.characters) what.push_back("characters");
+    if (p.music) what.push_back("music");
+    if (p.patches) what.push_back("ROM patches");
+    if (p.touch) what.push_back("touch controls");
+    std::string s;
+    for (const auto& w : what) s += (s.empty() ? "" : ", ") + w;
+    return s.empty() ? std::string("nothing yet") : s;
+}
+
+} // namespace
+
+// Issue #42: the mod packs, highest priority first. Left/right turns the
+// highlighted one on or off; Enter (or a second tap) opens its page, with
+// its description and MOVE UP / MOVE DOWN. Leaving the page after a change
+// has the app apply it (leave_mods), as RELOAD MODS does at once.
+void Menu::build_mods() {
+    items_.clear();
+    if (std::vector<mod_packs::Pack>* list = packs()) {
+        for (size_t i = 0; i < list->size(); ++i) {
+            const mod_packs::Pack& p = (*list)[i];
+            Item it{upper(p.title()),
+                    [this, i] {
+                        const std::vector<mod_packs::Pack>* l = packs();
+                        return l && i < l->size() && (*l)[i].enabled ? std::string("ON") : std::string("OFF");
+                    },
+                    [this, i](int step) {
+                        std::vector<mod_packs::Pack>* l = packs();
+                        if (!l || i >= l->size()) return;
+                        if (step == 0) {
+                            mod_index_ = i;
+                            set_page(Page::ModInfo);
+                            return;
+                        }
+                        if (cfg_) mod_packs::set_enabled(cfg_->mod_order, *l, i, !(*l)[i].enabled);
+                        mods_dirty_ = true;
+                        if (hooks_.mods_changed) hooks_.mods_changed();
+                        refresh();
+                    },
+                    p.loose ? std::string("your own files") : p.too_new ? std::string("NEEDS A NEWER GAME") : p.info.version};
+            // Enter opens the pack's page rather than switching it.
+            it.pressed = true;
+            items_.push_back(std::move(it));
+        }
+    }
+    const bool restart = hooks_.mods_need_restart && hooks_.mods_need_restart();
+    items_.push_back({"RELOAD MODS", {},
+                      [this](int step) {
+                          if (step != 0) return;
+                          mods_dirty_ = false;
+                          if (hooks_.reload_mods) hooks_.reload_mods();
+                          refresh();
+                      },
+                      restart ? "patches and stats: restart the game" : "read the Mods folder again"});
+    const std::vector<mod_packs::Pack>* list = packs();
+    if (!list || list->empty()) {
+        Item none{"NO MODS YET", {}, {}, "a folder per mod in Mods, see README"};
+        none.read_only = true;
+        items_.push_back(std::move(none));
+    }
+    if (hooks_.share_mods_folder) {
+        Item folder{"MODS FOLDER",
+                    [this] { return hooks_.mods_folder && !hooks_.mods_folder().empty() ? std::string("SHARED")
+                                                                                       : std::string("ALLOW ACCESS"); },
+                    [this](int step) { if (step == 0 && hooks_.share_mods_folder) hooks_.share_mods_folder(); },
+                    "ChaotixRecompiled/Mods in your phone's storage"};
+        folder.pressed = true;
+        items_.push_back(std::move(folder));
+    }
+    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
+}
+
+// One pack: what mod.ini says about it (drawn under the heading, with its
+// preview), and switching and moving it.
+void Menu::build_mod_info() {
+    items_.clear();
+    std::vector<mod_packs::Pack>* list = packs();
+    if (!list || mod_index_ >= list->size()) {
+        items_.push_back({"BACK", {}, [this](int) { set_page(Page::Mods); }});
+        return;
+    }
+    const mod_packs::Pack& p = (*list)[mod_index_];
+    if (p.loose) {
+        info_lines_.push_back("Files in the Mods folder's own Textures, Characters, Music, Patches and Touch "
+                              "folders. They come before every pack.");
+    } else {
+        std::string by = p.info.version.empty() ? std::string() : "Version " + p.info.version;
+        if (!p.info.author.empty()) by += (by.empty() ? "By " : ", by ") + p.info.author;
+        if (!by.empty()) info_lines_.push_back(by);
+        std::string d = p.info.description;
+        for (size_t at; (at = d.find('\n')) != std::string::npos; d.erase(0, at + 1)) info_lines_.push_back(d.substr(0, at));
+        if (!d.empty()) info_lines_.push_back(d);
+        if (!p.info.url.empty()) info_lines_.push_back(p.info.url);
+        if (!p.has_ini) info_lines_.push_back("(no mod.ini: named after its folder, " + p.id + ")");
+    }
+    info_lines_.push_back("Has: " + pack_contents(p) + ". Place " + std::to_string(mod_index_ + 1) + " of " +
+                          std::to_string(list->size()) + ", the first winning.");
+    if (p.too_new) info_lines_.push_back("Made for version " + p.info.min_version + " or later; it may not work.");
+    if (p.changes_game())
+        info_lines_.push_back("Patches and character stats apply when the game is started again.");
+
+    items_.push_back({"ENABLED",
+                      [this] {
+                          const std::vector<mod_packs::Pack>* l = packs();
+                          return l && mod_index_ < l->size() && (*l)[mod_index_].enabled ? std::string("ON")
+                                                                                         : std::string("OFF");
+                      },
+                      [this](int s) {
+                          std::vector<mod_packs::Pack>* l = packs();
+                          if (!s || !l || mod_index_ >= l->size()) return;
+                          if (cfg_) mod_packs::set_enabled(cfg_->mod_order, *l, mod_index_, !(*l)[mod_index_].enabled);
+                          mods_dirty_ = true;
+                          if (hooks_.mods_changed) hooks_.mods_changed();
+                      }});
+    if (!p.loose) {
+        auto mover = [this](int delta) {
+            return [this, delta](int step) {
+                std::vector<mod_packs::Pack>* l = packs();
+                if (step != 0 || !l || !cfg_) return;
+                if (mod_packs::move(cfg_->mod_order, *l, mod_index_, delta)) {
+                    mod_index_ = size_t(long(mod_index_) + delta);
+                    mods_dirty_ = true;
+                    if (hooks_.mods_changed) hooks_.mods_changed();
+                    refresh();  // its place, in the text above
+                }
+            };
+        };
+        items_.push_back({"MOVE UP", {}, mover(-1), "wins over the packs below it"});
+        items_.push_back({"MOVE DOWN", {}, mover(+1)});
+    }
+    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Mods); }});
 }
 
 void Menu::move(int delta) {
@@ -986,6 +1160,12 @@ bool Menu::on_touch_down(float x, float y) {
     drag_total_ = 0;
     for (const Hit& h : hits_) {
         if (x < h.r.x || x > h.r.x + h.r.w || y < h.r.y || y > h.r.y + h.r.h) continue;
+        // The markers of a list longer than the screen step through it.
+        if (h.index == kScrollUp || h.index == kScrollDown) {
+            move(h.index == kScrollUp ? -1 : +1);
+            drag_total_ = 1e9f;
+            return true;
+        }
         // A tap on an entry selects it; a second tap acts on it, which keeps
         // one finger enough to drive the whole menu. On a value, the "<"
         // arrow steps it back and anywhere else on the row steps it forward.
@@ -1193,7 +1373,74 @@ void Menu::draw_options(ui::Ui& g) {
         }
         rows_h += wrapped[i] ? row_h * 2 : row_h;
     }
-    const float body = head_h + rows_h + g.px(12) + hint_h;
+
+    // A pack's page (issue #42): its description under the heading, wrapped
+    // to the panel beside its preview image, in at most a third of the
+    // screen.
+    const float info_line_h = g.line_height(ui::Font::Small) + g.px(4);
+    std::vector<std::string> info;
+    SDL_Texture* preview = nullptr;
+    SDL_FRect preview_r{};
+    float info_h = 0;
+    float preview_w = 0, preview_h = 0;
+    if (!info_lines_.empty()) {
+        const std::vector<mod_packs::Pack>* list = packs();
+        if (page_ == Page::ModInfo && hooks_.mod_preview && list && mod_index_ < list->size())
+            preview = hooks_.mod_preview((*list)[mod_index_], &preview_w, &preview_h);
+        const float pw = preview_w, ph = preview_h;
+        const float max_info = std::max(info_line_h * 3, g.height() / 3);
+        float text_w = column;
+        if (preview && pw > 0 && ph > 0) {
+            const float k = std::min({column * 0.4f / pw, max_info / ph, g.px(160) / ph});
+            preview_r = {x + column - pw * k, 0, pw * k, ph * k};
+            text_w = column - preview_r.w - g.px(14);
+        }
+        // Word wrap, by bytes at spaces: a word too long for a line keeps a
+        // line to itself and is shortened when drawn.
+        for (const std::string& para : info_lines_) {
+            std::string line;
+            size_t at = 0;
+            while (at <= para.size()) {
+                size_t sp = para.find(' ', at);
+                if (sp == std::string::npos) sp = para.size();
+                const std::string word = para.substr(at, sp - at);
+                const std::string tried = line.empty() ? word : line + " " + word;
+                if (!line.empty() && g.text_width(ui::Font::Small, tried) > text_w) {
+                    info.push_back(line);
+                    line = word;
+                } else {
+                    line = tried;
+                }
+                at = sp + 1;
+            }
+            info.push_back(line);
+        }
+        const size_t max_lines = size_t(std::max(1.0f, max_info / info_line_h));
+        if (info.size() > max_lines) {
+            info.resize(max_lines);
+            info.back() += " ...";
+        }
+        info_h = std::max(float(info.size()) * info_line_h, preview_r.h) + g.px(12);
+    }
+
+    // A list longer than the screen (mod packs) shows a window of it that
+    // follows the selection, with a marker above and below where there is
+    // more; a tap on a marker steps the selection that way.
+    const float rows_room = g.height() - g.px(28) - g.px(16) - g.px(30) - head_h - info_h - g.px(12) - hint_h;
+    size_t first = 0, last = items_.size();  // the rows drawn: [first, last)
+    if (rows_h > rows_room && !items_.empty()) {
+        auto h_of = [&](size_t i) { return wrapped[i] ? row_h * 2 : row_h; };
+        const size_t sel = size_t(std::clamp(selected_, 0, int(items_.size()) - 1));
+        first = std::min(size_t(std::max(scroll_, 0)), sel);
+        float used = 0;
+        for (size_t i = first; i <= sel; ++i) used += h_of(i);
+        while (used > rows_room && first < sel) used -= h_of(first++);
+        last = sel + 1;
+        while (last < items_.size() && used + h_of(last) <= rows_room) used += h_of(last++);
+        scroll_ = int(first);
+        rows_h = used;
+    }
+    const float body = head_h + info_h + rows_h + g.px(12) + hint_h;
     const float total = body + g.px(30);
     float y = std::max(g.px(14), (g.height() - total) * 0.5f) + g.px(16);
     const float panel_top = y - g.px(16);
@@ -1218,11 +1465,40 @@ void Menu::draw_options(ui::Ui& g) {
                         : page_ == Page::Keys
                               ? (keys_player_ == 0 ? (keys_pad_ ? "1P GAMEPAD" : "1P KEYBOARD")
                                                    : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))
+                        : page_ == Page::Mods ? "MODS"
                         : "OPTIONS";
-    g.text(ui::Font::PixelBig, x, y, heading, accent());
+    std::string pack_heading;
+    if (page_ == Page::ModInfo) {
+        const std::vector<mod_packs::Pack>* list = packs();
+        pack_heading = list && mod_index_ < list->size() ? upper((*list)[mod_index_].title()) : "MOD";
+        g.text_fit(ui::Font::PixelBig, x, y, column, pack_heading, accent());
+    } else {
+        g.text(ui::Font::PixelBig, x, y, heading, accent());
+    }
+    // More rows above the window: a marker at the heading's right.
+    if (first > 0) {
+        const float mw = g.text_width(ui::Font::Pixel, "^");
+        g.text(ui::Font::Pixel, x + column - mw, y, "^", accent());
+        hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), head_h}, kScrollUp});
+    }
     y += head_h;
 
-    for (size_t i = 0; i < items_.size(); ++i) {
+    if (!info.empty()) {
+        if (preview) {
+            // Sized to the picture's own shape, so "cover" draws all of it.
+            preview_r.y = y;
+            g.image_cover(preview, preview_w, preview_h, preview_r);
+        }
+        float iy = y;
+        for (const std::string& line : info) {
+            g.text_fit(ui::Font::Small, x, iy, preview ? column - preview_r.w - g.px(14) : column, line,
+                       ui::theme::text_dim);
+            iy += info_line_h;
+        }
+        y += info_h;
+    }
+
+    for (size_t i = first; i < last; ++i) {
         const bool sel = int(i) == selected_;
         const Item& it = items_[i];
         if (sel) {
@@ -1272,8 +1548,15 @@ void Menu::draw_options(ui::Ui& g) {
 
     const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
                            ? "Up/Down choose    Enter rebind    Esc back"
-                           : "Up/Down choose    Left/Right change    Esc back";
+                       : page_ == Page::Mods ? "Up/Down choose    Left/Right on/off    Enter details"
+                                             : "Up/Down choose    Left/Right change    Esc back";
     g.text(ui::Font::Small, x, y + g.px(8), hint, faint());
+    // More rows below the window: a marker at the hint's right.
+    if (last < items_.size()) {
+        const float mw = g.text_width(ui::Font::Pixel, "v");
+        g.text(ui::Font::Pixel, x + column - mw, y + g.px(2), "v", accent());
+        hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), hint_h + g.px(20)}, kScrollDown});
+    }
 }
 
 void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {

@@ -7,6 +7,8 @@
 //                    [--save-state FRAME:FILE] [--load-state FILE] [--state-hash-every N]
 //                    [--rewind INTERVAL[:BUDGET_MB]]   (issue #40, runtime/save_state.h)
 //                    [--lobby-partner ID] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
+//                    [--mods-dir DIR [--mods-order A,B] [--mods-disable C] [--mods-no-loose]]
+//                                 (mod packs as the app loads them, issue #42, runtime/mod_packs.h)
 #include "audio/music_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
@@ -21,6 +23,7 @@
 #include "renderer/sprite_pack.h"
 #include "renderer/sprite_sheet.h"
 #include "renderer/tile_pack.h"
+#include "runtime/mod_packs.h"
 #include "runtime/patches.h"
 #include "runtime/rewind.h"
 #include "runtime/save_state.h"
@@ -351,13 +354,22 @@ int main(int argc, char** argv) {
     bool wide_everywhere = false;  // also widen the scenes kept 4:3
     bool hud_edges = false;        // the HUD at the widened picture's edge
     int debug_layer = 0;
-    std::string tiles_dir, dump_tiles_dir;
+    // Mod folders, lowest priority first: the packs of --mods-dir, then
+    // the ones given on their own (issue #42).
+    std::vector<std::string> tile_dirs;
+    std::string dump_tiles_dir;
     std::string export_sheets_dir;  // --export-sheets DIR: every frame of each bank, after the run
     // Issue #8, the menu's art: --backdrop KEY|all DIR renders menu backdrops
     // (frontend/backdrop.h) as PNGs; --game-font PNG writes the font atlas.
     std::string backdrop_key, backdrop_dir, game_font_png;
     std::vector<std::string> patch_files;  // --patch FILE: IPS/BPS applied to the ROM in memory
-    std::string characters_dir;  // --characters DIR: character mods (runtime/character_mods.h)
+    std::vector<std::string> character_dirs;  // --characters DIR: character mods (runtime/character_mods.h)
+    // --mods-dir DIR: mod packs and loose files as the app reads its Mods
+    // folder (runtime/mod_packs.h), in the order --mods-order gives
+    // (highest first, comma-separated folder names), less --mods-disable
+    // ones, and without the loose files with --mods-no-loose.
+    std::string mods_dir;
+    mod_packs::Order mods_order;
     std::vector<cheats::Write> cheat_writes;  // --cheat, set before every frame
     uint64_t wide_live_frames = 0;
     int wide_stretches = 0;
@@ -374,7 +386,7 @@ int main(int argc, char** argv) {
     std::vector<Poke> pokes;
     struct Peek { uint64_t every; uint32_t addr; uint32_t bytes; };
     std::vector<Peek> peeks;
-    std::string music_dir;  // --music-dir: music replaced by files (audio/music_mods.h)
+    std::vector<std::string> music_dirs;  // --music-dir: music replaced by files (audio/music_mods.h)
     std::string coverage_path;
     int break_cpu = -1;
     uint64_t trace_from = 0, trace_to = 0;
@@ -511,14 +523,19 @@ int main(int argc, char** argv) {
         else if (a == "--hud-edges") hud_edges = true;
         else if (a == "--patch") patch_files.push_back(next());
         // Character mods: <name>.ini files with [Palette] and [Stats].
-        else if (a == "--characters") characters_dir = next();
+        else if (a == "--characters") character_dirs.push_back(next());
+        else if (a == "--mods-dir") mods_dir = next();
+        else if (a == "--mods-order") mods_order.order = mod_packs::split_list(next());
+        else if (a == "--mods-disable") {
+            for (const auto& id : mod_packs::split_list(next())) mods_order.disabled.insert(id);
+        } else if (a == "--mods-no-loose") mods_order.loose = false;
         // Graphics replacements, as the frontend's Mods/Textures: Mega Drive
         // tiles (md_<hash>.png), plane text by tile sequence (mdtext_*.txt
         // with .png), text by sprite (mdsprite_*.txt with .png) and 32X
         // sprites (32x_*.png) from DIR; and the dump of what is drawn, with
         // the plane text runs and the sprite groups on screen in DIR/Text
         // (--dump-tiles is its older name).
-        else if (a == "--tiles") tiles_dir = next();
+        else if (a == "--tiles") tile_dirs.push_back(next());
         else if (a == "--dump-graphics" || a == "--dump-tiles") dump_tiles_dir = next();
         // Whole-bank sprite sheets (renderer/sprite_sheet.h): the characters'
         // banks from the ROM, and the banks the scene has loaded at the end of
@@ -558,7 +575,7 @@ int main(int argc, char** argv) {
         else if (a == "--achievements" && i + 1 < argc) achievements_file = next();
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
-        else if (a == "--music-dir") music_dir = next();
+        else if (a == "--music-dir") music_dirs.push_back(next());
         else if (a == "--expect-hash") {
             auto parts = split(next(), ':');
             if (parts.size() == 2) expect_hash[std::strtoull(parts[0].c_str(), nullptr, 10)] = std::strtoull(parts[1].c_str(), nullptr, 16);
@@ -686,6 +703,24 @@ int main(int argc, char** argv) {
     if (rom_path.empty()) { std::fprintf(stderr, "usage: chaotix_headless --rom <file> [--frames N] ...\n"); return 2; }
     if (oracle_calls > 0) return sprite_oracle(rom_path, oracle_calls, oracle_seed) ? 6 : 0;
 
+    if (!mods_dir.empty()) {
+        // As the app does: each kind from the enabled packs, lowest first,
+        // before the folders given on their own.
+        std::vector<std::string> messages;
+        const std::vector<mod_packs::Pack> packs =
+            mod_packs::arrange(mod_packs::discover(mods_dir, savestate::game_version(), &messages), mods_order);
+        for (const auto& msg : messages) std::printf("mods: %s\n", msg.c_str());
+        for (const auto& p : packs)
+            std::printf("mods: %s %s (%s)\n", p.enabled ? "on " : "off", p.title().c_str(), p.loose ? "loose" : p.id.c_str());
+        auto before = [](std::vector<std::string>& list, const std::vector<std::string>& first) {
+            list.insert(list.begin(), first.begin(), first.end());
+        };
+        before(patch_files, mod_packs::patch_files(packs));
+        before(character_dirs, mod_packs::folders(packs, mod_packs::kCharacters));
+        before(tile_dirs, mod_packs::folders(packs, mod_packs::kTextures));
+        before(music_dirs, mod_packs::folders(packs, mod_packs::kMusic));
+    }
+
     auto m = std::make_unique<Machine>();
     std::string err;
     if (!m->load_rom(rom_path, &err)) { std::fprintf(stderr, "error: %s\n", err.c_str()); return 1; }
@@ -700,9 +735,9 @@ int main(int argc, char** argv) {
     // output only, one CharacterPalettes shared by them all.
     std::vector<CharacterMod> character_mods;
     std::shared_ptr<CharacterPalettes> character_palettes;
-    if (!characters_dir.empty()) {
+    if (!character_dirs.empty()) {
         std::vector<std::string> messages;
-        character_mods = load_character_mods(characters_dir, &messages);
+        character_mods = load_character_mods(character_dirs, &messages);
         const int changed = m->rom.apply_edits(stat_edits(m->rom, character_mods, &messages), &messages);
         for (const auto& msg : messages) std::printf("characters: %s\n", msg.c_str());
         character_palettes = std::make_shared<CharacterPalettes>(m->rom, character_mods);
@@ -767,19 +802,19 @@ int main(int argc, char** argv) {
     m->wide_everywhere = wide_everywhere;
     m->wide_hud_edges = hud_edges;
     m->debug_layer = debug_layer;
-    if (!tiles_dir.empty() || !dump_tiles_dir.empty()) {
+    if (!tile_dirs.empty() || !dump_tiles_dir.empty()) {
         // Output only: the --lockstep reference draws with the same tiles,
         // so the machines' state and their pictures must still be identical.
         m->vdp.tiles = std::make_shared<TileReplacer>();
         std::vector<std::string> messages;
-        if (!tiles_dir.empty())
-            std::printf("tiles: %d replacement(s) loaded\n", load_tile_pack(*m->vdp.tiles, tiles_dir, &messages));
+        if (!tile_dirs.empty())
+            std::printf("tiles: %d replacement(s) loaded\n", load_tile_packs(*m->vdp.tiles, tile_dirs, &messages));
         for (const auto& msg : messages) std::printf("tiles: %s\n", msg.c_str());
-        if (!tiles_dir.empty()) {
+        if (!tile_dirs.empty()) {
             // Text replaced by tile sequence (mdtext_<name>.txt + .png) and
             // by sprite (mdsprite_<name>.txt + .png), counted together.
             messages.clear();
-            std::printf("text: %d pattern(s) loaded\n", load_text_pack(*m->vdp.tiles, tiles_dir, &messages));
+            std::printf("text: %d pattern(s) loaded\n", load_text_packs(*m->vdp.tiles, tile_dirs, &messages));
             for (const auto& msg : messages) std::printf("text: %s\n", msg.c_str());
         }
         m->vdp.tiles->dumping = !dump_tiles_dir.empty();
@@ -787,10 +822,10 @@ int main(int argc, char** argv) {
     // 32X sprite replacements from the same folder; the recorder is only
     // installed when there are some, or for dumping.
     std::shared_ptr<SpritePack> sprite_pack;
-    if (!tiles_dir.empty()) {
+    if (!tile_dirs.empty()) {
         sprite_pack = std::make_shared<SpritePack>();
         std::vector<std::string> messages;
-        std::printf("sprites: %d replacement(s) loaded\n", load_sprite_pack(*sprite_pack, tiles_dir, &messages));
+        std::printf("sprites: %d replacement(s) loaded\n", load_sprite_packs(*sprite_pack, tile_dirs, &messages));
         for (const auto& msg : messages) std::printf("sprites: %s\n", msg.c_str());
         if (sprite_pack->empty()) sprite_pack = nullptr;
     }
@@ -846,8 +881,10 @@ int main(int argc, char** argv) {
         if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
     }
     audio::MusicMods music;
-    if (!music_dir.empty()) {
-        std::printf("music: %d replaced from %s\n", music.scan(music_dir), music_dir.c_str());
+    if (!music_dirs.empty()) {
+        int replaced = 0;
+        for (const auto& dir : music_dirs) replaced = music.scan(dir);
+        std::printf("music: %d replaced from %zu folder(s)\n", replaced, music_dirs.size());
         // The patch tells the driver to stop replaced music, so a lockstep
         // reference must be told the same.
         music.attach(*m);
@@ -1063,7 +1100,7 @@ int main(int argc, char** argv) {
             // a second after a change.
             if (m->sram_dirty) { ++sram_frames; sram_last = f; m->sram_dirty = false; }
         }
-        if (!music_dir.empty()) music.after_frame(*m, first_sample);
+        if (!music_dirs.empty()) music.after_frame(*m, first_sample);
         if (m->wide_active) {
             ++wide_live_frames;
             if (!wide_was_live) { ++wide_stretches; wide_was_live = true; }

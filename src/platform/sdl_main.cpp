@@ -37,6 +37,7 @@
 #include "renderer/viewport.h"
 #include "runtime/character_mods.h"
 #include "runtime/log.h"
+#include "runtime/mod_packs.h"
 #include "runtime/patches.h"
 #include "runtime/rewind.h"
 #include "runtime/save.h"
@@ -113,6 +114,15 @@ struct App {
     std::string autotest_shot;
     std::string mods_dir;  // --mods-dir: mods from here, autotests included
     std::string mods_loaded_from;  // the Mods folder load_mods last read
+    // Mod packs (issue #42) in the player's order, highest priority first,
+    // as last read from the Mods folder; and what the enabled ones changed in
+    // the game itself (patches, character stats) when it started, which a
+    // change in the list only applies to after a restart.
+    std::vector<mod_packs::Pack> packs;
+    std::string packs_game_signature;
+    bool packs_restart = false;  // the list now differs from that
+    struct Preview { SDL_Texture* texture = nullptr; float w = 0, h = 0; };
+    std::map<std::string, Preview> mod_previews;  // by pack folder, loaded when first shown
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> script;
     // --hold: the same thing but fed into the host's own input path, so it
@@ -896,7 +906,7 @@ void android_request_shared_storage() {
 
 // Where mods are read from: the user data folder. On Android that is the
 // app's private storage, so there it is ChaotixRecompiled/Mods on shared
-// storage once the app may use it (issue #29; OPTIONS > MODS FOLDER asks),
+// storage once the app may use it (issue #29; OPTIONS > EXTRAS > MODS > MODS FOLDER asks),
 // and until then the app's own folder there (Android/data/<app>/files), which
 // only a computer can reach on Android 11 and later.
 std::string mods_root(const App& app) {
@@ -917,8 +927,11 @@ std::string mods_root(const App& app) {
 // Touch control images (issue #25): "<name>.bmp" and "<name>_pressed.bmp" in
 // dir, names dpad, a, b, c, x, y, z, start; "button" stands in for any face
 // button without its own. BMP because SDL reads it everywhere without another
-// library; 32-bit BMP keeps transparency.
-void load_touch_skin(App& app, const std::string& dir) {
+// library; 32-bit BMP keeps transparency. `dir` is the Mods folder's own
+// Touch folder (the README goes there); `dirs` are the enabled packs' Touch
+// folders, lowest priority first (issue #42), each image taken from the
+// highest one that has it.
+void load_touch_skin(App& app, const std::string& dir, const std::vector<std::string>& dirs) {
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
     const std::string readme = dir + "/README.txt";
@@ -939,8 +952,11 @@ void load_touch_skin(App& app, const std::string& dir) {
     int loaded = 0;
     for (const char* name : {"dpad", "stick", "knob", "a", "b", "c", "x", "y", "z", "start", "ff", "rew", "button"}) {
         for (int pressed = 0; pressed < 2; ++pressed) {
-            const std::string path = dir + "/" + name + (pressed ? "_pressed" : "") + ".bmp";
-            SDL_Surface* s = SDL_LoadBMP(path.c_str());
+            SDL_Surface* s = nullptr;
+            for (auto it = dirs.rbegin(); it != dirs.rend() && !s; ++it) {
+                const std::string path = *it + "/" + name + (pressed ? "_pressed" : "") + ".bmp";
+                s = SDL_LoadBMP(path.c_str());
+            }
             if (!s) continue;
             if (SDL_Texture* t = SDL_CreateTextureFromSurface(app.renderer, s)) {
                 SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
@@ -950,7 +966,26 @@ void load_touch_skin(App& app, const std::string& dir) {
             SDL_DestroySurface(s);
         }
     }
-    if (loaded) LOGI("touch", "%d touch control image(s) from %s", loaded, dir.c_str());
+    if (loaded) LOGI("touch", "%d touch control image(s) from %zu folder(s)", loaded, dirs.size());
+}
+
+// Mod packs (issue #42): reads the Mods folder again and puts what is there
+// in the player's order. Packs new since the last time join the end of the
+// list, and the order in the settings is brought up to date.
+void scan_packs(App& app) {
+    std::vector<std::string> messages;
+    app.packs = mod_packs::arrange(mod_packs::discover(mods_root(app), savestate::game_version(), &messages),
+                                   app.cfg.mod_order);
+    for (const auto& msg : messages) LOGW("mods", "%s", msg.c_str());
+    mod_packs::remember(app.cfg.mod_order, app.packs);
+    for (const auto& p : app.packs)
+        LOGI("mods", "%s %s%s%s (%s)", p.enabled ? "[on] " : "[off]", p.title().c_str(),
+             p.info.version.empty() ? "" : " ", p.info.version.c_str(), p.loose ? "Mods/" : p.id.c_str());
+}
+
+// The enabled packs' folders of one kind, lowest priority first.
+std::vector<std::string> mod_folders(const App& app, const char* kind) {
+    return mod_packs::folders(app.packs, kind);
 }
 
 // Puts the 32X sprite recorder on the machine when it is needed (a sprite
@@ -1019,20 +1054,26 @@ void load_tiles(App& app) {
                        "\n"
                        "32x_<bank>.png with 32x_<bank>.txt: every frame of a bank in one sheet.\n"
                        "OPTIONS > EXTRAS > EXPORT SPRITES writes the characters' sheets to the Sheets\n"
-                       "folder; copy a sheet and its .txt here to use it. A frame's own file wins.\n",
+                       "folder; copy a sheet and its .txt here to use it. A frame's own file wins.\n"
+                       "\n"
+                       "A mod pack keeps the same files in its own Textures folder, Mods/<pack>/\n"
+                       "Textures (see Mods/README.txt). Files here win over every pack's.\n",
                        f);
             std::fclose(f);
         }
     }
+    // Every enabled pack's Textures folder, the loose one (this one) last:
+    // a later folder's graphic replaces an earlier one's (issue #42).
+    const std::vector<std::string> dirs = mod_folders(app, mod_packs::kTextures);
     auto tiles = std::make_shared<TileReplacer>();
     std::vector<std::string> messages;
-    const int n = load_tile_pack(*tiles, dir, &messages);
+    const int n = load_tile_packs(*tiles, dirs, &messages);
     for (const auto& m : messages) LOGW("tiles", "%s", m.c_str());
-    if (n) LOGI("tiles", "%d tile replacement(s) from %s", n, dir.c_str());
+    if (n) LOGI("tiles", "%d tile replacement(s) from %zu folder(s)", n, dirs.size());
     messages.clear();
-    const int tn = load_text_pack(*tiles, dir, &messages);
+    const int tn = load_text_packs(*tiles, dirs, &messages);
     for (const auto& m : messages) LOGW("text", "%s", m.c_str());
-    if (tn) LOGI("text", "%d text pattern(s) from %s", tn, dir.c_str());
+    if (tn) LOGI("text", "%d text pattern(s) from %zu folder(s)", tn, dirs.size());
     tiles->dumping = app.cfg.dump_graphics;
     app.tiles_dir = dir;
     app.tiles = tiles;
@@ -1040,9 +1081,9 @@ void load_tiles(App& app) {
 
     auto pack = std::make_shared<SpritePack>();
     messages.clear();
-    const int sn = load_sprite_pack(*pack, dir, &messages);
+    const int sn = load_sprite_packs(*pack, dirs, &messages);
     for (const auto& m : messages) LOGW("sprites", "%s", m.c_str());
-    if (sn) LOGI("sprites", "%d sprite replacement(s) from %s", sn, dir.c_str());
+    if (sn) LOGI("sprites", "%d sprite replacement(s) from %zu folder(s)", sn, dirs.size());
     app.sprite_pack = sn ? pack : nullptr;
     update_sprite_recorder(app);
 }
@@ -1077,28 +1118,43 @@ std::vector<CharacterMod> read_character_mods(App& app) {
         }
     }
     std::vector<std::string> messages;
-    std::vector<CharacterMod> mods = load_character_mods(dir, &messages);
+    // A character's file from a higher pack replaces a lower one's (issue #42).
+    std::vector<CharacterMod> mods = load_character_mods(mod_folders(app, mod_packs::kCharacters), &messages);
     for (const auto& msg : messages) LOGW("characters", "%s", msg.c_str());
     return mods;
 }
 
-// Music and touch images from the Mods folder; again when that folder has
-// changed (Android: shared storage access granted while the app was away).
-void load_mods(App& app) {
+// Music, touch images, graphics and character colours from the Mods folder
+// and the enabled mod packs; again when that folder has changed (Android:
+// shared storage access granted while the app was away) or, with `force`,
+// when the packs have (OPTIONS > EXTRAS > MODS). None of these change the
+// game itself, so they apply at once; patches and character stats wait for
+// the next start (apply_rom_patches).
+void load_mods(App& app, bool force = false) {
     const std::string mods = mods_root(app);
-    if (mods == app.mods_loaded_from) return;
+    if (mods == app.mods_loaded_from && !force) return;
     app.mods_loaded_from = mods;
+    scan_packs(app);
     for (auto& entry : app.touch_skin)
         for (SDL_Texture* tex : entry.second) if (tex) SDL_DestroyTexture(tex);
     app.touch_skin.clear();
+    for (auto& entry : app.mod_previews)
+        if (entry.second.texture) SDL_DestroyTexture(entry.second.texture);
+    app.mod_previews.clear();
+    // The piece playing from a file carries on if it is still there.
+    const std::vector<uint8_t> music_position = app.music.save_position();
     app.music = audio::MusicMods{};
     // Created so they are easy to find; empty, they change nothing.
     const std::string music_dir = mods + "Music";
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::u8path(music_dir), ec);
-    if (const int n = app.music.scan(music_dir)) LOGI("music", "%d piece(s) of music replaced from %s", n, music_dir.c_str());
+    const std::vector<std::string> music_dirs = mod_folders(app, mod_packs::kMusic);
+    int music_files = 0;
+    for (const auto& dir : music_dirs) music_files = app.music.scan(dir);
+    if (music_files) LOGI("music", "%d piece(s) of music replaced from %zu folder(s)", music_files, music_dirs.size());
     app.music.attach(*app.m);
-    load_touch_skin(app, mods + "Touch");
+    if (force) app.music.load_position(music_position);
+    load_touch_skin(app, mods + "Touch", mod_folders(app, mod_packs::kTouch));
     load_tiles(app);
     // The characters' colours, from the ROM as it runs (patched or not).
     auto palettes = std::make_shared<CharacterPalettes>(app.m->rom, read_character_mods(app));
@@ -1108,13 +1164,83 @@ void load_mods(App& app) {
     LOGI("app", "mods folder: %s", mods.c_str());
 }
 
-// ROM patches (issue #35): IPS and BPS files in Mods/Patches, applied in name
-// order to the ROM in memory before the game starts. The user's ROM file is
-// never changed.
+// What the enabled packs change in the game itself: the patch files, in the
+// order they apply, and the character files with stats. Colours and the rest
+// apply at once, so they are not part of it.
+std::string game_signature(const App& app) {
+    std::string sig;
+    for (const auto& f : mod_packs::patch_files(app.packs)) sig += "patch " + f + "\n";
+    for (const auto& c : load_character_mods(mod_folders(app, mod_packs::kCharacters), nullptr))
+        if (!c.stats.empty()) sig += "stats " + c.path + "\n";
+    return sig;
+}
+
+// A pack's preview image (mod.ini's `preview`, a PNG in its folder), loaded
+// the first time the MODS page shows it; null without one.
+SDL_Texture* mod_preview(App& app, const mod_packs::Pack& p, float* w, float* h) {
+    if (p.loose || p.info.preview.empty() || !app.renderer) return nullptr;
+    auto it = app.mod_previews.find(p.id);
+    if (it == app.mod_previews.end()) {
+        App::Preview pv;
+        // Only a file inside the pack's own folder.
+        const std::filesystem::path rel = std::filesystem::u8path(p.info.preview);
+        bool inside = !rel.is_absolute() && !rel.has_root_name();
+        for (const auto& part : rel) inside = inside && part != "..";
+        PngImage img;
+        std::string err;
+        if (inside && read_png(p.dir + p.info.preview, img, &err) && img.width > 0 && img.height > 0 &&
+            img.width <= 4096 && img.height <= 4096) {
+            if (SDL_Surface* s = SDL_CreateSurfaceFrom(img.width, img.height, SDL_PIXELFORMAT_ARGB8888,
+                                                       img.argb.data(), img.width * 4)) {
+                pv.texture = SDL_CreateTextureFromSurface(app.renderer, s);
+                SDL_DestroySurface(s);
+                if (pv.texture) {
+                    SDL_SetTextureScaleMode(pv.texture, SDL_SCALEMODE_LINEAR);
+                    pv.w = float(img.width);
+                    pv.h = float(img.height);
+                }
+            }
+        } else {
+            LOGW("mods", "%s: no preview from %s%s%s", p.id.c_str(), p.info.preview.c_str(), err.empty() ? "" : ": ",
+                 err.c_str());
+        }
+        it = app.mod_previews.emplace(p.id, pv).first;
+    }
+    *w = it->second.w;
+    *h = it->second.h;
+    return it->second.texture;
+}
+
+// The Mods folder's own README: what goes where, and mod packs.
+void write_mods_readme(const std::string& root) {
+    const std::string readme = root + "README.txt";
+    std::error_code ec;
+    if (std::filesystem::exists(std::filesystem::u8path(readme), ec)) return;
+    if (FILE* f = std::fopen(readme.c_str(), "w")) {
+        std::fputs("Mods for Knuckles' Chaotix Recompiled (docs/MOD_PACKS.md in the source).\n"
+                   "\n"
+                   "Mod packs: one folder per mod, with a mod.ini and the folders below inside it:\n"
+                   "  Mods/MyMod/mod.ini         name = My Mod / author = Me / version = 1.0\n"
+                   "  Mods/MyMod/Textures/...    Mods/MyMod/Music/...    Mods/MyMod/Patches/...\n"
+                   "OPTIONS > EXTRAS > MODS turns packs on and off and sets their order: where two\n"
+                   "replace the same thing, the higher one wins. Graphics, music and touch images\n"
+                   "change at once; patches and character stats when the game is started again.\n"
+                   "\n"
+                   "Loose files: the folders here (Textures, Characters, Music, Patches, Touch) are\n"
+                   "used too, above every pack, for your own changes. Each has a README.\n",
+                   f);
+        std::fclose(f);
+    }
+}
+
+// ROM patches (issue #35): IPS and BPS files in Mods/Patches and the enabled
+// mod packs' Patches folders, applied to the ROM in memory before the game
+// starts. The user's ROM file is never changed.
 void apply_rom_patches(App& app) {
     const std::string dir = mods_root(app) + "Patches";
     std::error_code ec;
     std::filesystem::create_directories(std::filesystem::u8path(dir), ec);
+    write_mods_readme(mods_root(app));
     const std::string readme = dir + "/README.txt";
     if (!std::filesystem::exists(std::filesystem::u8path(readme), ec)) {
         if (FILE* f = std::fopen(readme.c_str(), "w")) {
@@ -1123,19 +1249,21 @@ void apply_rom_patches(App& app) {
                        "Patches must be made for Knuckles' Chaotix (Japan, USA),\n"
                        "SHA-1 0c2fff7bc79ed26507c08ac47464c3af19f7ced7.\n"
                        "Graphics, palettes and other data are fine. A patch that changes the game's\n"
-                       "code works too, but that code then runs in the slower interpreter.\n",
+                       "code works too, but that code then runs in the slower interpreter.\n"
+                       "Mod packs' Patches folders are applied before these, the lowest pack in\n"
+                       "OPTIONS > EXTRAS > MODS first (docs/MOD_PACKS.md).\n",
                        f);
             std::fclose(f);
         }
     }
-    std::vector<std::string> files;
-    for (const auto& e : std::filesystem::directory_iterator(std::filesystem::u8path(dir), ec)) {
-        std::string ext = e.path().extension().u8string();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
-        if (e.is_regular_file(ec) && (ext == ".ips" || ext == ".bps")) files.push_back(e.path().u8string());
-    }
+    // Issue #42: every enabled pack's patches, the lowest pack's first and the
+    // loose ones (this folder) last, so a higher pack's bytes are the ones
+    // that stay. What was applied is remembered: a change in the list only
+    // takes effect when the game starts again.
+    scan_packs(app);
+    app.packs_game_signature = game_signature(app);
+    const std::vector<std::string> files = mod_packs::patch_files(app.packs);
     if (!files.empty()) {
-        std::sort(files.begin(), files.end());
         std::vector<std::string> messages;
         const int applied = app.m->rom.apply_patches(files, &messages);
         for (const auto& msg : messages) LOGI("patch", "%s", msg.c_str());
@@ -1564,6 +1692,25 @@ int main(int argc, char** argv) {
             for (const auto& msg : messages) LOGI("sprites", "%s", msg.c_str());
             LOGI("sprites", "%d sprite sheet(s) exported to %s", n, dir.c_str());
         };
+        // Mod packs (issue #42): the list OPTIONS > EXTRAS > MODS shows and
+        // edits (in the settings' order), whether the changes made there
+        // include patches or character stats (which wait for a restart), and
+        // reading the Mods folder again with what can change at once applied.
+        // Autotests leave the user's Mods folder alone unless given one.
+        const bool mods_allowed = !app.autotest_frames || !app.mods_dir.empty();
+        hooks.mod_packs = [&app, mods_allowed]() -> std::vector<mod_packs::Pack>* {
+            return app.m && mods_allowed ? &app.packs : nullptr;
+        };
+        hooks.mods_changed = [&app] { if (app.m) app.packs_restart = game_signature(app) != app.packs_game_signature; };
+        hooks.reload_mods = [&app, mods_allowed] {
+            if (!app.m || !mods_allowed) return;
+            load_mods(app, true);
+            app.packs_restart = game_signature(app) != app.packs_game_signature;
+        };
+        hooks.mods_need_restart = [&app] { return app.packs_restart; };
+        hooks.mod_preview = [&app](const mod_packs::Pack& p, float* w, float* h) -> SDL_Texture* {
+            return mod_preview(app, p, w, h);
+        };
         hooks.save_state = [&app](int slot) { save_state(app, slot); };
         hooks.load_state = [&app](int slot) { load_state(app, slot); };
         hooks.state_info = [&app](int slot) { return app.m ? state_info(app, slot) : std::string(); };
@@ -1627,6 +1774,8 @@ int main(int argc, char** argv) {
     LOGI("app", "execution: %s", rs.description.c_str());
     if (!app.autotest_frames || !app.mods_dir.empty()) {  // autotests are hermetic unless asked
         load_mods(app);
+        // --menu mods opened the page before there was a list to show.
+        if (app.menu.page_name() == "mods") app.menu.show_page("mods");
     }
     // Issue #8: the menu's art comes from the ROM being played, after any
     // patches: its font now (a millisecond), its zone pictures from the cache

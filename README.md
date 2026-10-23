@@ -129,7 +129,7 @@ so nothing is extracted or shipped.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen),
 SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad) and EXTRAS (cheats,
-lobby shortcuts, the menu's look, awards, and on Android the Mods folder).
+lobby shortcuts, the menu's look, awards, and MODS, the mod packs).
 
 The menu is written in the game's own font -- the white digits and shaded
 yellow capitals of its TRAINING and DATA LOAD screens -- and shows the game's
@@ -343,12 +343,43 @@ rest and while held, custom images included: 65% and 100% by default.
 
 The `Mods` folder is in the user data folder. On Android it is
 `ChaotixRecompiled/Mods` in the phone's storage once you allow it (OPTIONS >
-EXTRAS > MODS FOLDER opens Android's "All files access" page), and
+EXTRAS > MODS > MODS FOLDER opens Android's "All files access" page), and
 `Android/data/org.chaotixrecompiled/files/Mods` until then. On iOS it is
 `Mods` in the app's Documents, which the Files app shows.
 
 In widescreen levels the HUD keeps to the left edge of the picture; OPTIONS >
 VIDEO > WIDE HUD puts it back at its 4:3 place.
+
+## Mod packs
+
+Every kind of mod below can come as a *pack*: a folder of its own in `Mods`,
+with a `mod.ini` (name, author, version, description, link, preview image)
+and inside it the same `Textures`, `Characters`, `Music`, `Patches` and
+`Touch` folders the `Mods` folder has:
+
+```
+Mods/
+  ChineseText/
+    mod.ini          name = Traditional Chinese / author = ... / version = 1.0.1
+    preview.png
+    Textures/        mdtext_*.txt/.png, 32x_*.png, ...
+  FasterKnuckles/
+    mod.ini
+    Characters/knuckles.ini
+  Textures/          your own loose files, as before
+```
+
+OPTIONS > EXTRAS > MODS lists the packs with their versions: left/right turns
+one on or off, Enter shows its description and preview with MOVE UP and MOVE
+DOWN. Where two enabled packs replace the same thing (a tile, a sprite frame,
+a text pattern, a character's file, a piece of music, a touch button) the
+higher one wins; patches of every enabled pack are applied, the lowest
+first. Loose files in `Mods/Textures`, `Mods/Music`, ... still work, above
+every pack. Graphics, music and touch images change as soon as you leave the
+page (or press RELOAD MODS); patches and character stats the next time the
+game starts. The choices are kept in `[Mods]` in `Config/chaotix.ini`.
+Details, and how to publish a pack on GameBanana:
+[docs/MOD_PACKS.md](docs/MOD_PACKS.md).
 
 ## ROM patches
 
