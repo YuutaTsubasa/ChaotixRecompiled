@@ -150,6 +150,14 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_music_player.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(music_player PROPERTIES TIMEOUT 900)  # fails by its exit code
+        # The game's own SOUND TEST (issue #50): a song and a sound effect
+        # are heard after A (the Z80 runs up to the 68K's time when its bus
+        # is requested, so it takes its V-blank interrupt first), the same
+        # on the interpreters, lockstep included.
+        add_test(NAME sound_test_plays
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_sound_test.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
+        set_tests_properties(sound_test_plays PROPERTIES TIMEOUT 600)  # fails by its exit code
     endif()
     # Rewind (issue #40): every snapshot still held is stepped back to and
     # must be exactly the state it was taken from; the buffer keeps to its

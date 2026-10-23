@@ -85,11 +85,12 @@ measured headless). What sets that screen apart is its vertical-blank
 routine (`$887836`): it requests the Z80's bus at once and copies all the
 driver's track records for its meters, holding the bus far longer than the
 other scenes' routine (`$8F6EFA`, nine bytes of PWM notes), and from the
-very line on which the Z80 is interrupted to run its driver. The likely
-cause is that this emulator runs the 68K's part of a time slice before the
-Z80's, so the Z80 never gets to take that interrupt; that is an emulation
-timing question to be looked into on its own, not something the music
-player changes. The OPTIONS list plays every track.
+very line on which the Z80 is interrupted to run its driver. The cause was
+that this emulator ran the 68K's part of a time slice before the Z80's, so
+the Z80 never got to take that interrupt. Issue #50 fixed that (the Z80 now
+runs up to the 68K's time whenever the 68K requests its bus;
+docs/ISSUE_50_SOUND_TEST.md), and the SOUND TEST plays. The music player
+still boots into the OPTIONS list, which plays every track either way.
 
 ### The player's game is untouched
 

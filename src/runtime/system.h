@@ -358,6 +358,14 @@ public:
     uint8_t z80_bus_read(uint16_t a);
     void z80_bus_write(uint16_t a, uint8_t v);
     void set_z80_reset(bool held);
+    void set_z80_busreq(bool requested);
+    // Runs the Z80 (unless it is held in reset or stopped by a bus request)
+    // up to the given master-clock time. Called at the end of every slice
+    // and, before the 68K changes BUSREQ or RESET, at the 68K's current time,
+    // so the Z80 runs exactly until the 68K stops it (or from when it starts
+    // it), as on the hardware.
+    void z80_sync(uint64_t now_mclk);
+    void z80_catch_up();
 private:
 
     // Per-instance bus glue and time-slice bookkeeping (no globals, so several
