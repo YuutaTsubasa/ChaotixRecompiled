@@ -54,8 +54,11 @@ people below. Thank you all: every report here led to a fix or a feature.
   [#22](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/22)).
 - **[ZacOnGH](https://github.com/ZacOnGH)**: the Linux build
   ([#23](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/23)).
-- **[CooliKnucx](https://github.com/CooliKnucx)**: touch control images
-  ([#25](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/25)).
+- **[CooliKnucx](https://github.com/CooliKnucx)**: touch control images, the
+  menu size and the level select
+  ([#25](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/25),
+  [#49](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/49),
+  [#51](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/51)).
 - **[rsomethin](https://github.com/rsomethin)**: settings lost on mobile
   ([#26](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/26)).
 - **[HickySnow](https://github.com/HickySnow)**: special stage progress in
