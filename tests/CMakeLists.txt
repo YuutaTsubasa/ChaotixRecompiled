@@ -32,6 +32,7 @@ add_executable(chaotix_tests
     test_ghost.cpp
     test_jukebox.cpp
     test_speedrun.cpp
+    test_netplay.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
