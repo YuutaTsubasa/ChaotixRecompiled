@@ -72,6 +72,10 @@ public:
         std::function<void()> reload_mods;
         std::function<bool()> mods_need_restart;
         std::function<SDL_Texture*(const mod_packs::Pack&, float* w, float* h)> mod_preview;
+        // Speedrun tools (issue #47, OPTIONS > EXTRAS > SPEEDRUN): start a
+        // run now, or reset the one going.
+        std::function<void()> speedrun_start;
+        std::function<void()> speedrun_reset;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
@@ -122,7 +126,8 @@ private:
     // OPTIONS is a list of categories; each category is a page of its own, so
     // that no page runs off a phone's screen.
     enum class Page { Closed, Front, Main, Options, Video, Sound, Input, Extras, Controls, Keys, TimeAttack,
-                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo };
+                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo,
+                      Speedrun };
 
     struct Item {
         std::string label;
@@ -158,6 +163,7 @@ private:
     static Page parent_of(Page p);
     void build_cheats();
     void build_lobby();
+    void build_speedrun();
     void build_controls();
     void build_time_attack();
     void build_keys();

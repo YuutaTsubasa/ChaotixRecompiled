@@ -120,6 +120,7 @@ and the app's Documents on iOS (the Files app's On My iPhone > Chaotix).
 | F10 | Next save state slot (1-4) |
 | Backspace (hold) | Rewind (on a pad, the left trigger) |
 | F12 | Screenshot |
+| Home / End | Start / reset a speedrun timer run (see Speedrun tools below) |
 
 The menu is the front end: it is up as soon as the program starts, a screen of
 its own with the game's title art framed on the left and the list beside it —
@@ -326,6 +327,27 @@ Choosing your own character as the partner keeps the catcher's. TIME ATTACK
 has its own choices and ignores these. See
 [docs/LOBBY_SHORTCUTS.md](docs/LOBBY_SHORTCUTS.md).
 
+## Speedrun tools
+
+OPTIONS > EXTRAS > SPEEDRUN has an in-game timer, splits and an input display,
+all off to begin with:
+
+| Field | What it does |
+| --- | --- |
+| TIMER | real time (RTA) and game time (IGT, the level clocks added up) of the run |
+| SPLITS | each level finished, with its delta against your best (kept in `Splits/`) |
+| COMPARE | whether splits and the best go by REAL TIME or GAME TIME |
+| INPUT DISPLAY | the pads' buttons, lit while held (both players with two) |
+| TIMER CORNER, INPUT CORNER, OPACITY | where and how they are drawn |
+| START RUN, RESET RUN, and their keys | by hand (Home / End to begin with) |
+
+A run starts by itself when START on DATA LOAD hands over to the game, splits
+on the frame each level's clock stops at the goal, and resets when the game
+goes back to its title screen. `tools/livesplit/ChaotixRecompiled.asl` is a
+LiveSplit auto-splitter that follows the same timer and gives LiveSplit the
+game time. See [docs/SPEEDRUN.md](docs/SPEEDRUN.md) for the definitions, the
+memory block auto-splitters read and the game's RAM addresses.
+
 ## Volume and touch controls
 
 OPTIONS > SOUND has VOLUME (everything), MUSIC and EFFECTS. The sound driver's sound
@@ -476,6 +498,10 @@ you have the right to use, please.
 - `chaotix_headless --ghost-record FILE` writes a `--stage` or replayed run
   as a TIME ATTACK ghost when it ends, and `--ghost FILE` races one, drawn
   into the shots (`--ghost-log N` prints where it is; docs/GHOSTS.md).
+- `chaotix_headless --speedrun` follows the session with the speedrun timer
+  (`--speedrun-start FRAME` starts a run by hand) and prints its starts,
+  splits and resets; `--input-display` draws the input display into the shots
+  (docs/SPEEDRUN.md).
 - `chaotix_headless --save-state FRAME:FILE` writes a save state after that
   frame and `--load-state FILE` starts from one (the run then goes on to
   `--frames`); `--state-hash-every N` prints a fingerprint of the whole

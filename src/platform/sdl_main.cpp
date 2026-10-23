@@ -15,6 +15,9 @@
 #include "frontend/config.h"
 #include "frontend/ghost.h"
 #include "frontend/time_attack.h"
+#include "frontend/input_display.h"
+#include "frontend/livesplit.h"
+#include "frontend/speedrun.h"
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
@@ -168,6 +171,11 @@ struct App {
     // ones it asked for the run is over -- and the level clock at that moment
     // is the time.
     time_attack::Run ta;
+    // Speedrun tools (issue #47): the run being timed, and its best splits
+    // (Splits/ in the user data folder, per ROM).
+    speedrun::Tracker run;
+    speedrun::Best run_best;
+    std::string run_best_path;
     bool ta_cheated = false;  // a cheat was on during the current run
     bool cheating = false;    // one is on this frame
     // TIME ATTACK ghosts (issue #41, frontend/ghost.h): every run is recorded
@@ -799,8 +807,11 @@ void save_now(App& app) {
         LOGW("app", "cannot save settings to %s", app.store.config_file().c_str());
 }
 
+double host_seconds();
+
 void follow_time_attack(App& app) {
     if (!app.ta.update(*app.m)) return;
+    app.run.stop(host_seconds());
     const int frames = app.ta.time;
     const bool ran_out = app.ta.timed_out();
     const bool timed = app.ta.timed() && !ran_out;
@@ -886,6 +897,178 @@ const uint32_t* ghost_picture(App& app) {
     return app.ghost_picture.data();
 }
 
+// ---------------------------------------------------------------------------
+// Speedrun tools (issue #47, frontend/speedrun.h, docs/SPEEDRUN.md). The run
+// is watched after every emulated frame, whether or not anything is drawn, so
+// LiveSplit (frontend/livesplit.h) can follow it with the overlays off.
+// ---------------------------------------------------------------------------
+double host_seconds() { return double(SDL_GetTicksNS()) / 1e9; }
+
+speedrun::Compare run_compare(const App& app) {
+    return app.cfg.sr_compare_game ? speedrun::Compare::Game : speedrun::Compare::Real;
+}
+
+// A run ended (reset by hand or by the game): kept as the best if it is one.
+void speedrun_ended(App& app) {
+    const std::vector<speedrun::Split>& ended = app.run.ended_splits();
+    LOGI("speedrun", "run reset after %zu split(s)", ended.size());
+    if (!app.run.ended_counts() || !speedrun::better(ended, app.run_best, run_compare(app))) return;
+    app.run_best.splits = ended;
+    const speedrun::Split& last = ended.back();
+    notice(app, "SPEEDRUN", "NEW BEST SPLITS",
+           std::to_string(ended.size()) + " SPLITS, " +
+               (run_compare(app) == speedrun::Compare::Game ? speedrun::format_game(last.igt_frames)
+                                                           : speedrun::format_rta(last.rta_ms)));
+    if (app.autotest_frames || app.run_best_path.empty()) return;  // autotests are hermetic
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::u8path(app.run_best_path).parent_path(), ec);
+    if (!speedrun::save_best(app.run_best_path, app.run_best))
+        LOGW("speedrun", "cannot write %s", app.run_best_path.c_str());
+}
+
+void speedrun_start(App& app) {
+    if (app.run.start(host_seconds(), false) & speedrun::kReset) speedrun_ended(app);
+    LOGI("speedrun", "run started by hand at frame %llu", (unsigned long long)app.m->frame_count);
+    notice(app, "SPEEDRUN", "RUN STARTED");
+}
+
+void speedrun_reset(App& app) {
+    if (!(app.run.reset() & speedrun::kReset)) return;
+    speedrun_ended(app);
+    notice(app, "SPEEDRUN", "RUN RESET");
+}
+
+void follow_speedrun(App& app) {
+    if (app.cheating) app.run.mark_cheated();
+    const unsigned ev = app.run.update(*app.m, host_seconds());
+    if (app.cheating) app.run.mark_cheated();
+    if (ev & speedrun::kReset) speedrun_ended(app);
+    if (ev & speedrun::kStarted) LOGI("speedrun", "run started at frame %llu", (unsigned long long)app.m->frame_count);
+    if (ev & speedrun::kSplit) {
+        const speedrun::Split& s = app.run.splits().back();
+        LOGI("speedrun", "split %zu: %s at frame %llu, level %s, game time %s, real time %s", app.run.splits().size(),
+             s.name.c_str(), (unsigned long long)s.frame, speedrun::format_game(s.level_frames).c_str(),
+             speedrun::format_game(s.igt_frames).c_str(), speedrun::format_rta(s.rta_ms).c_str());
+    }
+    livesplit::publish(app.m.get(), app.run);
+}
+
+// Where a box of w x h goes in a corner of the picture.
+SDL_FRect corner_box(const SDL_FRect& image, speedrun::Corner k, float w, float h, float margin) {
+    const bool right = k == speedrun::Corner::TopRight || k == speedrun::Corner::BottomRight;
+    const bool bottom = k == speedrun::Corner::BottomLeft || k == speedrun::Corner::BottomRight;
+    return {right ? image.x + image.w - margin - w : image.x + margin,
+            bottom ? image.y + image.h - margin - h : image.y + margin, w, h};
+}
+
+// The overlays: drawn by the host over the window, never into the machine's
+// picture, so nothing the game or a capture of its frames sees changes.
+void draw_speedrun(App& app, const SDL_FRect& image) {
+    const Config& c = app.cfg;
+    if (!(c.sr_timer || c.sr_splits || c.sr_input) || app.menu.open() || !app.handed_over) return;
+    ui::Ui& g = app.ui;
+    const uint8_t op = uint8_t(std::clamp(c.sr_opacity, 0, 100) * 255 / 100);
+    auto fade = [op](ui::Color col) { return col.alpha(uint8_t(col.a * op / 255)); };
+    const float margin = g.px(10);
+
+    if (c.sr_timer || c.sr_splits) {
+        struct Row {
+            std::string name, time, delta;
+            ui::Color colour, delta_colour;
+            ui::Font font;
+        };
+        std::vector<Row> rows;
+        const double now = host_seconds();
+        const bool idle = app.run.state() == speedrun::Tracker::State::Idle;
+        if (c.sr_timer) {
+            rows.push_back({"RTA", speedrun::format_rta(app.run.rta_ms(now)), "",
+                            idle ? ui::theme::text_dim : ui::theme::text, {}, ui::Font::Pixel});
+            rows.push_back({"IGT", speedrun::format_game(app.run.igt_frames()), "",
+                            idle ? ui::theme::text_dim : ui::theme::text, {}, ui::Font::Pixel});
+        }
+        if (c.sr_splits && !app.run.time_attack()) {
+            const auto& splits = app.run.splits();
+            const speedrun::Compare by = run_compare(app);
+            constexpr size_t kShown = 6;
+            const size_t first = splits.size() > kShown ? splits.size() - kShown : 0;
+            for (size_t i = first; i < splits.size(); ++i) {
+                const speedrun::Split& s = splits[i];
+                Row r{s.name,
+                      by == speedrun::Compare::Game ? speedrun::format_game(s.igt_frames) : speedrun::format_rta(s.rta_ms),
+                      "", ui::theme::text, ui::theme::text_dim, ui::Font::Small};
+                int64_t d = 0;
+                if (speedrun::delta_ms(splits, i, app.run_best, by, d)) {
+                    r.delta = speedrun::format_delta(d);
+                    r.delta_colour = d < 0 ? ui::theme::good : d > 0 ? ui::theme::bad : ui::theme::text_dim;
+                }
+                rows.push_back(r);
+            }
+            if (app.run.in_level())
+                rows.push_back({"> " + app.run.level_name(), speedrun::format_game(app.run.level_frames()), "",
+                                ui::theme::accent, {}, ui::Font::Small});
+            if (!app.run_best.empty()) {
+                const speedrun::Split& b = app.run_best.splits.back();
+                rows.push_back({"BEST (" + std::to_string(app.run_best.splits.size()) + ")",
+                                by == speedrun::Compare::Game ? speedrun::format_game(b.igt_frames)
+                                                              : speedrun::format_rta(b.rta_ms),
+                                "", ui::theme::text_dim, {}, ui::Font::Small});
+            }
+            if (splits.empty() && idle && !c.sr_timer)
+                rows.push_back({"NO RUN", "", "", ui::theme::text_dim, {}, ui::Font::Small});
+        }
+        if (!rows.empty()) {
+            const float pad = g.px(8), gap = g.px(12);
+            float w0 = 0, w1 = 0, w2 = 0, h = 0;
+            for (const Row& r : rows) {
+                w0 = std::max(w0, g.text_width(r.font, r.name));
+                w1 = std::max(w1, g.text_width(r.font, r.time));
+                if (!r.delta.empty()) w2 = std::max(w2, g.text_width(r.font, r.delta));
+                h += g.line_height(r.font);
+            }
+            const float w = pad * 2 + w0 + gap + w1 + (w2 > 0 ? gap + w2 : 0);
+            const SDL_FRect box = corner_box(image, speedrun::parse_corner(c.sr_timer_corner, speedrun::Corner::TopRight),
+                                             w, h + pad * 2, margin);
+            g.panel(box, fade(ui::theme::surface.alpha(225)), fade(ui::theme::outline), g.px(6));
+            float y = box.y + pad;
+            for (const Row& r : rows) {
+                g.text(r.font, box.x + pad, y, r.name, fade(r.colour));
+                const float tx = box.x + pad + w0 + gap + w1;
+                g.text(r.font, tx - g.text_width(r.font, r.time), y, r.time, fade(r.colour));
+                if (!r.delta.empty()) {
+                    const float dx = box.x + w - pad;
+                    g.text(r.font, dx - g.text_width(r.font, r.delta), y, r.delta, fade(r.delta_colour));
+                }
+                y += g.line_height(r.font);
+            }
+        }
+    }
+
+    if (c.sr_input) {
+        // Both players when a second one is set up.
+        const int players = c.device[1] != "none" ? 2 : 1;
+        const float unit = std::max(1.0f, g.px(2.5f));
+        const float bw = input_display::kWidth * unit, bh = input_display::kHeight * unit;
+        const float gap = g.px(6);
+        const speedrun::Corner k = speedrun::parse_corner(c.sr_input_corner, speedrun::Corner::BottomLeft);
+        const SDL_FRect all = corner_box(image, k, bw, bh * float(players) + gap * float(players - 1), margin);
+        for (int p = 0; p < players; ++p) {
+            const SDL_FRect box{all.x, all.y + float(p) * (bh + gap), bw, bh};
+            g.rect(box, fade(ui::Color{0, 0, 0, 175}), g.px(4));
+            for (const input_display::Button& b : input_display::layout(app.m->input.pad[p])) {
+                const SDL_FRect r{box.x + float(b.x) * unit, box.y + float(b.y) * unit, float(b.w) * unit,
+                                  float(b.h) * unit};
+                g.rect(r, fade(b.lit ? ui::theme::warn : ui::theme::outline_strong.alpha(220)), unit);
+                if (b.label && g.line_height(ui::Font::Small) <= r.h + unit) {
+                    const std::string l(1, b.label);
+                    g.text(ui::Font::Small, r.x + (r.w - g.text_width(ui::Font::Small, l)) * 0.5f,
+                           r.y + (r.h - g.line_height(ui::Font::Small)) * 0.5f, l,
+                           fade(b.lit ? ui::theme::background : ui::theme::text_dim));
+                }
+            }
+        }
+    }
+}
+
 void handle_pad_button(App& app, Uint8 button) {
     if (app.menu.on_pad(button)) return;
     if (SDL_GamepadButton(button) == menu_pad_button(app)) menu_back(app);
@@ -900,6 +1083,8 @@ void handle_key(App& app, const SDL_KeyboardEvent& k) {
     // before the fixed function keys below.
     if (key_binding_is(app.cfg.state_save_key, k)) { save_state(app, app.cfg.state_slot); return; }
     if (key_binding_is(app.cfg.state_load_key, k)) { load_state(app, app.cfg.state_slot); return; }
+    if (key_binding_is(app.cfg.sr_start_key, k)) { speedrun_start(app); return; }
+    if (key_binding_is(app.cfg.sr_reset_key, k)) { speedrun_reset(app); return; }
     if (key_binding_is(app.cfg.state_slot_key, k)) {
         app.cfg.state_slot = app.cfg.state_slot % kStateSlots + 1;
         notice(app, "SAVE STATE", "SLOT " + std::to_string(app.cfg.state_slot), state_info(app, app.cfg.state_slot));
@@ -1729,6 +1914,8 @@ int main(int argc, char** argv) {
             app.stage_kick = 0;
             app.ta.begin(r);
             app.ta_cheated = false;
+            // The speedrun timer times it too (its timer only; no best).
+            if (app.run.start(host_seconds(), true) & speedrun::kReset) speedrun_ended(app);
             // Ghosts: this run is recorded, and the stage's ghost (if the
             // option is on and there is one) waits for the stage to start.
             stop_ghost(app);
@@ -1748,6 +1935,8 @@ int main(int argc, char** argv) {
             app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
                                            app.m->wide_extra_bottom, app.cfg.six_button});
         };
+        hooks.speedrun_start = [&app] { if (app.m) speedrun_start(app); };
+        hooks.speedrun_reset = [&app] { if (app.m) speedrun_reset(app); };
         hooks.back_to_title = [&app] {
             if (return_to_title(app)) app.menu.open_front();
         };
@@ -1867,6 +2056,13 @@ int main(int argc, char** argv) {
     if (!app.autotest_frames || !app.mods_dir.empty()) apply_rom_patches(app);  // autotests are hermetic unless asked
     // TIME ATTACK offers the characters by the names the ROM gives them.
     app.menu.set_character_names(stage_select::character_names(app.m->rom));
+    // Speedrun splits are named the way the ROM names its places, and the
+    // best is kept per game image, like ghosts (patched games keep their own).
+    app.run.set_place_names(stage_select::place_names(app.m->rom));
+    app.run_best_path = speedrun::best_path(app.store.root(), app.m->rom.patched_sha1.empty() ? app.m->rom.sha1
+                                                                                             : app.m->rom.patched_sha1);
+    if (!app.autotest_frames) speedrun::load_best(app.run_best_path, app.run_best);  // autotests are hermetic
+    livesplit::publish(app.m.get(), app.run);
     app.m->reset();
     if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
     RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
@@ -2177,6 +2373,7 @@ int main(int argc, char** argv) {
             app.music.set_volume(app.cfg.mod_music_volume * app.cfg.music_volume / 100);
             app.music.after_frame(*app.m, first_sample);
             follow_time_attack(app);
+            follow_speedrun(app);
             if (app.cfg.rewind && states_locked(app).empty() && app.m->frame_count % kRewindInterval == 0)
                 rewind_push(app);
             if (app.achievements_on && !app.cheating) {
@@ -2288,6 +2485,7 @@ int main(int argc, char** argv) {
                                               (app.rewinding ? TOUCH_REWIND : 0)));
         }
         if (app.ui.ready()) {
+            draw_speedrun(app, dst);
             app.menu.draw(app.ui, app.achievements);
             draw_toasts(app);
             if (app.rewinding && !app.menu.open()) {

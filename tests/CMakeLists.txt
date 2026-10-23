@@ -30,6 +30,7 @@ add_executable(chaotix_tests
     test_save_state.cpp
     test_mod_packs.cpp
     test_ghost.cpp
+    test_speedrun.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
@@ -54,6 +55,19 @@ endif()
 
 chaotix_set_warnings(chaotix_tests)
 add_test(NAME unit COMMAND chaotix_tests)
+
+# LiveSplit (issue #47): the block an auto-splitter scans for is in the
+# programs, once, with the documented layout. No ROM needed.
+if(CHAOTIX_BUILD_FRONTEND AND NOT CMAKE_CROSSCOMPILING)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME livesplit_signature_is_in_the_programs
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_livesplit_signature.py"
+                    $<TARGET_FILE:chaotix> $<TARGET_FILE:chaotix_headless>)
+        set_tests_properties(livesplit_signature_is_in_the_programs PROPERTIES
+            PASS_REGULAR_EXPRESSION "livesplit signature: OK")
+    endif()
+endif()
 
 # Integration tests: need the user's ROM (-DCHAOTIX_ROM=...). They verify the
 # recompiled build against the reference interpreter and golden frame hashes.
@@ -542,6 +556,40 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(lobby_shortcuts_a_finished_level_still_saves_to_its_data_slot PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION
         "peek 4700 E038 00140010.*peek 4700 DFF2 000700000003.*peek 4800 FA00 0000C69E4000BC00000037DC000008A80000.*save RAM changed on 1 frames, the last at frame 4639.*lockstep: 4800 frames bit-identical")
+
+    # Speedrun tools (issue #47, frontend/speedrun.h, docs/SPEEDRUN.md).
+    # The recorded run finishes BOTANIC BASE 1 at the goal: the goal flag
+    # FFFDC5 goes up on frame 3423 and the clock on the HUD stops there (the
+    # time attack test above: 0'34"66). The run's split is taken once, as
+    # that clock settles, with that time as the level's and the game time;
+    # the progress byte the level end moves on later does not split again.
+    # The timer only reads the machine: lockstep holds.
+    add_test(NAME speedrun_splits_a_finished_level_once
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4800 --lockstep --speedrun-start 800
+                --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt)
+    set_tests_properties(speedrun_splits_a_finished_level_once PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION
+        "speedrun: split 1 BOTANIC BASE 1 at frame 3426, level 0'34\"66 \\(2080 frames\\), game time 0'34\"66 \\(2080 frames\\).*speedrun: 1 split\\(s\\), game time 0'34\"66.*livesplit: block \"CHAOTIX_LIVESPLIT\" version 1 size 72, work RAM found, state 1, run 1, 1 split\\(s\\), game time 2080 frames.*lockstep: 4800 frames bit-identical"
+        FAIL_REGULAR_EXPRESSION "split 2 ")
+    # A run starts on its own when START on DATA LOAD hands over to the game
+    # (mode 0x60 -> INTRODUCTION's 0x58 on frame 2301), and the game runs as
+    # it did: lockstep bit-identical with the timer following it.
+    add_test(NAME speedrun_starts_when_data_load_hands_over
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --lockstep --speedrun ${_script})
+    set_tests_properties(speedrun_starts_when_data_load_hands_over PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "speedrun: run started at frame 2301\n.*lockstep: 3200 frames bit-identical"
+        FAIL_REGULAR_EXPRESSION "run reset")
+    # The overlays are drawn over a copy of the picture: every frame of the
+    # lobby walk hashes as it always has with the timer running and the input
+    # display drawn into the shots, and the display changes no pixel outside
+    # its box.
+    add_test(NAME speedrun_overlays_leave_the_frames_alone
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2600 ${LOBBY_WALK} --speedrun-start 400
+                --input-display --shot 700,1500 --out ${CMAKE_CURRENT_BINARY_DIR}
+                --expect-hashes ${CMAKE_CURRENT_SOURCE_DIR}/golden/lobby_walk_every50.txt)
+    set_tests_properties(speedrun_overlays_leave_the_frames_alone PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "input display: drawn on 2 shots, [1-9][0-9]* pixels inside its box, 0 outside"
+        FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
 
     # Long-running validation (-DCHAOTIX_LONG_TESTS=ON, ctest -L long): full attract sequence.
     if(CHAOTIX_LONG_TESTS)

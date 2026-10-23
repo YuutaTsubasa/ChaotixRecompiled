@@ -79,6 +79,9 @@ add_library(chaotix_runtime STATIC
     src/renderer/viewport.cpp
     src/frontend/setup.cpp
     src/frontend/time_attack.cpp
+    src/frontend/speedrun.cpp
+    src/frontend/livesplit.cpp
+    src/frontend/input_display.cpp
     src/frontend/backdrop.cpp
     src/frontend/ghost.cpp
     src/input/input.cpp

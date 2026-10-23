@@ -1,6 +1,7 @@
 #include "config.h"
 #include "frontend/backdrop.h"
 #include "frontend/ghost.h"
+#include "frontend/speedrun.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -172,6 +173,16 @@ bool Config::load(const std::string& path) {
             if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
             else if (k == "Partner") lobby_partner = std::clamp(std::atoi(v.c_str()), -1, 7);
             else if (k == "Time") lobby_time = std::clamp(std::atoi(v.c_str()), -1, 3);
+        } else if (section == "Speedrun") {
+            if (k == "Timer") sr_timer = parse_bool(v, sr_timer);
+            else if (k == "Splits") sr_splits = parse_bool(v, sr_splits);
+            else if (k == "Compare") sr_compare_game = v == "Game" || v == "game" || v == "GAME";
+            else if (k == "InputDisplay") sr_input = parse_bool(v, sr_input);
+            else if (k == "TimerCorner") sr_timer_corner = speedrun::corner_name(speedrun::parse_corner(v, speedrun::Corner::TopRight));
+            else if (k == "InputCorner") sr_input_corner = speedrun::corner_name(speedrun::parse_corner(v, speedrun::Corner::BottomLeft));
+            else if (k == "Opacity") sr_opacity = std::clamp(std::atoi(v.c_str()), 10, 100);
+            else if (k == "StartKey") sr_start_key = v;
+            else if (k == "ResetKey") sr_reset_key = v;
         } else if (section == "TimeAttack") {
             if (k == "Place") ta_place = std::atoi(v.c_str());
             else if (k == "Level") ta_level = std::atoi(v.c_str());
@@ -278,6 +289,14 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Time: -1 the game's own, else 0 morning 1 day 2 sunset 3 night.\n");
     std::fprintf(f, "Shortcuts = %s\nPartner = %d\nTime = %d\n", lobby_shortcuts ? "true" : "false", lobby_partner,
                  lobby_time);
+    std::fprintf(f, "\n[Speedrun]\n# Overlays drawn over the picture (docs/SPEEDRUN.md): the run's timer, its splits\n");
+    std::fprintf(f, "# (best kept in Splits/ in this folder) and the pads' buttons. Corners: TopLeft TopRight\n");
+    std::fprintf(f, "# BottomLeft BottomRight. Compare: Real or Game (time). Keys: SDL key names.\n");
+    std::fprintf(f, "Timer = %s\nSplits = %s\nCompare = %s\nInputDisplay = %s\n", sr_timer ? "true" : "false",
+                 sr_splits ? "true" : "false", sr_compare_game ? "Game" : "Real", sr_input ? "true" : "false");
+    std::fprintf(f, "TimerCorner = %s\nInputCorner = %s\nOpacity = %d\nStartKey = %s\nResetKey = %s\n",
+                 sr_timer_corner.c_str(), sr_input_corner.c_str(), sr_opacity, sr_start_key.c_str(),
+                 sr_reset_key.c_str());
     std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");

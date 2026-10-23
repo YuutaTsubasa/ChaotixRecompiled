@@ -76,6 +76,26 @@ std::vector<std::string> character_names(const Rom& rom) {
     return names;
 }
 
+std::vector<std::string> place_names(const Rom& rom) {
+    constexpr uint32_t kTable = 0x07739E;  // $8F739E
+    constexpr uint32_t kStride = 0x15;
+    std::vector<std::string> names;
+    for (int id = 0; id < kPlaceCount; ++id) {
+        std::string name;
+        bool ok = false;
+        const uint32_t at = kTable + kStride * uint32_t(id);
+        for (uint32_t p = at; p < rom.file_size && p < at + kStride; ++p) {
+            const uint8_t ch = rom.data[p];
+            if (!ch) { ok = true; break; }
+            if (ch < 0x20 || ch > 0x7E) break;
+            name.push_back(char(ch));
+        }
+        while (!name.empty() && name.back() == ' ') name.pop_back();
+        names.push_back(ok && !name.empty() ? name : std::string(kPlaces[id].name));
+    }
+    return names;
+}
+
 bool is_placeholder_name(const std::string& name) {
     return name.find_first_not_of('*') == std::string::npos;
 }

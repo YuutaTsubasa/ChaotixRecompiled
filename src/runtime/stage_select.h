@@ -71,6 +71,10 @@ inline constexpr int kBrokenCharacter = 1;
 // be read (an offset out of the ROM, no terminator, a character the font
 // does not have) falls back to kCharacters.
 std::vector<std::string> character_names(const Rom& rom);
+// The PLACE names as the ROM has them ($8F739E, ROM 0x07739E: kPlaceCount
+// names 0x15 bytes apart, NUL-terminated and padded with spaces), trailing
+// spaces dropped; a name that cannot be read falls back to kPlaces.
+std::vector<std::string> place_names(const Rom& rom);
 // The game's placeholder for a slot without a character: only asterisks
 // (slot 1's "**********"), or nothing at all.
 bool is_placeholder_name(const std::string& name);

@@ -12,6 +12,7 @@
 #include "frontend/backdrop.h"
 #include "frontend/config.h"
 #include "frontend/ghost.h"
+#include "frontend/speedrun.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
 
@@ -45,7 +46,8 @@ bool Menu::is_list_page(Page p) {
     return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys ||
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
-           p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo;
+           p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo ||
+           p == Page::Speedrun;
 }
 
 // Where BACK and Escape go from a page below another one.
@@ -53,6 +55,7 @@ Menu::Page Menu::parent_of(Page p) {
     switch (p) {
     case Page::Video: case Page::Sound: case Page::Input: case Page::Extras: return Page::Options;
     case Page::Cheats: case Page::Lobby: return Page::Extras;
+    case Page::Speedrun: return Page::Extras;
     case Page::Mods: return Page::Extras;
     case Page::ModInfo: return Page::Mods;
     case Page::Keys: case Page::StateKeys: return Page::Controls;
@@ -85,6 +88,7 @@ void Menu::set_page(Page p) {
     else if (p == Page::TimeAttack) build_time_attack();
     else if (p == Page::Cheats) build_cheats();
     else if (p == Page::Lobby) build_lobby();
+    else if (p == Page::Speedrun) build_speedrun();
     else if (p == Page::Mods) {
         build_mods();
         // Back from a pack's page: on that pack again.
@@ -117,6 +121,7 @@ bool Menu::show_page(const std::string& name) {
     else if (name == "timeattack") set_page(Page::TimeAttack);
     else if (name == "cheats") set_page(Page::Cheats);
     else if (name == "lobby") set_page(Page::Lobby);
+    else if (name == "speedrun") set_page(Page::Speedrun);
     else if (name == "controls") set_page(Page::Controls);
     else if (name == "keys1" || name == "keys2" || name == "pad1" || name == "pad2") {
         keys_pad_ = name.rfind("pad", 0) == 0;
@@ -154,6 +159,7 @@ std::string Menu::page_name() const {
     case Page::States: return "states";
     case Page::StateKeys: return "statekeys";
     case Page::Lobby: return "lobby";
+    case Page::Speedrun: return "speedrun";
     case Page::Mods: return "mods";
     case Page::ModInfo: return "modinfo";
     default: return "";
@@ -265,6 +271,8 @@ const char kSaveStateCapture[] = "save state";
 const char kLoadStateCapture[] = "load state";
 const char kSlotCapture[] = "next slot";
 const char kRewindCapture[] = "rewind";
+const char kRunStartCapture[] = "start run";
+const char kRunResetCapture[] = "reset run";
 
 // The gamepad buttons the host's own functions may use: the menu button's
 // choices, the triggers, and NONE.
@@ -388,6 +396,8 @@ std::string* Menu::capture_target(const std::string& what) const {
     if (what == kLoadStateCapture) return &cfg_->state_load_key;
     if (what == kSlotCapture) return &cfg_->state_slot_key;
     if (what == kRewindCapture) return &cfg_->rewind_key;
+    if (what == kRunStartCapture) return &cfg_->sr_start_key;
+    if (what == kRunResetCapture) return &cfg_->sr_reset_key;
     return nullptr;
 }
 
@@ -737,6 +747,11 @@ void Menu::build_extras() {
                       [this](int step) { if (step == 0) set_page(Page::Lobby); },
                       "pick your partner and the time of day"});
     items_.back().pressed = true;
+    // Issue #47: the timer, splits and input display, on a page of their own.
+    items_.push_back({"SPEEDRUN", [c] { return on_off(c->sr_timer || c->sr_splits || c->sr_input); },
+                      [this](int step) { if (step == 0) set_page(Page::Speedrun); },
+                      "timer, splits and input display"});
+    items_.back().pressed = true;
     // Issue #42: the mod packs, on a page of their own (with the Android
     // MODS FOLDER row, which used to be here).
     items_.push_back({"MODS",
@@ -876,6 +891,66 @@ void Menu::build_lobby() {
                           c->lobby_time = t - 1;
                       },
                       "GAME: it moves on every second level"});
+    items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
+}
+
+// Issue #47 (frontend/speedrun.h, docs/SPEEDRUN.md): the overlays, where they
+// go, and starting or resetting a run by hand -- the only way on a phone,
+// which has no keys for it. Reachable from the pause menu too.
+void Menu::build_speedrun() {
+    items_.clear();
+    Config* c = cfg_;
+    if (!c) return;
+    auto toggle = [this](const char* label, bool Config::*field, const char* note) {
+        Config* cc = cfg_;
+        items_.push_back({label, [cc, field] { return on_off(cc->*field); },
+                          [cc, field](int s) { if (s) cc->*field = !(cc->*field); }, note});
+    };
+    toggle("TIMER", &Config::sr_timer, "real time and game time of the run");
+    toggle("SPLITS", &Config::sr_splits, "each level finished, against your best");
+    items_.push_back({"COMPARE", [c] { return std::string(c->sr_compare_game ? "GAME TIME" : "REAL TIME"); },
+                      [c](int s) { if (s) c->sr_compare_game = !c->sr_compare_game; },
+                      "what the splits and the best go by"});
+    toggle("INPUT DISPLAY", &Config::sr_input, "the pads' buttons");
+    auto corner_row = [this](const char* label, std::string Config::*field, speedrun::Corner fallback) {
+        Config* cc = cfg_;
+        static const char* kNames[] = {"TOP LEFT", "TOP RIGHT", "BOTTOM LEFT", "BOTTOM RIGHT"};
+        items_.push_back({label,
+                          [cc, field, fallback] { return std::string(kNames[int(speedrun::parse_corner(cc->*field, fallback))]); },
+                          [cc, field, fallback](int s) {
+                              if (!s) return;
+                              speedrun::Corner k = speedrun::parse_corner(cc->*field, fallback);
+                              cycle(k, 4, s);
+                              cc->*field = speedrun::corner_name(k);
+                          }});
+    };
+    corner_row("TIMER CORNER", &Config::sr_timer_corner, speedrun::Corner::TopRight);
+    corner_row("INPUT CORNER", &Config::sr_input_corner, speedrun::Corner::BottomLeft);
+    items_.push_back({"OPACITY", [c] { return std::to_string(c->sr_opacity) + "%"; },
+                      [c](int s) { if (s) c->sr_opacity = std::clamp(c->sr_opacity + 5 * s, 10, 100); }});
+    items_.push_back({"START RUN", {}, [this](int step) {
+        if (step != 0) return;
+        close();
+        if (hooks_.speedrun_start) hooks_.speedrun_start();
+    }, "or START on DATA LOAD starts one"});
+    items_.push_back({"RESET RUN", {}, [this](int step) {
+        if (step != 0) return;
+        close();
+        if (hooks_.speedrun_reset) hooks_.speedrun_reset();
+    }, "or going back to the title"});
+    auto key_row = [this](const char* label, const char* capture, std::string Config::*field) {
+        Config* cc = cfg_;
+        items_.push_back({label,
+                          [this, cc, capture, field] {
+                              if (awaiting_ == capture) return std::string("PRESS A KEY");
+                              const std::string& v = cc->*field;
+                              return v.empty() ? std::string("-") : upper(v);
+                          },
+                          [this, capture](int step) { if (step == 0) awaiting_ = capture; },
+                          {}, /*read_only=*/false, /*pressed=*/true});
+    };
+    key_row("START RUN KEY", kRunStartCapture, &Config::sr_start_key);
+    key_row("RESET RUN KEY", kRunResetCapture, &Config::sr_reset_key);
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Extras); }});
 }
 
