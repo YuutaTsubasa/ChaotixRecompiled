@@ -34,10 +34,12 @@
 #include "runtime/tile_replace.h"
 #include "frontend/backdrop.h"
 #include "frontend/ghost.h"
+#include "frontend/jukebox.h"
 #include "frontend/time_attack.h"
 #include "renderer/game_font.h"
 #include "runtime/system.h"
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -390,6 +392,15 @@ int main(int argc, char** argv) {
     struct Peek { uint64_t every; uint32_t addr; uint32_t bytes; };
     std::vector<Peek> peeks;
     std::vector<std::string> music_dirs;  // --music-dir: music replaced by files (audio/music_mods.h)
+    // The music player (issue #48, frontend/jukebox.h). --jukebox TRACK:FRAMES
+    // plays a track on the player's own machine instead of running the game
+    // (--wav keeps its sound); --jukebox-at FRAME:TRACK:FRAMES does it in the
+    // middle of the run, which must carry on as if it had not happened.
+    int jukebox_track = -1;
+    uint64_t jukebox_frames = 0, jukebox_at = 0;
+    bool jukebox_mid_run = false, jukebox_list = false, jukebox_interp = false;
+    std::string jukebox_repeat = "loop";
+    double jukebox_fade_after = 0;
     std::string coverage_path;
     int break_cpu = -1;
     uint64_t trace_from = 0, trace_to = 0;
@@ -587,6 +598,20 @@ int main(int argc, char** argv) {
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
         else if (a == "--music-dir") music_dirs.push_back(next());
+        else if (a == "--jukebox" || a == "--jukebox-at") {
+            auto parts = split(next(), ':');
+            const bool mid = a == "--jukebox-at";
+            if (parts.size() != (mid ? 3u : 2u)) { std::fprintf(stderr, "bad %s\n", a.c_str()); return 2; }
+            size_t k = 0;
+            if (mid) jukebox_at = std::strtoull(parts[k++].c_str(), nullptr, 10);
+            jukebox_track = int(std::strtol(parts[k++].c_str(), nullptr, 0));
+            jukebox_frames = std::strtoull(parts[k].c_str(), nullptr, 10);
+            jukebox_mid_run = mid;
+        }
+        else if (a == "--jukebox-list") jukebox_list = true;
+        else if (a == "--jukebox-interp") jukebox_interp = true;
+        else if (a == "--jukebox-repeat") jukebox_repeat = next();   // loop | once | all
+        else if (a == "--jukebox-fade-after") jukebox_fade_after = std::atof(next().c_str());
         else if (a == "--expect-hash") {
             auto parts = split(next(), ':');
             if (parts.size() == 2) expect_hash[std::strtoull(parts[0].c_str(), nullptr, 10)] = std::strtoull(parts[1].c_str(), nullptr, 16);
@@ -905,6 +930,72 @@ int main(int argc, char** argv) {
         music.attach(*m);
         if (ref) music.attach(*ref);
     }
+    // The music player's track list and machine (issue #48).
+    if (jukebox_list) {
+        bool from_rom = false;
+        const std::vector<jukebox::Track> tracks = jukebox::track_list(m->rom, &from_rom);
+        std::printf("jukebox: %zu tracks %s\n", tracks.size(), from_rom ? "from the ROM" : "(not found in the ROM)");
+        for (const auto& t : tracks)
+            std::printf("jukebox track %02d id %02X %s%s\n", int(t.id), unsigned(t.id), t.name.c_str(),
+                        music.has(t.id) ? " [replaced by mod]" : "");
+    }
+    // Plays the track for the frames asked; true if it got going.
+    auto play_jukebox = [&](std::vector<int16_t>* keep) {
+        jukebox::Player jb;
+        std::string why;
+        const auto t0 = std::chrono::steady_clock::now();
+        if (!jb.start(m->rom, music_dirs.empty() ? nullptr : &music, rs.active && !jukebox_interp, &why)) {
+            std::fprintf(stderr, "jukebox: %s\n", why.c_str());
+            return false;
+        }
+        const double boot_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        jb.set_tracks(jukebox::track_list(m->rom));
+        jb.set_repeat(jukebox_repeat == "once" ? jukebox::Repeat::Once
+                      : jukebox_repeat == "all" ? jukebox::Repeat::All : jukebox::Repeat::Loop);
+        jb.set_fade_after(jukebox_fade_after);
+        jb.play(uint8_t(jukebox_track));
+        std::vector<int16_t> sound;
+        double worst = 0;
+        const auto t1 = std::chrono::steady_clock::now();
+        uint8_t last_id = uint8_t(jukebox_track);
+        for (uint64_t i = 0; i < jukebox_frames; ++i) {
+            const auto f0 = std::chrono::steady_clock::now();
+            jb.run_frames(1, sound);
+            worst = std::max(worst, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f0).count());
+            const jukebox::Status st = jb.status();
+            if (st.id != last_id) {
+                std::printf("jukebox: frame %llu now %02d%s\n", (unsigned long long)i, int(st.id), st.id ? "" : " (stopped)");
+                last_id = st.id;
+            }
+        }
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
+        double sum = 0;
+        int peak = 0;
+        for (int16_t v : sound) {
+            sum += double(v) * double(v);
+            peak = std::max(peak, std::abs(int(v)));
+        }
+        const jukebox::Status st = jb.status();
+        std::printf("jukebox: track %02d, %s, ready in %llu frames (%.0f ms), %llu frames in %.0f ms "
+                    "(%.3f ms a frame, worst %.3f), peak %d, rms %.1f, %s%s\n",
+                    jukebox_track, rs.active && !jukebox_interp ? "recompiled" : "interpreted",
+                    (unsigned long long)jb.boot_frames(), boot_ms, (unsigned long long)jukebox_frames, ms,
+                    jukebox_frames ? ms / double(jukebox_frames) : 0.0, worst, peak,
+                    sound.empty() ? 0.0 : std::sqrt(sum / double(sound.size())),
+                    st.playing ? "playing" : "stopped", st.replaced ? ", from the mod's file" : "");
+        if (keep) *keep = std::move(sound);
+        return true;
+    };
+    if (jukebox_track >= 0 && !jukebox_mid_run) {
+        std::vector<int16_t> sound;
+        if (!play_jukebox(&sound)) return 4;
+        if (!wav_path.empty()) {
+            if (!write_wav(wav_path, sound, int(kAudioRate + 0.5))) return 1;
+            std::printf("audio written to %s (%zu samples)\n", wav_path.c_str(), sound.size() / 2);
+        }
+        return 0;
+    }
+    if (jukebox_list && jukebox_track < 0) return 0;
     // The 4:3 comparison machine runs on the interpreter: the recompiled
     // code's SH-2 validation state is process-wide, so only one machine at a
     // time may use it (same reason the lockstep reference is interpreted).
@@ -1121,6 +1212,9 @@ int main(int argc, char** argv) {
             }
         cheats::apply(*m, cheat_writes);
         if (ref) cheats::apply(*ref, cheat_writes);
+        // The music player opened mid-run: the game is held (no frame of it
+        // runs) while the player's machine plays, then goes on.
+        if (jukebox_mid_run && f == jukebox_at && !play_jukebox(nullptr)) return 4;
         ghost_recorder.before_frame(*m);
         const size_t first_sample = m->audio_out.size();
         const auto frame_t0 = std::chrono::steady_clock::now();

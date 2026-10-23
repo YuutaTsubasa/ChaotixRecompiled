@@ -454,6 +454,19 @@ level. Every music request is logged with its id, so playing the game shows
 which file to make; see [docs/MUSIC_MODS.md](docs/MUSIC_MODS.md). Only music
 you have the right to use, please.
 
+## Music player
+
+MUSIC PLAYER (on the front end, and under OPTIONS > SOUND, so from the pause
+menu too) is the game's sound test with its songs' names: the 41 tracks the
+game's own SOUND TEST lists, DOOR INTO SUMMER to DECISION 2ND, read from the
+ROM. PLAY, STOP, NEXT, PREVIOUS and FADE OUT; REPEAT loops the track, plays it
+once or plays the whole list, and FADE OUT AFTER fades out a track that would
+otherwise loop for ever. The music is the game's own FM, PSG and PWM, played by
+a second copy of the game booted to a quiet screen; a track a music mod
+replaces says REPLACED BY MOD and plays the mod's file. While the page is
+open your game is held, untouched, and it carries on when you leave. See
+[docs/MUSIC_PLAYER.md](docs/MUSIC_PLAYER.md).
+
 ## Tools
 
 - `rom_analyzer --rom <rom> [--coverage f.cov] --out dir [--refs-to ADDR]
@@ -476,6 +489,9 @@ you have the right to use, please.
 - `chaotix_headless --ghost-record FILE` writes a `--stage` or replayed run
   as a TIME ATTACK ghost when it ends, and `--ghost FILE` races one, drawn
   into the shots (`--ghost-log N` prints where it is; docs/GHOSTS.md).
+- `chaotix_headless --jukebox TRACK:FRAMES --wav FILE` renders a track with
+  the music player (`--jukebox-list` lists the tracks; `--jukebox-at
+  FRAME:TRACK:FRAMES` opens it in the middle of a run; docs/MUSIC_PLAYER.md).
 - `chaotix_headless --save-state FRAME:FILE` writes a save state after that
   frame and `--load-state FILE` starts from one (the run then goes on to
   `--frames`); `--state-hash-every N` prints a fingerprint of the whole

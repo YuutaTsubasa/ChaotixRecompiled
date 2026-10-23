@@ -30,6 +30,7 @@ add_executable(chaotix_tests
     test_save_state.cpp
     test_mod_packs.cpp
     test_ghost.cpp
+    test_jukebox.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
@@ -43,6 +44,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         test_menu.cpp
         test_state_menu.cpp
         test_mod_menu.cpp
+        test_music_menu.cpp
         test_time_attack.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/ui.cpp
@@ -139,6 +141,15 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_ghosts.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}" "${CMAKE_CURRENT_SOURCE_DIR}/recordings")
         set_tests_properties(time_attack_ghosts PROPERTIES TIMEOUT 900)  # fails by its exit code
+        # The music player (issue #48): the SOUND TEST's song list read from
+        # the ROM, tracks rendered on the player's own machine (music, each
+        # its own, the same on the interpreters), a music mod's file playing
+        # the track it replaces, and the game left exactly as it was when the
+        # player is used mid-level, lockstep included.
+        add_test(NAME music_player
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_music_player.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
+        set_tests_properties(music_player PROPERTIES TIMEOUT 900)  # fails by its exit code
     endif()
     # Rewind (issue #40): every snapshot still held is stepped back to and
     # must be exactly the state it was taken from; the buffer keeps to its

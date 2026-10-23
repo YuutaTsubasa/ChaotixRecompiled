@@ -14,6 +14,7 @@
 #include "audio/volumes.h"
 #include "frontend/config.h"
 #include "frontend/ghost.h"
+#include "frontend/jukebox.h"
 #include "frontend/time_attack.h"
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
@@ -182,6 +183,16 @@ struct App {
     bool ghost_goal_told = false;
     ghost::CameraTrail ghost_live_camera;
     std::vector<uint32_t> ghost_picture;  // the live picture with the ghost over it
+    // The music player (issue #48, frontend/jukebox.h): a machine of its own,
+    // run instead of the game while its page is open. The game is held
+    // meanwhile: not one frame of it runs, and nothing of it is touched.
+    jukebox::Player jukebox;
+    std::vector<int16_t> jukebox_audio;
+    bool jukebox_open = false;
+    bool recompiled = false;   // the game runs on the generated code
+    // Frame periods the game was held for the music player, so an autotest
+    // that opens it still ends.
+    uint64_t held_frames = 0;
     // Every frame's pad is kept, so a session can be replayed exactly, headless,
     // and looked at afterwards. What the game does when a run is finished at
     // the goal is not something a script can reach, so the only way to study it
@@ -727,6 +738,18 @@ void rewind_step(App& app) {
     app.m->run_frame();
     app.m->audio_out.clear();
     app.m->music_events.clear();
+}
+
+// The music player's machine (issue #48), made when its page opens: by the
+// main loop, or by the page's first request if that comes in the same pass.
+void open_jukebox(App& app) {
+    if (app.jukebox_open) return;
+    app.jukebox.begin(app.m->rom, &app.music, app.recompiled);
+    app.jukebox.set_tracks(jukebox::track_list(app.m->rom));
+    app.jukebox_open = true;
+    app.m->audio_out.clear();
+    if (app.audio) SDL_ClearAudioStream(app.audio);
+    LOGI("music", "music player opened (%s); the game is held", app.jukebox.recompiled() ? "recompiled" : "interpreted");
 }
 
 void rewind_push(App& app) {
@@ -1814,6 +1837,12 @@ int main(int argc, char** argv) {
         hooks.load_state = [&app](int slot) { load_state(app, slot); };
         hooks.state_info = [&app](int slot) { return app.m ? state_info(app, slot) : std::string(); };
         hooks.states_locked = [&app] { return app.m ? states_locked(app) : std::string(); };
+        hooks.music_play = [&app](uint8_t id) { open_jukebox(app); app.jukebox.play(id); };
+        hooks.music_stop = [&app] { open_jukebox(app); app.jukebox.stop_music(); };
+        hooks.music_fade = [&app] { open_jukebox(app); app.jukebox.fade_out(); };
+        hooks.music_step = [&app](int delta) { open_jukebox(app); app.jukebox.next(delta); };
+        hooks.music_status = [&app] { return app.jukebox.status(); };
+        hooks.music_replaced = [&app](uint8_t id) { return app.music.has(id); };
         app.start_stage = hooks.start_stage;
         app.menu.set_hooks(std::move(hooks));
     }
@@ -1821,7 +1850,7 @@ int main(int argc, char** argv) {
     // behind it and its title screen and attract demo are the backdrop.
     app.menu.open_front();
     if (!menu_page.empty() && !app.menu.show_page(menu_page))
-        LOGW("app", "--menu: unknown page '%s' (front, main, options, video, sound, input, extras, controls, cheats, awards)",
+        LOGW("app", "--menu: unknown page '%s' (front, main, options, video, sound, input, extras, controls, cheats, awards, music)",
              menu_page.c_str());
 
     // An explicit ROM (including an Explorer drop onto the EXE) is installed
@@ -1867,14 +1896,19 @@ int main(int argc, char** argv) {
     if (!app.autotest_frames || !app.mods_dir.empty()) apply_rom_patches(app);  // autotests are hermetic unless asked
     // TIME ATTACK offers the characters by the names the ROM gives them.
     app.menu.set_character_names(stage_select::character_names(app.m->rom));
+    // The music player's songs, as the game's SOUND TEST names them.
+    app.menu.set_music_tracks(jukebox::track_list(app.m->rom));
+    if (app.menu.page_name() == "music") app.menu.show_page("music");  // --menu music opened it before
     app.m->reset();
     if (!app.autotest_frames) app.store.load_sram(*app.m);  // autotests are hermetic
     RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
     LOGI("app", "execution: %s", rs.description.c_str());
+    app.recompiled = rs.active;
     if (!app.autotest_frames || !app.mods_dir.empty()) {  // autotests are hermetic unless asked
         load_mods(app);
         // --menu mods opened the page before there was a list to show.
         if (app.menu.page_name() == "mods") app.menu.show_page("mods");
+        if (app.menu.page_name() == "music") app.menu.show_page("music");  // which tracks mods replace
     }
     // Issue #8: the menu's art comes from the ROM being played, after any
     // patches: its font now (a millisecond), its zone pictures from the cache
@@ -1960,6 +1994,24 @@ int main(int argc, char** argv) {
         // CYCLE; a chosen zone stays).
         if (!menu_was_open && app.menu.open()) app.backdrops.advance();
         menu_was_open = app.menu.open();
+        // The music player: its machine runs while its page is open, the game
+        // held until the page is left; then the game's sound comes back.
+        {
+            const bool want = app.menu.page_name() == "music";
+            if (want) {
+                open_jukebox(app);
+            } else if (app.jukebox_open) {
+                app.jukebox.stop();
+                app.jukebox_open = false;
+                app.jukebox_audio.clear();
+                if (app.audio) SDL_ClearAudioStream(app.audio);
+                LOGI("music", "music player closed; the game goes on");
+            }
+            if (app.jukebox_open) {
+                app.jukebox.set_repeat(jukebox::Repeat(std::clamp(app.cfg.music_repeat, 0, 2)));
+                app.jukebox.set_fade_after(double(app.cfg.music_fade_after));
+            }
+        }
         // Wait before polling input so it is fresh when the frame is run.
         // Rendering an unchanged frame here can block in VSync and leave the
         // next pass catching up by two frames. The original NTSC rate, rather
@@ -2116,7 +2168,28 @@ int main(int argc, char** argv) {
         // to 64 - the difference between a tap and holding the button down.
         const int autotest_batch = app.host_script.empty() ? 64 : 1;
         while (steps < (autotest ? autotest_batch : plan.frames)) {
-            if (autotest && app.m->frame_count >= app.autotest_frames) break;
+            if (autotest && app.m->frame_count + app.held_frames >= app.autotest_frames) break;
+            if (app.jukebox_open) {
+                // The music player's frame instead of the game's.
+                app.jukebox.set_levels(float(app.cfg.music_volume) / 100.0f, float(app.cfg.effects_volume) / 100.0f,
+                                       app.cfg.mod_music_volume * app.cfg.music_volume / 100);
+                app.jukebox.run_frames(1, app.jukebox_audio);
+                ++app.held_frames;
+                // Scripted keys go on counting the frame periods meanwhile
+                // (as below), so an autotest can drive this page too.
+                for (auto& k : app.key_script) {
+                    if (k.done || app.m->frame_count + app.held_frames < k.frame) continue;
+                    k.done = true;
+                    SDL_Event ke{};
+                    ke.type = SDL_EVENT_KEY_DOWN;
+                    ke.key.key = k.key;
+                    ke.key.down = true;
+                    SDL_PushEvent(&ke);
+                }
+                if (autotest && !app.fast_forward) accumulator -= frame_ticks;
+                ++steps;
+                continue;
+            }
             if (app.rewinding) {
                 // One step back per frame period, at the normal pacing.
                 rewind_step(app);
@@ -2127,7 +2200,7 @@ int main(int argc, char** argv) {
             // Scripted keys are pushed as events and handled on the next pass
             // round the event loop, exactly like a key someone pressed.
             for (auto& k : app.key_script) {
-                if (k.done || app.m->frame_count < k.frame) continue;
+                if (k.done || app.m->frame_count + app.held_frames < k.frame) continue;
                 k.done = true;
                 SDL_Event ke{};
                 ke.type = SDL_EVENT_KEY_DOWN;
@@ -2219,6 +2292,10 @@ int main(int argc, char** argv) {
             // times faster: continuous, only higher. MAX has no steady rate
             // to play it at, so its sound is dropped, as it always was.
             const int speed = app.fast_forward ? fast_forward_multiplier(app.cfg.ff_speed) : 1;
+            if (!app.jukebox_audio.empty()) {
+                SDL_PutAudioStreamData(app.audio, app.jukebox_audio.data(), int(app.jukebox_audio.size() * sizeof(int16_t)));
+                app.jukebox_audio.clear();
+            }
             if (!app.m->audio_out.empty()) {
                 if (speed > 0)
                     SDL_PutAudioStreamData(app.audio, app.m->audio_out.data(), int(app.m->audio_out.size() * sizeof(int16_t)));
@@ -2232,6 +2309,7 @@ int main(int argc, char** argv) {
             if (queued > target * 6) SDL_ClearAudioStream(app.audio);  // after a stall
         } else {
             app.m->audio_out.clear();
+            app.jukebox_audio.clear();
         }
 
         // SRAM autosave shortly after the game writes it.
@@ -2322,14 +2400,14 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < lines.size(); ++i) SDL_RenderDebugText(app.renderer, 4, 4 + 10.0f * float(i), lines[i].c_str());
             SDL_SetRenderScale(app.renderer, 1, 1);
         }
-        if (app.autotest_frames && app.m->frame_count >= app.autotest_frames) {
+        if (app.autotest_frames && app.m->frame_count + app.held_frames >= app.autotest_frames) {
             if (!app.autotest_shot.empty()) capture_output(app);
             app.running = false;
         }
         // Emulated frames advance in batches, so fire on "reached" rather
         // than "equals" or the moment is stepped straight over.
         for (auto& shot : app.extra_shots) {
-            if (shot.done || app.m->frame_count < shot.frame) continue;
+            if (shot.done || app.m->frame_count + app.held_frames < shot.frame) continue;
             shot.done = true;
             const std::string keep = app.autotest_shot;
             app.autotest_shot = shot.path;

@@ -296,6 +296,22 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
     return st;
 }
 
+Machine* bind_recompiled_code(Machine& m) {
+    Machine* before = g_m;
+    g_m = &m;
+#if CHAOTIX_HAVE_GENERATED
+    recomp::g_sdram_code_epoch = &m.sdram_code_epoch;
+    // A machine's code epochs start at 1, so 0 matches none: every function
+    // is checked again against this machine's memory before it next runs.
+    for (Sh2FnState& s : g_sh2_fns) {
+        s.sdram_epoch[0] = s.sdram_epoch[1] = 0;
+        s.cache_epoch[0] = s.cache_epoch[1] = 0;
+        s.valid[0] = s.valid[1] = false;
+    }
+#endif
+    return before;
+}
+
 DispatchSnapshot dispatch_snapshot() {
     DispatchSnapshot s;
     auto pct = [](uint64_t a, uint64_t b) { return (a + b) ? 100.0 * double(a) / double(a + b) : 0.0; };

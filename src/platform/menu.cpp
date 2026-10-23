@@ -45,7 +45,8 @@ bool Menu::is_list_page(Page p) {
     return p == Page::Front || p == Page::Options || p == Page::Controls || p == Page::Keys ||
            p == Page::States || p == Page::StateKeys ||
            p == Page::TimeAttack || p == Page::Cheats || p == Page::Video || p == Page::Sound ||
-           p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo;
+           p == Page::Input || p == Page::Extras || p == Page::Lobby || p == Page::Mods || p == Page::ModInfo ||
+           p == Page::Music;
 }
 
 // Where BACK and Escape go from a page below another one.
@@ -90,7 +91,11 @@ void Menu::set_page(Page p) {
         // Back from a pack's page: on that pack again.
         if (from == Page::ModInfo && mod_index_ < items_.size()) selected_ = int(mod_index_);
     } else if (p == Page::ModInfo) build_mod_info();
-    else items_.clear();
+    else if (p == Page::Music) {
+        // Back to where it was opened from: the front end or SOUND.
+        if (from != Page::Music) music_back_ = from == Page::Front ? Page::Front : Page::Sound;
+        build_music();
+    } else items_.clear();
 }
 
 void Menu::close() {
@@ -132,6 +137,7 @@ bool Menu::show_page(const std::string& name) {
     else if (name == "input") set_page(Page::Input);
     else if (name == "extras") set_page(Page::Extras);
     else if (name == "mods") set_page(Page::Mods);
+    else if (name == "music") set_page(Page::Music);
     else if (name == "awards") set_page(Page::Achievements);
     else return false;
     return true;
@@ -156,6 +162,7 @@ std::string Menu::page_name() const {
     case Page::Lobby: return "lobby";
     case Page::Mods: return "mods";
     case Page::ModInfo: return "modinfo";
+    case Page::Music: return "music";
     default: return "";
     }
 }
@@ -186,6 +193,7 @@ void Menu::build_front() {
     items_.push_back({"TIME ATTACK", {}, [this](int) { set_page(Page::TimeAttack); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
+    items_.push_back({"MUSIC PLAYER", {}, [this](int) { set_page(Page::Music); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
     items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
 }
@@ -677,6 +685,9 @@ void Menu::build_sound() {
     items_.push_back({"EFFECTS",
                       [c] { return std::to_string(c->effects_volume); },
                       [c](int s) { c->effects_volume = std::clamp(c->effects_volume + s * 5, 0, 100); }});
+    // Issue #48: the game's music, from the pause menu this way (the game is
+    // held while it plays) as well as from the front end.
+    items_.push_back({"MUSIC PLAYER", {}, [this](int) { set_page(Page::Music); }, "the game's songs"});
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Options); }});
 }
 
@@ -1026,6 +1037,83 @@ void Menu::build_mod_info() {
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Mods); }});
 }
 
+// Issue #48 (frontend/jukebox.h): the controls, then the SOUND TEST's songs
+// by number and name. The app plays them on a machine of its own while this
+// page is open, and holds the game meanwhile.
+void Menu::build_music() {
+    items_.clear();
+    Config* c = cfg_;
+    const std::vector<jukebox::Track> tracks = tracks_;
+    auto status = [this] { return hooks_.music_status ? hooks_.music_status() : jukebox::Status{}; };
+    auto name_of = [tracks](uint8_t id) {
+        for (const auto& t : tracks)
+            if (t.id == id) return jukebox::track_label(t);
+        char buf[8];
+        std::snprintf(buf, sizeof buf, "%02d", int(id));
+        return std::string(buf);
+    };
+    Item now{"NOW PLAYING",
+             [status, name_of] {
+                 const jukebox::Status s = status();
+                 if (s.failed) return std::string("NOT AVAILABLE");
+                 if (!s.ready) return std::string("STARTING...");
+                 if (!s.id) return std::string("STOPPED");
+                 return name_of(s.id) + "  " + jukebox::format_time(s.seconds) + (s.fading ? "  FADING" : "");
+             },
+             [this, tracks, status](int step) {
+                 // Enter here plays or stops, as a player's one button does.
+                 if (step != 0 || tracks.empty()) return;
+                 if (status().id) { if (hooks_.music_stop) hooks_.music_stop(); }
+                 else if (hooks_.music_play) hooks_.music_play(status().last ? status().last : tracks.front().id);
+             }};
+    now.pressed = true;
+    items_.push_back(std::move(now));
+    // PLAY: the track chosen last, or the first; nothing while one plays.
+    items_.push_back({"PLAY", {}, [this, tracks, status](int step) {
+        if (step != 0 || !hooks_.music_play || tracks.empty() || status().id) return;
+        const jukebox::Status s = status();
+        hooks_.music_play(s.last ? s.last : tracks.front().id);
+    }});
+    items_.push_back({"STOP", {}, [this](int step) { if (step == 0 && hooks_.music_stop) hooks_.music_stop(); }});
+    items_.push_back({"NEXT", {}, [this](int step) { if (step == 0 && hooks_.music_step) hooks_.music_step(+1); }});
+    items_.push_back({"PREVIOUS", {}, [this](int step) { if (step == 0 && hooks_.music_step) hooks_.music_step(-1); }});
+    items_.push_back({"FADE OUT", {}, [this](int step) { if (step == 0 && hooks_.music_fade) hooks_.music_fade(); }});
+    if (c) {
+        static const char* const kRepeat[] = {"LOOP TRACK", "PLAY ONCE", "PLAY ALL"};
+        items_.push_back({"REPEAT", [c] { return std::string(kRepeat[std::clamp(c->music_repeat, 0, 2)]); },
+                          [c](int s) { if (s) cycle(c->music_repeat, 3, s); }});
+        static const int kFade[] = {0, 60, 90, 120, 180, 300};
+        constexpr int kFades = int(sizeof kFade / sizeof kFade[0]);
+        items_.push_back({"FADE OUT AFTER",
+                          [c] { return c->music_fade_after > 0 ? jukebox::format_time(c->music_fade_after) : std::string("NEVER"); },
+                          [c](int s) {
+                              if (!s) return;
+                              int at = 0;
+                              for (int i = 0; i < kFades; ++i)
+                                  if (kFade[i] == c->music_fade_after) at = i;
+                              cycle(at, kFades, s);
+                              c->music_fade_after = kFade[at];
+                          },
+                          "once and all"});
+    }
+    for (const jukebox::Track& t : tracks) {
+        const uint8_t id = t.id;
+        Item it{jukebox::track_label(t),
+                [status, id] {
+                    const jukebox::Status s = status();
+                    return s.id == id ? std::string("PLAYING") : std::string();
+                },
+                [this, id](int step) {
+                    if (step != 0 || !hooks_.music_play) return;
+                    hooks_.music_play(id);
+                },
+                hooks_.music_replaced && hooks_.music_replaced(id) ? "REPLACED BY MOD" : ""};
+        it.pressed = true;  // Enter plays it; left and right do nothing
+        items_.push_back(std::move(it));
+    }
+    items_.push_back({"BACK", {}, [this](int) { set_page(music_back_); }});
+}
+
 void Menu::move(int delta) {
     confirm_reset_ = false;
     if (items_.empty()) return;
@@ -1059,7 +1147,9 @@ void Menu::back_out() {
         }
         return;
     }
-    if (is_row_page(page_)) {
+    if (page_ == Page::Music) {
+        set_page(music_back_);
+    } else if (is_row_page(page_)) {
         close();
     } else {
         const Page up = parent_of(page_);
@@ -1476,6 +1566,7 @@ void Menu::draw_options(ui::Ui& g) {
                               ? (keys_player_ == 0 ? (keys_pad_ ? "1P GAMEPAD" : "1P KEYBOARD")
                                                    : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))
                         : page_ == Page::Mods ? "MODS"
+                        : page_ == Page::Music ? "MUSIC PLAYER"
                         : "OPTIONS";
     std::string pack_heading;
     if (page_ == Page::ModInfo) {
@@ -1559,6 +1650,7 @@ void Menu::draw_options(ui::Ui& g) {
     const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
                            ? "Up/Down choose    Enter rebind    Esc back"
                        : page_ == Page::Mods ? "Up/Down choose    Left/Right on/off    Enter details"
+                       : page_ == Page::Music ? "Up/Down choose    Enter play    Esc back"
                                              : "Up/Down choose    Left/Right change    Esc back";
     g.text(ui::Font::Small, x, y + g.px(8), hint, faint());
     // More rows below the window: a marker at the hint's right.

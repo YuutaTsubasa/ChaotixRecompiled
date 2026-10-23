@@ -143,6 +143,11 @@ struct Config {
     bool lobby_shortcuts = false;
     int lobby_partner = -1;
     int lobby_time = -1;
+    // [MusicPlayer] (issue #48, frontend/jukebox.h): what happens when a
+    // track ends or has played FadeAfter seconds (0: never fades): 0 LOOP
+    // (the track again, for ever), 1 ONCE (stop), 2 ALL (the next one).
+    int music_repeat = 0;
+    int music_fade_after = 120;
     // [Debug]
     bool debug_overlay = false;
     bool use_recompiled = true;

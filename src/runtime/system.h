@@ -199,6 +199,13 @@ public:
     // dispatcher, the one place the game passes through between scenes.
     stage_select::Request stage_request;
     bool stage_pending = false;
+    // A game mode ($FFDFDE) and sub-mode ($FFDFE0) the host wants, applied by
+    // the same hook once the boot scene is over; -1 for none. Only the music
+    // player's own machine sets it (frontend/jukebox.h: the game's OPTIONS
+    // screen), and that machine is never played or saved, so save states
+    // leave it out.
+    int mode_request = -1;
+    int submode_request = 0;
     // Lobby shortcuts (issue #44, runtime/lobby.h): the partner (character
     // id) and time of day (0-3) the player chose, put into the game by the
     // same hook each time it starts the lobby or an attraction; -1 leaves

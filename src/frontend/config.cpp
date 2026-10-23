@@ -172,6 +172,9 @@ bool Config::load(const std::string& path) {
             if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
             else if (k == "Partner") lobby_partner = std::clamp(std::atoi(v.c_str()), -1, 7);
             else if (k == "Time") lobby_time = std::clamp(std::atoi(v.c_str()), -1, 3);
+        } else if (section == "MusicPlayer") {
+            if (k == "Repeat") music_repeat = std::clamp(std::atoi(v.c_str()), 0, 2);
+            else if (k == "FadeAfter") music_fade_after = std::clamp(std::atoi(v.c_str()), 0, 3600);
         } else if (section == "TimeAttack") {
             if (k == "Place") ta_place = std::atoi(v.c_str());
             else if (k == "Level") ta_level = std::atoi(v.c_str());
@@ -278,6 +281,9 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Time: -1 the game's own, else 0 morning 1 day 2 sunset 3 night.\n");
     std::fprintf(f, "Shortcuts = %s\nPartner = %d\nTime = %d\n", lobby_shortcuts ? "true" : "false", lobby_partner,
                  lobby_time);
+    std::fprintf(f, "\n[MusicPlayer]\n# When a track ends: 0 play it again, 1 stop, 2 the next track.\n");
+    std::fprintf(f, "# FadeAfter: seconds a track plays before it fades out when Repeat is 1 or 2 (0: never).\n");
+    std::fprintf(f, "Repeat = %d\nFadeAfter = %d\n", music_repeat, music_fade_after);
     std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");

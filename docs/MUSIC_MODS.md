@@ -28,7 +28,10 @@ game's.
 
 The table is the game's own: the place-to-music table at `$8F6ED0`. Ids go up
 to `29`; the rest (jingles, the lobby, bosses, special stages, ...) show up in
-the log when the game plays them.
+the log when the game plays them. The MUSIC PLAYER (docs/MUSIC_PLAYER.md)
+lists every id with the name the game's SOUND TEST gives it: track N there is
+id N, so its 41 tracks are `01.wav` to `29.wav` (track 10 is `0A.wav`). It
+marks the tracks a file replaces and plays the file.
 
 - **Formats:** PCM WAV at 8, 16, 24 or 32 bits, or 32-bit float, any sample
   rate, mono or stereo (other channels are ignored). Files are resampled once,

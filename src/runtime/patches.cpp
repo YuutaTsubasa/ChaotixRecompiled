@@ -100,6 +100,18 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
             stage_select::apply(*m, m->stage_request);
             return;
         }
+        // The music player's machine (frontend/jukebox.h) goes to a scene of
+        // the game's own: the mode the dispatcher is about to read, and the
+        // sub-mode its handler starts from. Not before the boot scene (mode
+        // 0) is over: it is what starts the sound driver and the interrupts.
+        if (m->mode_request >= 0 && wram16(*m, kGameMode) != 0) {
+            m->wram[kGameMode] = uint8_t(m->mode_request >> 8);
+            m->wram[kGameMode + 1] = uint8_t(m->mode_request);
+            m->wram[kGameMode + 2] = uint8_t(m->submode_request >> 8);
+            m->wram[kGameMode + 3] = uint8_t(m->submode_request);
+            m->mode_request = -1;
+            return;
+        }
         // Issue #44: the partner and time of day the player chose, put in
         // place before the lobby or an attraction loads (runtime/lobby.h).
         lobby::apply(*m);

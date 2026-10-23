@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "frontend/jukebox.h"
 #include "platform/ui.h"
 #include "runtime/mod_packs.h"
 #include "runtime/stage_select.h"
@@ -72,12 +73,25 @@ public:
         std::function<void()> reload_mods;
         std::function<bool()> mods_need_restart;
         std::function<SDL_Texture*(const mod_packs::Pack&, float* w, float* h)> mod_preview;
+        // The music player (issue #48, frontend/jukebox.h). The app runs its
+        // machine while the page is open (page_name() "music") and holds the
+        // game; the page asks it to play a track (by music id), stop, fade,
+        // step to the next or previous track, and what is playing, and
+        // whether a music mod replaces a track.
+        std::function<void(uint8_t id)> music_play;
+        std::function<void()> music_stop;
+        std::function<void()> music_fade;
+        std::function<void(int delta)> music_step;
+        std::function<jukebox::Status()> music_status;
+        std::function<bool(uint8_t id)> music_replaced;
     };
 
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
     // TIME ATTACK's character names, by id (stage_select::character_names,
     // read from the ROM); without them, stage_select::kCharacters.
     void set_character_names(std::vector<std::string> names) { characters_ = std::move(names); }
+    // The music player's tracks (jukebox::track_list, read from the ROM).
+    void set_music_tracks(std::vector<jukebox::Track> tracks) { tracks_ = std::move(tracks); }
     // The settings the options page edits. Must outlive the menu.
     void bind(Config& cfg) { cfg_ = &cfg; }
 
@@ -122,7 +136,7 @@ private:
     // OPTIONS is a list of categories; each category is a page of its own, so
     // that no page runs off a phone's screen.
     enum class Page { Closed, Front, Main, Options, Video, Sound, Input, Extras, Controls, Keys, TimeAttack,
-                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo };
+                      Achievements, Cheats, States, StateKeys, Lobby, Mods, ModInfo, Music };
 
     struct Item {
         std::string label;
@@ -165,6 +179,7 @@ private:
     void build_state_keys();
     void build_mods();
     void build_mod_info();
+    void build_music();
     // Leaving the MODS pages after a change: the app applies it.
     void leave_mods();
     // The setting a host-key capture writes (fast-forward, save state, ...),
@@ -204,6 +219,8 @@ private:
     std::string awaiting_;         // button being rebound, empty when not capturing
     bool confirm_reset_ = false;   // the reset row is asking a second time
     std::vector<std::string> characters_;  // see set_character_names
+    std::vector<jukebox::Track> tracks_;   // see set_music_tracks
+    Page music_back_ = Page::Sound;        // where the music player goes back to
     size_t mod_index_ = 0;         // the pack the MODS details page shows
     bool mods_dirty_ = false;      // a pack was switched or moved since the last reload
     // Lines of text under the heading (the pack's description on its page),
