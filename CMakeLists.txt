@@ -144,7 +144,7 @@ if(CHAOTIX_GENERATED_SOURCES)
 endif()
 
 # Headless runner: deterministic frame execution, screenshots, validation.
-add_executable(chaotix_headless src/frontend/headless_main.cpp)
+add_executable(chaotix_headless src/frontend/headless_main.cpp src/frontend/netplay_headless.cpp)
 target_link_libraries(chaotix_headless PRIVATE chaotix_game)
 chaotix_set_warnings(chaotix_headless)
 

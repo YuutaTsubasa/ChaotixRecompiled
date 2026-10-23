@@ -125,6 +125,8 @@ public:
     const std::vector<uint8_t>* hashed_snapshot(uint32_t frame) const;
     // The local hash of the state before `frame`; 0 if not made (yet).
     uint64_t hash_at(uint32_t frame) const;
+    // The remote player's, as they sent it; 0 if not come (yet).
+    uint64_t remote_hash_at(uint32_t frame) const;
 
     // ---- what is final ----
     // Every frame before this has had both pads known and was run with them:

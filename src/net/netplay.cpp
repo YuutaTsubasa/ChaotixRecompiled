@@ -147,6 +147,7 @@ void Session::send_input(uint32_t now) {
     m.advantage = int8_t(std::clamp(rollback_->frame_advantage(rtt_frames), -127, 127));
     m.send_ms = now ? now : 1;
     m.echo_ms = peer_send_ms_;
+    m.echo_hold = uint16_t(std::min<uint32_t>(since(now, peer_send_at_), 0xFFFF));
     m.first = rollback_->remote_ack();
     for (uint32_t f = m.first; f < rollback_->local_head() && m.inputs.size() < kMaxInputsPerMessage; ++f)
         m.inputs.push_back(rollback_->local_input(f));
@@ -315,10 +316,15 @@ void Session::handle(const Endpoint& from, const Message& m, uint32_t now) {
         remote_advantage_ = m.advantage;
         for (const auto& h : m.hashes) rollback_->add_remote_hash(h.first, h.second);
         if (m.echo_ms) {
-            const double sample = double(since(now, m.echo_ms));
-            if (sample < 10000) rtt_ms_ = rtt_ms_ <= 0 ? sample : rtt_ms_ * 0.875 + sample * 0.125;
+            // The time since our datagram left, less the time the other side
+            // held its time stamp before answering.
+            const double sample = double(since(now, m.echo_ms)) - double(m.echo_hold);
+            if (sample >= 0 && sample < 10000) rtt_ms_ = rtt_ms_ <= 0 ? sample : rtt_ms_ * 0.875 + sample * 0.125;
         }
-        peer_send_ms_ = m.send_ms;
+        if (!peer_send_ms_ || since(m.send_ms, peer_send_ms_) < 0x80000000u) {  // not an older one, reordered
+            peer_send_ms_ = m.send_ms;
+            peer_send_at_ = now;
+        }
         break;
     case Msg::Bye:
         finish(End::OtherLeft, m.reason.empty() || m.reason == "you left" ? "the other player left" : "the other player left: " + m.reason, now);

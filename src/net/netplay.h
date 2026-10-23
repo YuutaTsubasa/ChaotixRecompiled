@@ -118,7 +118,7 @@ private:
     bool loaded_ = false, peer_started_ = false;
     std::unique_ptr<Rollback> rollback_;
     double rtt_ms_ = 0;
-    uint32_t peer_send_ms_ = 0;
+    uint32_t peer_send_ms_ = 0, peer_send_at_ = 0;
     int remote_advantage_ = 0;
     // Time sync: the advantages summed over a window of ticks.
     int sync_ticks_ = 0, skip_ = 0;

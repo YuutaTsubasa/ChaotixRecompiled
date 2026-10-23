@@ -146,6 +146,7 @@ std::vector<uint8_t> encode(const Message& m) {
         o.u8(uint8_t(m.advantage));
         o.u32(m.send_ms);
         o.u32(m.echo_ms);
+        o.u16(m.echo_hold);
         o.u32(m.first);
         const size_t n = m.inputs.size() < kMaxInputsPerMessage ? m.inputs.size() : kMaxInputsPerMessage;
         o.u8(uint8_t(n));
@@ -216,6 +217,7 @@ bool decode(const uint8_t* data, size_t n, Message& out) {
         out.advantage = int8_t(in.u8());
         out.send_ms = in.u32();
         out.echo_ms = in.u32();
+        out.echo_hold = in.u16();
         out.first = in.u32();
         const size_t k = in.u8();
         for (size_t i = 0; i < k && in.ok; ++i) out.inputs.push_back(in.u16());

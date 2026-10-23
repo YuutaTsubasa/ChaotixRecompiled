@@ -162,6 +162,8 @@ void Rollback::add_remote_hash(uint32_t frame, uint64_t hash) {
     if (cfg_.hash_interval > 0 && next_hash_ > uint32_t(cfg_.hash_interval) * 32 &&
         frame < next_hash_ - uint32_t(cfg_.hash_interval) * 32)
         return;  // long since checked
+    auto it = remote_hashes_.find(frame);
+    if (it != remote_hashes_.end() && it->second == hash) return;  // sent again: already compared
     remote_hashes_[frame] = hash;
     compare(frame);
 }
@@ -175,6 +177,11 @@ const std::vector<uint8_t>* Rollback::hashed_snapshot(uint32_t frame) const {
 uint64_t Rollback::hash_at(uint32_t frame) const {
     auto it = local_hashes_.find(frame);
     return it == local_hashes_.end() ? 0 : it->second;
+}
+
+uint64_t Rollback::remote_hash_at(uint32_t frame) const {
+    auto it = remote_hashes_.find(frame);
+    return it == remote_hashes_.end() ? 0 : it->second;
 }
 
 uint32_t Rollback::confirmed() const {

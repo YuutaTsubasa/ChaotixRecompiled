@@ -72,6 +72,7 @@ struct Message {
     uint32_t ack = 0;
     int8_t advantage = 0;
     uint32_t send_ms = 0, echo_ms = 0;
+    uint16_t echo_hold = 0;  // ms between getting echo_ms and sending this
     uint32_t first = 0;
     std::vector<uint16_t> inputs;
     std::vector<std::pair<uint32_t, uint64_t>> hashes;  // (frame, hash) of confirmed states
