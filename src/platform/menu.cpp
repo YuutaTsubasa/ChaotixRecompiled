@@ -202,12 +202,13 @@ void Menu::build_front() {
         if (hooks_.start_game) hooks_.start_game();
     }});
     items_.push_back({"TIME ATTACK", {}, [this](int) { set_page(Page::TimeAttack); }});
-    // Issue #46: online two-player, hosted or joined from here.
-    items_.push_back({"NETPLAY", {}, [this](int) { set_page(Page::Netplay); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
     items_.push_back({"CONTROLS", {}, [this](int) { set_page(Page::Controls); }});
     items_.push_back({"MUSIC PLAYER", {}, [this](int) { set_page(Page::Music); }});
     items_.push_back({"AWARDS", {}, [this](int) { set_page(Page::Achievements); }});
+    // Issue #46: online two-player, hosted or joined from here. Near the end,
+    // so the entries above keep their places.
+    items_.push_back({"NETPLAY", {}, [this](int) { set_page(Page::Netplay); }});
     items_.push_back({"QUIT", {}, [this](int) { if (hooks_.quit) hooks_.quit(); }});
 }
 

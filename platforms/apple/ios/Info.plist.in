@@ -66,6 +66,9 @@
     <!-- A mouse or trackpad on an iPad. -->
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
+    <!-- Netplay (issue #46): iOS asks before an app talks to the local network. -->
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Netplay connects to the other player's device to play two-player together.</string>
     <!-- Controllers: the game reads them through SDL's GameController support. -->
     <key>GCSupportsControllerUserInteraction</key>
     <true/>

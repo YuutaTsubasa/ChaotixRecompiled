@@ -979,6 +979,9 @@ void netplay_finish(App& app) {
         after_time_jump(app);
     }
     app.m->audio_enabled = app.audio != nullptr;
+    // Achievements did not follow the session: they start again from here
+    // rather than count what happened in it as one frame's change.
+    app.achievements.forget_previous();
     // An autotest with a session ends with it (and takes its picture then).
     if (app.autotest_frames && n.session.phase() == net::Session::Phase::Ended)
         app.autotest_frames = std::min(app.autotest_frames, app.m->frame_count + app.held_frames);
