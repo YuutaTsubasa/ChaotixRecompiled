@@ -57,6 +57,33 @@ bool rewind_default() {
 
 int ghost_default() { return int(ghost::default_mode()); }
 
+int menu_size_default() {
+#if defined(__ANDROID__) || (defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE)
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+const char* menu_size_name(int size) {
+    switch (size) {
+    case 0: return "Normal";
+    case 1: return "Large";
+    case 2: return "ExtraLarge";
+    default: return "Auto";
+    }
+}
+
+int parse_menu_size(const std::string& v) {
+    std::string low;
+    for (char ch : v)
+        if (ch != ' ' && ch != '_' && ch != '-') low += char(std::tolower(static_cast<unsigned char>(ch)));
+    if (low == "normal") return 0;
+    if (low == "large") return 1;
+    if (low == "extralarge") return 2;
+    return -1;
+}
+
 void Config::set_defaults() {
     *this = Config{};
     keys = {
@@ -113,6 +140,7 @@ bool Config::load(const std::string& path) {
             else if (k == "WidescreenHud") wide_hud = parse_bool(v, wide_hud);
             else if (k == "MenuFont") menu_game_font = !(v == "Pixel" || v == "pixel");
             else if (k == "MenuBackground") menu_background = parse_menu_background(v);
+            else if (k == "MenuSize") menu_size = parse_menu_size(v);
         } else if (section == "Cheats") {
             if (k == "Enabled") {
                 cheats.clear();
@@ -218,6 +246,13 @@ bool Config::load(const std::string& path) {
             else if (k == "TwoPlayers") ta_two_players = parse_bool(v, ta_two_players);
             else if (k == "Ghost") ta_ghost = int(ghost::parse_mode(v, ghost::Mode(ta_ghost)));
             else if (k.rfind("Best.", 0) == 0) ta_best[k.substr(5)] = std::atoi(v.c_str());
+        } else if (section == "LevelSelect") {
+            if (k == "Place") ls_place = std::atoi(v.c_str());
+            else if (k == "Level") ls_level = std::atoi(v.c_str());
+            else if (k == "Time") ls_time = std::atoi(v.c_str());
+            else if (k == "Player") ls_player = std::atoi(v.c_str());
+            else if (k == "Combi") ls_combi = std::atoi(v.c_str());
+            else if (k == "TwoPlayers") ls_two_players = parse_bool(v, ls_two_players);
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
             else if (k == "UseRecompiledCode") use_recompiled = parse_bool(v, use_recompiled);
@@ -251,6 +286,9 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# turn) | WorldEntrance | IsolatedIsland | BotanicBase | MarinaMadness | SpeedSlider |\n");
     std::fprintf(f, "# AmazingArena | TechnoTower (that one only) | Plain (no picture)\n");
     std::fprintf(f, "MenuBackground = %s\n", parse_menu_background(menu_background).c_str());
+    std::fprintf(f, "# The menu's rows, letters and touch targets: Auto (Large on phones and tablets,\n");
+    std::fprintf(f, "# Normal elsewhere) | Normal | Large | ExtraLarge\n");
+    std::fprintf(f, "MenuSize = %s\n", menu_size_name(menu_size));
     std::fprintf(f, "# Integer | Fit | Stretch\nScaling = %s\n", scale_name(viewport.scale));
     std::fprintf(f, "# Nearest | Linear\nFilter = %s\n", linear_filter ? "Linear" : "Nearest");
     std::fprintf(f, "# Windowed | Borderless | Fullscreen\nWindowMode = %s\n", window_mode_name(window_mode));
@@ -343,6 +381,10 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Ghost = %s\n", ghost::mode_name(ghost::Mode(ta_ghost)));
     std::fprintf(f, "# Best times, in level-clock frames at 60 Hz (Best.<place>.<level>)\n");
     for (const auto& [k, v] : ta_best) std::fprintf(f, "Best.%s = %d\n", k.c_str(), v);
+    std::fprintf(f, "\n[LevelSelect]\n# The last level started from LEVEL SELECT (no clock, no records, no saving).\n");
+    std::fprintf(f, "# Values are the game's own, as [TimeAttack]; Place 9 is the bonus stage, 10 a special stage.\n");
+    std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
+                 ls_place, ls_level, ls_time, ls_player, ls_combi, ls_two_players ? "true" : "false");
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");
     std::fclose(f);
     return true;

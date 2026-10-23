@@ -2,6 +2,7 @@
 // needed: the run is watched through 68K work RAM, so a Machine with the right
 // words written into it is enough.
 #include "frontend/time_attack.h"
+#include "frontend/level_select.h"
 
 #include "frontend/config.h"
 #include "runtime/stage_select.h"
@@ -238,4 +239,93 @@ TEST(time_attack, times_are_written_the_way_the_game_writes_them) {
     CHECK_STR(stage_select::format_time(307), "0'05\"01");
     CHECK_STR(stage_select::format_time(0), "0'00\"00");
     CHECK_STR(stage_select::format_time(3606), "1'00\"00");
+}
+
+// LEVEL SELECT (issue #51): the session is watched the same way, for where
+// the game goes when the level is over.
+namespace {
+void put_mode(Machine& m, unsigned mode, unsigned zone, unsigned level) {
+    wr16(m, 0xDFDE, mode);
+    put_scene(m, zone, level);
+}
+} // namespace
+
+TEST(level_select, a_level_is_over_when_the_game_reaches_its_lobby) {
+    auto mp = std::make_unique<Machine>();
+    Machine& m = *mp;
+    stage_select::Request r;
+    r.place = 2;
+    r.level = 3;
+    level_select::Session s;
+    s.begin(r);
+    m.stage_pending = true;
+    put_mode(m, 0x08, 7, 5);  // the title screen, while the request waits
+    CHECK(!s.update(m));
+    m.stage_pending = false;
+    CHECK(!s.update(m));      // taken, the level not reached yet
+    CHECK(!s.reached);
+    put_mode(m, 0x18, 2, 3);
+    CHECK(!s.update(m));
+    CHECK(s.reached);
+    CHECK_EQ(unsigned(s.scene >> 32), 0x18u);
+    put_mode(m, 0x18, 2, 4);  // the level moves on within its zone: still going
+    CHECK(!s.update(m));
+    put_mode(m, 0x18, 7, 0);  // the lobby
+    CHECK(s.update(m));
+    CHECK(!s.running);
+    CHECK(!s.update(m));      // once
+}
+
+TEST(level_select, a_stage_is_over_when_its_mode_is_left) {
+    auto mp = std::make_unique<Machine>();
+    Machine& m = *mp;
+    stage_select::Request r;
+    r.place = 10;
+    r.level = 2;
+    level_select::Session s;
+    s.begin(r);
+    put_mode(m, 0x08, 7, 5);
+    CHECK(!s.update(m));
+    put_mode(m, 0x20, 7, 2);
+    CHECK(!s.update(m));
+    CHECK(s.reached);
+    put_mode(m, 0x08, 7, 5);  // a special stage started this way ends at the title
+    CHECK(s.update(m));
+
+    // The hub is only over when the game stops playing altogether: walking
+    // into an attraction and back is the point of it.
+    r.place = 7;
+    r.level = 1;
+    s.begin(r);
+    put_mode(m, 0x18, 7, 0);
+    CHECK(!s.update(m));
+    CHECK(s.reached);
+    put_mode(m, 0x18, 3, 1);
+    CHECK(!s.update(m));
+    put_mode(m, 0x18, 7, 0);
+    CHECK(!s.update(m));
+    put_mode(m, 0x08, 7, 0);
+    CHECK(s.update(m));
+}
+
+TEST(level_select, offers_what_the_game_has_and_no_more) {
+    using namespace level_select;
+    CHECK(!offered(8));  // NOT USED
+    for (int p : kPlaces) CHECK(stage_select::has_level(p, first_level(p)));
+    CHECK(has_level(10, 5) && !has_level(10, 6));
+    CHECK(has_level(7, 1) && !has_level(7, 2) && !has_level(7, 0));
+    CHECK(has_level(9, 0) && !has_level(9, 1));
+    CHECK(has_level(0, 5) && !has_level(0, 0));
+    CHECK_STR(level_label(10, 0), "1");
+    CHECK_STR(level_label(3, 2), "2");
+    CHECK_EQ(step_place(10, 1), 0);
+    CHECK_EQ(step_place(7, 1), 9);
+    CHECK_EQ(step_level(4, 1, -1), 5);
+    stage_select::Request r;
+    r.place = 8;
+    r.level = 0;
+    CHECK(!level_select::valid(r));
+    r.place = 10;
+    r.level = 5;
+    CHECK(level_select::valid(r));
 }

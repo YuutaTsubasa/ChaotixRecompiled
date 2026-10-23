@@ -72,6 +72,26 @@ inline int game_font_scale(float pixel_size) {
     return k < 1 ? 1 : k;
 }
 
+// MENU SIZE (issue #49): how much larger than NORMAL everything is laid out
+// at each size. The pixel faces cannot follow a factor exactly -- they come in
+// steps of their 8-pixel grid, and the game's font in whole multiples -- so
+// each size also takes them at least one step past the size before it (see
+// pixel_steps); otherwise LARGE and EXTRA LARGE could round to the same
+// letters.
+inline constexpr int kMenuSizes = 3;  // NORMAL, LARGE, EXTRA LARGE
+inline constexpr float kMenuZoom[kMenuSizes] = {1.0f, 1.5f, 2.0f};
+
+struct PixelSize {
+    float face = 8;  // the pixel face's size, a multiple of 8
+    int game = 1;    // screen pixels per pixel of the game's font
+};
+// A pixel face of design size `design` (16 or 32) at layout scale `scale`
+// (Ui::scale() at NORMAL) and menu size `zoom`: at NORMAL the scaled size
+// snapped to the grid, as it always was; at each size above, at least one
+// grid step and one whole game-font scale more than at the size below, with
+// the face kept about as tall as the game's letters.
+PixelSize pixel_steps(float design, float scale, int zoom);
+
 class Ui {
 public:
     ~Ui() { shutdown(); }
@@ -93,6 +113,12 @@ public:
     // window and a 4K screen.
     float scale() const { return scale_; }
     float px(float units) const { return units * scale_; }
+    // MENU SIZE (issue #49): 0 NORMAL, 1 LARGE, 2 EXTRA LARGE. Everything is
+    // laid out kMenuZoom times larger, the pixel faces as pixel_steps says.
+    // It takes effect at the next begin_frame; the app sets it while its menu
+    // is open and puts NORMAL back for everything else.
+    void set_zoom(int zoom) { zoom_ = zoom < 0 ? 0 : zoom >= kMenuSizes ? kMenuSizes - 1 : zoom; }
+    int zoom() const { return zoom_; }
 
     float line_height(Font f) const;
     float text_width(Font f, const std::string& s);
@@ -110,6 +136,7 @@ public:
     // Returns false if the texture could not be made.
     bool set_game_font(const GameFont& font);
     void enable_game_font(bool on) { game_on_ = on; }
+    bool game_font_enabled() const { return game_on_; }
     bool game_font_active() const { return game_on_ && game_tex_ != nullptr; }
     // Whether s, in f, is drawn with the game's font right now.
     bool uses_game_font(Font f, const std::string& s) const;
@@ -142,13 +169,14 @@ private:
     void set_sizes();
     void drop_cache();
     // The game font's pixel size for f (game_font_scale of its pixel face).
-    int game_scale(Font f) const { return game_font_scale(pixel_sizes_[size_t(f)]); }
+    int game_scale(Font f) const { return game_scales_[size_t(f)]; }
     float game_text(Font f, float x, float y, const std::string& s, Color c);
 
     SDL_Texture* game_tex_ = nullptr;
     std::array<int16_t, 128> game_glyph_{};
     bool game_on_ = false;
     float pixel_sizes_[size_t(Font::Count_)] = {};
+    int game_scales_[size_t(Font::Count_)] = {1, 1, 1, 1, 1, 2};
 
     SDL_Renderer* renderer_ = nullptr;
     TTF_TextEngine* engine_ = nullptr;
@@ -156,6 +184,9 @@ private:
     std::map<CacheKey, CacheEntry> cache_;
     uint64_t frame_ = 0;
     float width_ = 0, height_ = 0, scale_ = 1;
+    float base_scale_ = 1;  // scale_ at NORMAL
+    int zoom_ = 0;          // asked for
+    int sized_zoom_ = 0;    // what the fonts were last sized for
 };
 
 } // namespace chaotix::ui

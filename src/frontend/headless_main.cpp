@@ -41,6 +41,7 @@
 #include "frontend/ghost.h"
 #include "frontend/jukebox.h"
 #include "frontend/time_attack.h"
+#include "frontend/level_select.h"
 #include "frontend/input_display.h"
 #include "frontend/livesplit.h"
 #include "frontend/netplay_headless.h"
@@ -431,6 +432,11 @@ int main(int argc, char** argv) {
     bool want_audio = false;          // --audio: the frontend runs with it on
     int stage_kick = -1;              // frames since the request, while it waits
     time_attack::Run ta;              // the same run tracking the frontend uses
+    // --level-select: the stage requests are LEVEL SELECT ones (issue #51):
+    // the session is followed as the frontend follows it, and where it
+    // reaches and ends is printed.
+    bool level_select_on = false;
+    level_select::Session ls;
     // --speedrun: the speedrun timer (frontend/speedrun.h) follows the session
     // as the frontend's does, on a clock of emulated frames (60 a second),
     // with the LiveSplit block published after every frame. --speedrun-start
@@ -787,6 +793,7 @@ int main(int argc, char** argv) {
             std::printf("replay: %zu frames, %zu stage requests\n", replay.size(),
                         replay_stages.size());
         }
+        else if (a == "--level-select") level_select_on = true;
         else if (a == "--stage") {
             auto parts = split(next(), ':');
             if (parts.size() < 7) { std::fprintf(stderr, "bad --stage\n"); return 2; }
@@ -1201,6 +1208,7 @@ int main(int argc, char** argv) {
             if (nat) { nat->stage_request = stage; nat->stage_pending = true; }
             stage_kick = 0;
             ta.begin(stage);
+            if (level_select_on) ls.begin(stage);
             if (!ghost_record_path.empty()) ghost_recorder.arm(stage);
         }
         // The same taps of Start the frontend gives a waiting request: the
@@ -1254,6 +1262,7 @@ int main(int argc, char** argv) {
                     ref->stage_pending = true;
                 }
                 ta.begin(q.request);
+                if (level_select_on) ls.begin(q.request);
                 if (!ghost_record_path.empty()) ghost_recorder.arm(q.request);
                 stage_set = true;
                 stage_frame = f;
@@ -1398,6 +1407,17 @@ int main(int argc, char** argv) {
         if (m->wide_active && !wide_live_reported) {
             wide_live_reported = true;
             std::printf("widescreen: margins live from frame %llu\n", (unsigned long long)m->frame_count);
+        }
+        if (level_select_on && ls.running) {
+            const bool was_reached = ls.reached;
+            if (ls.update(*m))
+                std::printf("level select: the level is over at frame %llu (mode %04X zone %u level %u)\n",
+                            (unsigned long long)m->frame_count, unsigned(m->wram[0xDFDE] << 8 | m->wram[0xDFDF]),
+                            unsigned(m->wram[0xDFF2] << 8 | m->wram[0xDFF3]), unsigned(m->wram[0xDFF4] << 8 | m->wram[0xDFF5]));
+            else if (ls.reached && !was_reached)
+                std::printf("level select: reached scene %04X:%04X:%04X at frame %llu, save slot %04X\n",
+                            unsigned(ls.scene >> 32), unsigned((ls.scene >> 16) & 0xFFFF), unsigned(ls.scene & 0xFFFF),
+                            (unsigned long long)m->frame_count, unsigned(m->wram[0xE01C] << 8 | m->wram[0xE01D]));
         }
         if (ta.update(*m)) {
             if (!ghost_record_path.empty()) {
