@@ -17,6 +17,8 @@ enum class TouchMode { Auto, On, Off };
 // of play whether or not it is ever used, and needs a button the touch
 // layout does not show unless asked.
 bool rewind_default();
+// TIME ATTACK ghosts (issue #41): ghost::Mode as a number, off on phones.
+int ghost_default();
 constexpr int kStateSlots = 4;
 
 struct Config {
@@ -118,6 +120,9 @@ struct Config {
     bool ta_two_players = false;
     // Best time per stage, in level-clock frames, keyed "<place>.<level>".
     std::map<std::string, int> ta_best;
+    // The ghost a run races (frontend/ghost.h, ghost::Mode): 0 OFF, 1 BEST,
+    // 2 LAST.
+    int ta_ghost = ghost_default();
     // [Cheats] (game/cheats.h): the built-in ones switched on, by key, and
     // Action Replay codes of the player's own ("FFE009:63 + FFADFC:01").
     std::set<std::string> cheats;

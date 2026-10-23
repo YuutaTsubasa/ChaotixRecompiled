@@ -69,8 +69,11 @@ struct Info {
 };
 
 // A state file's bytes. `host` is kept alongside, untouched (the app stores
-// the replacement music's position there).
-std::vector<uint8_t> save(const Machine& m, const std::vector<uint8_t>& host = {}, int64_t saved_unix = 0);
+// the replacement music's position there). Without kPicture in `flags` the
+// file leaves the output picture out (a TIME ATTACK ghost's starting point,
+// frontend/ghost.h, never shows it); a load then keeps the machine's own.
+std::vector<uint8_t> save(const Machine& m, const std::vector<uint8_t>& host = {}, int64_t saved_unix = 0,
+                          unsigned flags = kPicture);
 // Reads the header only. False, with the reason, for a file that is not a
 // state of this format.
 bool read_info(const std::vector<uint8_t>& file, Info& info, std::string* error);

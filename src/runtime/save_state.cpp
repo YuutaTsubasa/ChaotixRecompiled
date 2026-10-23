@@ -227,9 +227,10 @@ bool deserialize(Machine& m, const uint8_t* data, size_t n, unsigned flags, std:
     return true;
 }
 
-std::vector<uint8_t> save(const Machine& m, const std::vector<uint8_t>& host, int64_t saved_unix) {
+std::vector<uint8_t> save(const Machine& m, const std::vector<uint8_t>& host, int64_t saved_unix, unsigned flags) {
+    flags &= kPicture;
     std::vector<uint8_t> raw, packed;
-    serialize(m, raw, kPicture);
+    serialize(m, raw, flags);
     lz::compress(raw.data(), raw.size(), packed);
     std::vector<uint8_t> out;
     out.reserve(kHeaderSize + packed.size() + host.size());
@@ -239,7 +240,7 @@ std::vector<uint8_t> save(const Machine& m, const std::vector<uint8_t>& host, in
     put_text(out, game_version(), kVersionLen);
     put_text(out, m.rom.sha1, kShaLen);
     put_text(out, data_sha1(m), kShaLen);
-    put32(out, kPicture);
+    put32(out, flags);
     put32(out, uint32_t(raw.size()));
     put32(out, uint32_t(packed.size()));
     put32(out, crc32(raw.data(), raw.size()));

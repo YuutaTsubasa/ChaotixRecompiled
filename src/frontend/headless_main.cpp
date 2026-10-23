@@ -7,6 +7,8 @@
 //                    [--save-state FRAME:FILE] [--load-state FILE] [--state-hash-every N]
 //                    [--rewind INTERVAL[:BUDGET_MB]]   (issue #40, runtime/save_state.h)
 //                    [--lobby-partner ID] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
+//                    [--ghost FILE] [--ghost-record FILE] [--ghost-log N] [--ghost-threaded]
+//                    (issue #41, frontend/ghost.h)
 #include "audio/music_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
@@ -28,6 +30,7 @@
 #include "runtime/sprite_replace.h"
 #include "runtime/tile_replace.h"
 #include "frontend/backdrop.h"
+#include "frontend/ghost.h"
 #include "frontend/time_attack.h"
 #include "renderer/game_font.h"
 #include "runtime/system.h"
@@ -433,6 +436,14 @@ int main(int argc, char** argv) {
     // session carries its own ("lobby FRAME PARTNER TIME" lines).
     int lobby_partner = -1, lobby_time = -1;
     std::map<uint64_t, std::pair<int, int>> replay_lobby;
+    // TIME ATTACK ghosts (issue #41, frontend/ghost.h): --ghost-record FILE
+    // writes the run started by --stage or a replay as a ghost when it ends;
+    // --ghost FILE races one, started when the stage is taken, and draws it
+    // into the shots; --ghost-log N prints where it is every N frames;
+    // --ghost-threaded plays it on its own thread, as the app does.
+    std::string ghost_path, ghost_record_path;
+    uint64_t ghost_log = 0;
+    bool ghost_threaded = false;
     for (int i = 1; i < argc; ++i) {
         std::string a = argv[i];
         auto next = [&]() -> std::string { return i + 1 < argc ? argv[++i] : ""; };
@@ -584,6 +595,10 @@ int main(int argc, char** argv) {
         else if (a == "--sram") sram_path = next();
         else if (a == "--lobby-partner") lobby_partner = std::atoi(next().c_str());
         else if (a == "--lobby-time") lobby_time = std::atoi(next().c_str());
+        else if (a == "--ghost") ghost_path = next();
+        else if (a == "--ghost-record") ghost_record_path = next();
+        else if (a == "--ghost-log") ghost_log = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--ghost-threaded") ghost_threaded = true;
         else if (a == "--peek-every") {
             // N:ADDR:BYTES, ADDR in hex: prints those 68K work RAM bytes every
             // N frames (tests measure what the game did, a player's speed say).
@@ -954,6 +969,31 @@ int main(int argc, char** argv) {
     uint64_t sprite_others_changed = 0;  // --sprites-check with a pack: see check_composed_others
     double worst_ms = 0;
     uint64_t worst_frame = 0, slow_frames = 0, sram_frames = 0, sram_last = 0;
+    ghost::Recorder ghost_recorder;
+    ghost::Ghost ghost_file;
+    ghost::Player ghost_player;
+    ghost::CameraTrail live_camera;
+    bool ghost_waiting = false;   // loaded, waiting for the live run's stage
+    struct GhostTotals {
+        uint64_t frames = 0, drawn = 0, pixels = 0, outside = 0, misplaced = 0;
+        double ms = 0, worst_ms = 0;
+        bool goal_told = false;
+    } gt;
+    std::vector<uint32_t> ghost_picture;
+    if (!ghost_path.empty()) {
+        std::vector<uint8_t> bytes;
+        std::string why;
+        if (!savestate::read_file(ghost_path, bytes) || !ghost::decode(bytes, ghost_file, &why) ||
+            !ghost::compatible(ghost_file, *m, &why)) {
+            std::fprintf(stderr, "cannot use the ghost %s: %s\n", ghost_path.c_str(), why.empty() ? "unreadable" : why.c_str());
+            return 2;
+        }
+        std::printf("ghost: %s, stage %u-%u, time %s (%d frames), %zu input frames, %zu bytes\n", ghost_path.c_str(),
+                    unsigned(ghost_file.request.place), unsigned(ghost_file.request.level),
+                    stage_select::format_time(ghost_file.time).c_str(), ghost_file.time, ghost_file.inputs.size(),
+                    bytes.size());
+        ghost_waiting = true;
+    }
     auto t0 = std::chrono::steady_clock::now();
     for (uint64_t f = start_frame; f < frames; ++f) {
         uint16_t btn = 0;
@@ -967,6 +1007,7 @@ int main(int argc, char** argv) {
             if (nat) { nat->stage_request = stage; nat->stage_pending = true; }
             stage_kick = 0;
             ta.begin(stage);
+            if (!ghost_record_path.empty()) ghost_recorder.arm(stage);
         }
         // The same taps of Start the frontend gives a waiting request: the
         // title screen needs one press to get past its animation and another
@@ -1015,6 +1056,7 @@ int main(int argc, char** argv) {
                     ref->stage_pending = true;
                 }
                 ta.begin(q.request);
+                if (!ghost_record_path.empty()) ghost_recorder.arm(q.request);
                 stage_set = true;
                 stage_frame = f;
             }
@@ -1042,9 +1084,73 @@ int main(int argc, char** argv) {
             }
         cheats::apply(*m, cheat_writes);
         if (ref) cheats::apply(*ref, cheat_writes);
+        ghost_recorder.before_frame(*m);
         const size_t first_sample = m->audio_out.size();
         const auto frame_t0 = std::chrono::steady_clock::now();
         m->run_frame();
+        ghost_recorder.after_frame(*m);
+        live_camera.push(patches::camera_x(*m), patches::camera_y(*m));
+        if (ghost_player.active()) {
+            const auto g0 = std::chrono::steady_clock::now();
+            ghost_player.advance();
+            ghost::Frame gf;
+            ghost_player.latest(gf, ghost_threaded ? 50.0 : 0.0);
+            const double gms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - g0).count();
+            gt.ms += gms;
+            gt.worst_ms = std::max(gt.worst_ms, gms);
+            ++gt.frames;
+            const ghost::Status gs = ghost_player.status();
+            if (gs.goal && !gt.goal_told) {
+                gt.goal_told = true;
+                std::printf("ghost: reached the goal at ghost frame %llu, time %s (%d frames)\n",
+                            (unsigned long long)gs.frames, stage_select::format_time(gs.time).c_str(), gs.time);
+            }
+            // The live picture, untouched, and a copy with the ghost drawn
+            // over it: every pixel that differs must lie where the ghost's
+            // box lands on the live screen.
+            ghost_picture.assign(m->framebuffer, m->framebuffer + kScreenWidth * kScreenHeight);
+            int cx = 0, cy = 0;
+            live_camera.get(cx, cy);
+            const ghost::Placed pl = ghost::compose(ghost_picture.data(), kScreenWidth, m->fb_width, m->fb_height,
+                                                    m->fb_extra, gf, cx, cy);
+            if (pl.pixels) {
+                ++gt.drawn;
+                gt.pixels += uint64_t(pl.pixels);
+                const int bx = gf.x + gf.cam_x - cx + m->fb_extra, by = gf.y + gf.cam_y - cy;
+                int changed = 0;
+                for (int y = 0; y < m->fb_height; ++y)
+                    for (int x = 0; x < m->fb_width; ++x) {
+                        const size_t k = size_t(y) * kScreenWidth + size_t(x);
+                        if (ghost_picture[k] == m->framebuffer[k]) continue;
+                        ++changed;
+                        if (x < bx || x >= bx + gf.w || y < by || y >= by + gf.h) ++gt.outside;
+                    }
+                if (changed > pl.pixels) ++gt.misplaced;
+            }
+            if (ghost_log && m->frame_count % ghost_log == 0)
+                std::printf("ghost f=%llu gf=%llu visible=%d gcam=%d,%d cam=%d,%d box=%d,%d,%dx%d drawn=%d at=%d,%d,%dx%d\n",
+                            (unsigned long long)m->frame_count, (unsigned long long)gf.index, int(gf.visible),
+                            gf.cam_x, gf.cam_y, cx, cy, gf.x, gf.y, gf.w, gf.h, pl.pixels, pl.x, pl.y, pl.w, pl.h);
+            if (gs.ended) {
+                std::printf("ghost: ended after %llu frames, time %s (%d frames), recorded %s (%d frames): %s\n",
+                            (unsigned long long)gs.frames, stage_select::format_time(gs.time).c_str(), gs.time,
+                            stage_select::format_time(ghost_file.time).c_str(), ghost_file.time,
+                            gs.desynced ? "DESYNC" : "in sync");
+                ghost_player.stop();
+            }
+        }
+        if (ghost_waiting && ta.running && !m->stage_pending) {
+            // The live run's stage was taken this frame: the ghost starts
+            // from the same moment of its own run.
+            ghost_waiting = false;
+            std::string why;
+            if (!ghost_player.start(m->rom, ghost_file, ghost_threaded, &why)) {
+                std::fprintf(stderr, "ghost: cannot start: %s\n", why.c_str());
+                return 2;
+            }
+            std::printf("ghost: started with the live run at frame %llu%s\n", (unsigned long long)m->frame_count,
+                        ghost_threaded ? " (on its own thread)" : "");
+        }
         if (!dump_tiles_dir.empty() && m->vdp.tiles) {
             write_tile_dumps(*m->vdp.tiles, dump_tiles_dir);
             // The plane text on screen, for mdtext_ patterns (the lockstep
@@ -1093,6 +1199,22 @@ int main(int argc, char** argv) {
             std::printf("widescreen: margins live from frame %llu\n", (unsigned long long)m->frame_count);
         }
         if (ta.update(*m)) {
+            if (!ghost_record_path.empty()) {
+                ghost::Ghost g;
+                const bool keep = ta.timed() && !ta.timed_out() && ghost_recorder.finish(*m, ta.time, 0, g);
+                if (!keep) {
+                    std::printf("ghost: the run was not recorded (no time)\n");
+                } else {
+                    const std::vector<uint8_t> bytes = ghost::encode(g);
+                    if (!savestate::write_file(ghost_record_path, bytes)) {
+                        std::fprintf(stderr, "cannot write %s\n", ghost_record_path.c_str());
+                        return 2;
+                    }
+                    std::printf("ghost: recorded %s, %zu frames, time %s (%d frames), %zu bytes (start state %zu)\n",
+                                ghost_record_path.c_str(), g.inputs.size(), stage_select::format_time(g.time).c_str(),
+                                g.time, bytes.size(), g.start.size());
+                }
+            }
             if (!ta.timed())
                 std::printf("stage: the run ended without a time (this level keeps no clock)\n");
             else
@@ -1205,9 +1327,11 @@ int main(int argc, char** argv) {
         if (shots.count(m->frame_count)) {
             char name[512];
             std::snprintf(name, sizeof name, "%s/frame_%05llu.png", out_dir.c_str(), (unsigned long long)m->frame_count);
-            write_png(name, m->framebuffer, m->fb_width, m->fb_height, kScreenWidth);
+            // With a ghost, the picture as the player sees it.
+            const uint32_t* pic = ghost_player.active() && !ghost_picture.empty() ? ghost_picture.data() : m->framebuffer;
+            write_png(name, pic, m->fb_width, m->fb_height, kScreenWidth);
             std::printf("wrote %s hash=%016llx\n", name,
-                        (unsigned long long)image_hash(m->framebuffer, m->fb_width, m->fb_height, kScreenWidth));
+                        (unsigned long long)image_hash(pic, m->fb_width, m->fb_height, kScreenWidth));
         }
         if (expect_hash.count(m->frame_count)) {
             uint64_t h = image_hash(m->framebuffer, m->fb_width, m->fb_height, kScreenWidth);
@@ -1283,6 +1407,14 @@ int main(int argc, char** argv) {
     }
     if (compare_native) std::printf("centre check: %llu widescreen frames with a 4:3 identical centre\n", (unsigned long long)centre_ok_frames);
     if (compare_native && centre_worst) std::printf("centre check: special stage frames differ along polygon edges by at most %d pixels\n", centre_worst);
+    if (!ghost_path.empty()) {
+        std::printf("ghost: drawn on %llu of %llu frames, %llu pixels, %llu outside its box, %llu frames misplaced; "
+                    "%.3f ms a frame on average, %.3f ms worst\n",
+                    (unsigned long long)gt.drawn, (unsigned long long)gt.frames, (unsigned long long)gt.pixels,
+                    (unsigned long long)gt.outside, (unsigned long long)gt.misplaced,
+                    gt.frames ? gt.ms / double(gt.frames) : 0.0, gt.worst_ms);
+        if (ghost_waiting) std::printf("ghost: never started (the live run's stage was not taken)\n");
+    }
     if (ref) std::printf("lockstep: %llu frames bit-identical between interpreter and recompiled execution\n", (unsigned long long)lockstep_ok_frames);
     if (character_palettes)
         std::printf("characters: displayed palette worked out %llu times (%llu blocks left as they were), %d colour block(s) replaced at the end\n",

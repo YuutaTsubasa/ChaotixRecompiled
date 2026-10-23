@@ -79,11 +79,14 @@ add_library(chaotix_runtime STATIC
     src/frontend/setup.cpp
     src/frontend/time_attack.cpp
     src/frontend/backdrop.cpp
+    src/frontend/ghost.cpp
     src/input/input.cpp
     src/input/touch_controls.cpp
 )
 target_include_directories(chaotix_runtime PUBLIC src)
-target_link_libraries(chaotix_runtime PUBLIC chaotix_cpu)
+# TIME ATTACK ghosts run their machine on a thread of their own (frontend/ghost.h).
+find_package(Threads REQUIRED)
+target_link_libraries(chaotix_runtime PUBLIC chaotix_cpu Threads::Threads)
 # Save states record the version that wrote them (runtime/save_state.h).
 set_source_files_properties(src/runtime/save_state.cpp PROPERTIES
     COMPILE_DEFINITIONS CHAOTIX_VERSION_STRING="${PROJECT_VERSION}")

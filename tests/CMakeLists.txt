@@ -28,6 +28,7 @@ add_executable(chaotix_tests
     test_character_mods.cpp
     test_game_font.cpp
     test_save_state.cpp
+    test_ghost.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
@@ -120,6 +121,14 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(save_states_carry_on_bit_identically PROPERTIES TIMEOUT 900
             PASS_REGULAR_EXPRESSION "all scenes carry on bit-identically")
+        # TIME ATTACK ghosts (issue #41): a finished run recorded as a ghost
+        # and raced by another run of the stage replays to the recorded time,
+        # is drawn only where it is, and leaves the live run, its pictures
+        # and lockstep exactly as they are without it.
+        add_test(NAME time_attack_ghosts
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_ghosts.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}" "${CMAKE_CURRENT_SOURCE_DIR}/recordings")
+        set_tests_properties(time_attack_ghosts PROPERTIES TIMEOUT 900)  # fails by its exit code
     endif()
     # Rewind (issue #40): every snapshot still held is stepped back to and
     # must be exactly the state it was taken from; the buffer keeps to its
