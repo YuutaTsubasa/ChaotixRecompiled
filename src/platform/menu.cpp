@@ -11,6 +11,7 @@
 
 #include "frontend/backdrop.h"
 #include "frontend/config.h"
+#include "frontend/ghost.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
 
@@ -564,6 +565,15 @@ void Menu::build_time_attack() {
               [](int) {}};
     best.read_only = true;
     items_.push_back(std::move(best));
+    // Issue #41: a translucent copy of a run kept before races this one.
+    // It is a second game running alongside, which a phone may not have the
+    // time for, so there it starts off and says so.
+    items_.push_back({"GHOST",
+                      [c] { return std::string(ghost::mode_name(ghost::Mode(c->ta_ghost))); },
+                      [c](int s) { if (s) c->ta_ghost = (c->ta_ghost + s + 3) % 3; },
+                      ghost::default_mode() == ghost::Mode::Off
+                          ? "a second game: may slow a phone"
+                          : "race a past run of the stage"});
     items_.push_back({"START", {}, [this, c](int) {
         Request r;
         r.place = uint16_t(c->ta_place);

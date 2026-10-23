@@ -1,5 +1,6 @@
 #include "config.h"
 #include "frontend/backdrop.h"
+#include "frontend/ghost.h"
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
@@ -51,6 +52,8 @@ bool rewind_default() {
     return true;
 #endif
 }
+
+int ghost_default() { return int(ghost::default_mode()); }
 
 void Config::set_defaults() {
     *this = Config{};
@@ -176,6 +179,7 @@ bool Config::load(const std::string& path) {
             else if (k == "Player") ta_player = std::atoi(v.c_str());
             else if (k == "Combi") ta_combi = std::atoi(v.c_str());
             else if (k == "TwoPlayers") ta_two_players = parse_bool(v, ta_two_players);
+            else if (k == "Ghost") ta_ghost = int(ghost::parse_mode(v, ghost::Mode(ta_ghost)));
             else if (k.rfind("Best.", 0) == 0) ta_best[k.substr(5)] = std::atoi(v.c_str());
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
@@ -277,6 +281,8 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "\n[TimeAttack]\n# The last run set up in the front end. Values are the game's own.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ta_place, ta_level, ta_time, ta_player, ta_combi, ta_two_players ? "true" : "false");
+    std::fprintf(f, "# The ghost a run races: OFF, BEST (the stage's fastest kept) or LAST (Ghosts/ in this folder)\n");
+    std::fprintf(f, "Ghost = %s\n", ghost::mode_name(ghost::Mode(ta_ghost)));
     std::fprintf(f, "# Best times, in level-clock frames at 60 Hz (Best.<place>.<level>)\n");
     for (const auto& [k, v] : ta_best) std::fprintf(f, "Best.%s = %d\n", k.c_str(), v);
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");

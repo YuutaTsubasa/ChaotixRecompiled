@@ -13,6 +13,7 @@
 #include "audio/music_mods.h"
 #include "audio/volumes.h"
 #include "frontend/config.h"
+#include "frontend/ghost.h"
 #include "frontend/time_attack.h"
 #include "frontend/debug_overlay.h"
 #include "frontend/setup.h"
@@ -169,6 +170,18 @@ struct App {
     time_attack::Run ta;
     bool ta_cheated = false;  // a cheat was on during the current run
     bool cheating = false;    // one is on this frame
+    // TIME ATTACK ghosts (issue #41, frontend/ghost.h): every run is recorded
+    // from the moment the game takes the stage, and the chosen ghost of the
+    // stage is played on a machine of its own, a frame for every frame of
+    // the run, from the same moment of its own run.
+    ghost::Recorder ghost_rec;
+    ghost::Player ghost;
+    ghost::Ghost ghost_next;          // chosen, waiting for the stage to be taken
+    bool ghost_waiting = false;
+    std::string ghost_path;           // the file it came from
+    bool ghost_goal_told = false;
+    ghost::CameraTrail ghost_live_camera;
+    std::vector<uint32_t> ghost_picture;  // the live picture with the ghost over it
     // Every frame's pad is kept, so a session can be replayed exactly, headless,
     // and looked at afterwards. What the game does when a run is finished at
     // the goal is not something a script can reach, so the only way to study it
@@ -496,6 +509,17 @@ void save_screenshot(App& app) {
     LOGI("app", "screenshot saved to %s%s", dir.c_str(), name);
 }
 
+// Ghosts (issue #41): the run's recording and the ghost being raced, both
+// dropped (a run abandoned, or over).
+void stop_ghost(App& app) {
+    app.ghost.stop();
+    app.ghost_waiting = false;
+    app.ghost_next = ghost::Ghost{};
+    app.ghost_rec.cancel();
+}
+
+std::string ghost_dir(const App& app) { return ghost::folder(app.store.root(), *app.m); }
+
 // Every face and shoulder button is taken by the emulated 6-button pad (and
 // Back is its Mode button), so the menu is on the left stick click, which
 // nothing else uses. While the menu is open it drives the menu, not the game.
@@ -532,6 +556,7 @@ bool return_to_title(App& app) {
     app.m->stage_pending = false;
     app.stage_kick = -1;
     app.ta.cancel();
+    stop_ghost(app);
     app.m->remap_m68k();
     app.m->remap_sh2();
     // The sprite lists described the frame buffers just replaced.
@@ -782,6 +807,17 @@ void follow_time_attack(App& app) {
     const bool cheated = app.ta_cheated;
     const bool best = timed && !cheated && record_best(app.cfg, app.ta.request.place,
                                                        app.ta.request.level, frames);
+    // The run as a ghost: a finished run with a time, without cheats.
+    std::string ghost_note;
+    {
+        ghost::Ghost g;
+        if (app.ghost_rec.finish(*app.m, frames, int64_t(std::time(nullptr)), g) && timed && !cheated) {
+            const ghost::Stored st = ghost::store(ghost_dir(app), g, *app.m);
+            LOGI("ghost", "run kept as a ghost (%zu bytes)%s", st.bytes, st.best ? ", the best with these characters" : "");
+            if (st.best) ghost_note = " Ghost kept.";
+        }
+    }
+    app.ghost.stop();
     // Straight to disk, the way an unlocked achievement is. Waiting for a
     // clean exit loses the record if the program does not get one.
     if (best) app.cfg.save(app.store.config_file());
@@ -793,14 +829,61 @@ void follow_time_attack(App& app) {
     const std::string note = ran_out  ? "The level's own limit ran out."
                              : !timed ? "This level does not keep a clock."
                              : cheated ? "Cheats were on: not recorded."
-                             : best   ? "A new best for this stage."
-                                      : "Not a new best.";
+                             : best   ? "A new best for this stage." + ghost_note
+                                      : "Not a new best." + ghost_note;
     app.toasts.push_back({title, note, SDL_GetTicks() + 6000, "TIME ATTACK"});
     // The run, as it was played. A recorded time that disagrees with what the
     // game showed can then be looked into without anyone having had to set up
     // a recording beforehand.
     write_recording(app, app.store.save_dir() + "last_run.txt", frames);
     if (return_to_title(app)) app.menu.show_page("timeattack");
+}
+
+// The ghost being raced, once a pass: its end, its time at the goal, and a
+// ghost that did not replay as recorded (put aside, docs/GHOSTS.md).
+void follow_ghost(App& app) {
+    if (!app.ghost.active()) return;
+    const ghost::Status st = app.ghost.status();
+    if (st.goal && !app.ghost_goal_told) {
+        app.ghost_goal_told = true;
+        app.toasts.push_back({"GHOST " + stage_select::format_time(st.time), "The ghost reached the goal.",
+                              SDL_GetTicks() + 3000, "TIME ATTACK"});
+    }
+    if (st.desynced) {
+        LOGW("ghost", "%s did not replay as recorded (time %d, recorded %d): put aside", app.ghost_path.c_str(),
+             st.time, app.ghost.ghost().time);
+        ghost::discard(app.ghost_path);
+        notice(app, "TIME ATTACK", "GHOST DISCARDED", "It did not replay as it was recorded.");
+        app.ghost.stop();
+        return;
+    }
+    if (st.ended) { app.ghost.stop(); return; }
+    // A machine with no time for a second game: the ghost falls ever further
+    // behind, and a ghost drawn late is in the wrong place.
+    if (app.ghost.behind() > 30 && !app.autotest_frames) {
+        LOGW("ghost", "the ghost cannot keep up on this machine (%.1f ms a frame): stopped", app.ghost.last_frame_ms());
+        notice(app, "TIME ATTACK", "GHOST STOPPED", "This device is too slow to run it.");
+        app.ghost.stop();
+    }
+}
+
+// The picture to show: the machine's own, or a copy of it with the ghost
+// drawn over it while the run's clock is running. The machine's picture is
+// never written to.
+const uint32_t* ghost_picture(App& app) {
+    follow_ghost(app);
+    if (!app.ghost.active() || !app.ta.running || !app.ta.have_start || app.ta.finished || app.menu.open())
+        return app.m->framebuffer;
+    ghost::Frame f;
+    // A little time for the ghost to finish the frame this picture is for; it
+    // has the whole of this frame's emulation and more, so on a PC it has.
+    if (!app.ghost.latest(f, 8.0) || !f.visible) return app.m->framebuffer;
+    app.ghost_picture.assign(app.m->framebuffer, app.m->framebuffer + kScreenWidth * kScreenHeight);
+    int cx = 0, cy = 0;
+    app.ghost_live_camera.get(cx, cy);
+    ghost::compose(app.ghost_picture.data(), kScreenWidth, app.m->fb_width, app.m->fb_height, app.m->fb_extra, f, cx,
+                   cy);
+    return app.ghost_picture.data();
 }
 
 void handle_pad_button(App& app, Uint8 button) {
@@ -1646,6 +1729,22 @@ int main(int argc, char** argv) {
             app.stage_kick = 0;
             app.ta.begin(r);
             app.ta_cheated = false;
+            // Ghosts: this run is recorded, and the stage's ghost (if the
+            // option is on and there is one) waits for the stage to start.
+            stop_ghost(app);
+            app.ghost_rec.arm(r);
+            app.ghost_goal_told = false;
+            {
+                std::string why;
+                const ghost::Mode mode = ghost::Mode(app.cfg.ta_ghost);
+                if (ghost::choose(ghost_dir(app), mode, r, *app.m, app.ghost_next, app.ghost_path, &why)) {
+                    app.ghost_waiting = true;
+                    LOGI("ghost", "racing %s (%s)", app.ghost_path.c_str(),
+                         stage_select::format_time(app.ghost_next.time).c_str());
+                } else if (mode != ghost::Mode::Off) {
+                    LOGI("ghost", "no ghost: %s", why.c_str());
+                }
+            }
             app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
                                            app.m->wide_extra_bottom, app.cfg.six_button});
         };
@@ -2053,7 +2152,27 @@ int main(int argc, char** argv) {
             audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
                                                float(app.cfg.effects_volume) / 100.0f);
             const size_t first_sample = app.m->audio_out.size();
+            app.ghost_rec.before_frame(*app.m);
+            // The ghost's frame runs on its own thread while this one runs.
+            if (app.ghost.active()) app.ghost.advance();
             app.m->run_frame();
+            app.ghost_rec.after_frame(*app.m);
+            app.ghost_live_camera.push(patches::camera_x(*app.m), patches::camera_y(*app.m));
+            if (autotest && app.ghost.active()) {
+                // Autotests run frames in batches as fast as they go: the
+                // ghost keeps step frame by frame, so the pictures are exact.
+                ghost::Frame unused;
+                app.ghost.latest(unused, 1000.0);
+            }
+            if (app.ghost_waiting && app.ta.running && !app.m->stage_pending) {
+                // The stage was taken this frame: the ghost starts from the
+                // same moment of its own run.
+                app.ghost_waiting = false;
+                std::string why;
+                if (!app.ghost.start(app.m->rom, std::move(app.ghost_next), true, &why))
+                    LOGW("ghost", "%s: %s", app.ghost_path.c_str(), why.c_str());
+                app.ghost_next = ghost::Ghost{};
+            }
             // Replacement music is music too.
             app.music.set_volume(app.cfg.mod_music_volume * app.cfg.music_volume / 100);
             app.music.after_frame(*app.m, first_sample);
@@ -2127,7 +2246,7 @@ int main(int argc, char** argv) {
         SDL_GetRenderOutputSize(app.renderer, &ow, &oh);
         SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
         SDL_RenderClear(app.renderer);
-        SDL_UpdateTexture(app.texture, nullptr, app.m->framebuffer, kScreenWidth * 4);
+        SDL_UpdateTexture(app.texture, nullptr, ghost_picture(app), kScreenWidth * 4);
         app.cfg.viewport.image_aspect = image_aspect_for_size(app.m->fb_width, app.m->fb_width - 2 * app.m->fb_extra,
                                                               app.m->fb_height, app.m->fb_height - app.m->fb_extra_bottom);
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
@@ -2232,9 +2351,13 @@ int main(int argc, char** argv) {
             app.timing.render_fps = double(fps_frames) / s;
             app.timing.sim_fps = double(fps_sims) / s;
             if (app.log_timing)
-                LOGI("timing", "frame %llu: %.1f presented/s, %.1f emulated/s, slowest pass %.1f ms (emulation %.1f, present %.1f)",
+                LOGI("timing", "frame %llu: %.1f presented/s, %.1f emulated/s, slowest pass %.1f ms (emulation %.1f, present %.1f)%s",
                      (unsigned long long)app.m->frame_count, app.timing.render_fps, app.timing.sim_fps, worst_pass,
-                     worst_emu, worst_present);
+                     worst_emu, worst_present,
+                     app.ghost.active() ? (", ghost frame " + std::to_string(app.ghost.last_frame_ms()).substr(0, 5) +
+                                           " ms on its own thread")
+                                              .c_str()
+                                        : "");
             worst_pass = worst_emu = worst_present = 0;
             fps_frames = fps_sims = 0;
             fps_t0 = now;

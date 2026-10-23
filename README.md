@@ -195,6 +195,18 @@ afterwards -- so a record reads the same as the time you watched when you
 finished. Two players needs a device for player 2 under
 CONTROLS, which starts as NONE.
 
+GHOST races a translucent copy of a run you made before: BEST (the stage's
+fastest kept, whoever ran it), LAST (the stage's last finished run) or OFF.
+Every finished run without cheats is kept, as a small file in `Ghosts/` in
+the user data folder, and on the next START of the stage the ghost's
+characters run alongside you, half see-through and tinted, from the moment
+the clock starts until the ghost reaches the goal, when its time is shown.
+The game is deterministic, so the ghost is the recorded run's pads replayed
+on a second machine from the moment the stage started; it never changes your
+run. Copy the files to export or import ghosts. It starts as BEST on
+computers, where it costs no frame rate, and OFF on phones, which may not
+have the time for a second game. See [docs/GHOSTS.md](docs/GHOSTS.md).
+
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
 gamepad, which is the default for player 1), the keyboard alone, one gamepad
 by name, or nothing. Each player has its own keyboard set *and* its own
@@ -461,6 +473,9 @@ you have the right to use, please.
   `--record-input`, so that something only a person can do — finishing a level,
   say — can be studied here as often as needed. `--lobby-partner ID` and
   `--lobby-time 0-3` stand in for the lobby shortcuts' choices.
+- `chaotix_headless --ghost-record FILE` writes a `--stage` or replayed run
+  as a TIME ATTACK ghost when it ends, and `--ghost FILE` races one, drawn
+  into the shots (`--ghost-log N` prints where it is; docs/GHOSTS.md).
 - `chaotix_headless --save-state FRAME:FILE` writes a save state after that
   frame and `--load-state FILE` starts from one (the run then goes on to
   `--frames`); `--state-hash-every N` prints a fingerprint of the whole
