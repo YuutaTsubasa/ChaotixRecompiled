@@ -243,15 +243,12 @@ void Machine::run_slice(uint64_t end_mclk) {
             stats.m68k_cycles += done;
         }
     }
-    // Z80 (sound CPU), unless held in reset or its bus is taken by the 68K
+    // Z80 (sound CPU), unless held in reset or its bus is taken by the 68K.
+    // The 68K's writes to BUSREQ and RESET in this slice already ran it up
+    // to their time (z80_sync).
     {
         ProfScope ps(profile, &stats.prof_ns[PROF_Z80]);
-        uint64_t target = end_mclk / 15;
-        if (target > z80_clock) {
-            int32_t budget = int32_t(target - z80_clock);
-            if (!z80_reset && !z80_busreq) z80::run(&z80, budget);
-            z80_clock = target;
-        }
+        z80_sync(end_mclk);
     }
     // SH-2 master then slave (only after the 68K releases them from reset)
     const uint64_t sh_target = end_mclk * 3 / 7;
@@ -280,6 +277,27 @@ void Machine::run_slice(uint64_t end_mclk) {
     ProfScope ps(profile, &stats.prof_ns[PROF_AUDIO]);
     if (boot_hle_done) pwm_advance(uint32_t((end_mclk * 3 / 7) - (start * 3 / 7)));
     audio_advance(end_mclk);
+}
+
+void Machine::z80_sync(uint64_t now_mclk) {
+    const uint64_t target = now_mclk / 15;
+    if (target <= z80_clock) return;
+    const int32_t budget = int32_t(target - z80_clock);
+    // Advanced first: a Z80 write through its bank window that reaches
+    // BUSREQ or RESET syncs again, and must find nothing left to run.
+    z80_clock = target;
+    if (!z80_reset && !z80_busreq) z80::run(&z80, budget);
+}
+
+void Machine::z80_catch_up() {
+    // Up to the 68K's time, but not past this line: the 68K may have run
+    // ahead of its slice, and the Z80's interrupt line changes at line starts.
+    z80_sync(std::min<uint64_t>(m68k_now_mclk(), line_start_mclk + kMclkPerLine));
+}
+
+void Machine::set_z80_busreq(bool requested) {
+    z80_catch_up();
+    z80_busreq = requested ? 1 : 0;
 }
 
 void Machine::audio_advance(uint64_t end_mclk) {

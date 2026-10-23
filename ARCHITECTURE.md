@@ -191,7 +191,7 @@ ROM bytes ──decoder──▶ m68k::Insn / sh2::Insn        （每條指令�
 ## 7. 68K ↔ SH-2 同步模型
 
 1. 時間單位為 MCLK。每條掃描線切成 4 個固定時間片（855 MCLK）。
-2. 每個時間片依序執行：68K → Master SH-2 → Slave SH-2，各自執行到時間片終點（可超出少量 cycles，下個時間片扣回）。
+2. 每個時間片依序執行：68K → Z80 → Master SH-2 → Slave SH-2，各自執行到時間片終點（可超出少量 cycles，下個時間片扣回）。68K 寫 Z80 BUSREQ / RESET 時，先把 Z80 執行到 68K 當下的時間（`Machine::z80_catch_up`，不超過本掃描線終點），再改變狀態：Z80 恰好執行到被 68K 停下為止，如同硬體（issue #50，docs/ISSUE_50_SOUND_TEST.md）。
 3. 中斷在掃描線開始時產生（MD V-int 於第 224 線、H-int 計數器、32X V/H、FB swap），在 CPU 的下一個 block 邊界被接受；CMD/PWM 中斷在寫入/計時器觸發時立即更新 pending。
 4. comm port、FIFO、FS/FEN/PEN 狀態讀取使用「讀取者自己的當下時間」（`m68k_now_mclk` / `sh2_now_mclk`）計算 HBLANK/VBLANK。
 5. 整個模型是**確定性的**：相同輸入 → 相同結果，不依賴主機速度或執行緒排程。
