@@ -196,3 +196,57 @@ backdrops to `DIR` and says how long each took.
 the recompiled machine while a backdrop is made on another thread, and the
 frames must hash the same as a run without it; `lockstep_*` and the golden
 frame tests are unchanged.
+
+## TIME ATTACK and LEVEL SELECT: the zone showcase (issue #53)
+
+Both pages share one layout (`Menu::draw_showcase`). The entries are the
+same as before, in the order up and down step through them: PLACE, LEVEL,
+AT-TIME, PLAYER, COMBI, (BEST TIME, read only, and GHOST on TIME ATTACK),
+PLAYERS, START, BACK. Left and right change the selected one, Enter steps a
+value or starts. What changed is where they are drawn:
+
+- **The stage's picture** on the left, about three fifths of the width, with
+  the place's name over its foot in the game's letters between arrows. Under
+  it a row of chips for the levels the place offers (ACT, or STAGE 1-6 for a
+  special stage) and one for the time of day. The value chosen is the yellow
+  chip.
+- **On the right:** the PLAYER and PARTNER cards, each with the character
+  standing and its name between arrows; the RECORDS card (the best time for
+  the stage chosen and the GHOST chips) on TIME ATTACK, or LEVEL SELECT's
+  "practice" note; the PLAYERS chips; a large START. BACK is at the top right.
+- **Touch** acts on one tap: a chip chooses, an arrow steps, START starts.
+  Tapping a card or a row elsewhere selects it, and a second tap steps it.
+- **Screen sizes:** everything is measured in the menu's letters, so MENU
+  SIZE (issue #49) grows all of it. The picture is drawn at a whole multiple
+  of its pixels when that is within 15% of the room it has. A portrait
+  window, or a short one at a larger MENU SIZE where the picture's column
+  would not fit, stacks the pieces in one column (the two cards side by side,
+  standing up, when they fit). A column taller than the window scrolls to
+  keep the selected entry in view, with markers where there is more.
+
+**Stage pictures** are backdrops made on demand (`MenuBackdrops::stage`,
+`stage_backdrop_spec`): any place, level and time of day the stage select
+starts, the bonus stage and special stages included. They are 4:3 (320x224,
+not wide), and the player walks right for 160 frames once it has control
+(from 380 frames after the stage is taken; 640 frames are run in all), so
+that the picture shows the level rather than its starting edge (BOTANIC BASE
+1 starts against its left edge). They are made by the same worker, one at a
+time, ahead of the menu's own pictures and whatever MENU BACKGROUND is set
+to; a picture being made for a selection the player has moved on from is
+given up. While one is made the page shows another picture of the same place
+if there is one, darkened, with LOADING over it. About 900 emulated frames:
+2.5-3 s on the development PC. They are cached beside the others as
+`stage_pPP_lL_tT.png` and at most 24 are kept as textures. The bonus stage
+comes out black (its picture is not in the frame buffer), which counts as no
+picture: the page then shows the menu's zone, darkened, instead.
+
+**Character sprites** (`frontend/portrait.h`) are the first standing frame
+(frame 0) of the character's body bank in the ROM's 32X bank table, read as
+EXPORT SPRITES reads it (`read_rom_bank`), in the colours shown for the
+player. A sprite mod for that bank and frame (`32x_<BB>_00.png`, or a
+sheet's cell) replaces it, and a character mod's `[Palette]` recolours it,
+as both do in play; they are made again when the mods are reloaded. All
+characters are drawn at one whole-number scale, taken from the tallest
+(Vector), so that switching keeps them in proportion. Slot 1 has no graphics
+and shows a question mark.
+

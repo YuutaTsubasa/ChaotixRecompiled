@@ -30,6 +30,15 @@ struct BackdropSpec {
     // value and the menu's label (issue #37).
     const char* zone = "";
     const char* name = "";
+    // Frames the player holds right for, starting `walk_from` frames after
+    // the stage is taken (once the player has control: about 300-400 frames
+    // in, measured on BOTANIC BASE 1), and frames run after the stage is
+    // taken before the picture is kept. The start of a level is often its
+    // edge, which shows what lies beyond it; a few steps in, the camera shows
+    // the level itself. The characters are left out of the picture anyway.
+    int walk = 0;
+    int walk_from = 0;
+    int settle = 480;  // kBackdropSettleFrames
 };
 
 // The zones the menu cycles through, each at a time of day that suits it, in
@@ -40,6 +49,16 @@ const std::vector<BackdropSpec>& backdrop_specs();
 const std::vector<int>& backdrop_menu_order();
 // The index of the spec whose `zone` is this (case ignored), or -1.
 int backdrop_find_zone(const std::string& zone);
+
+// TIME ATTACK and LEVEL SELECT (issue #53) show a picture of the stage being
+// chosen, at the time of day chosen: any stage the game's stage select
+// starts (stage_select::valid), made on demand the same way. These are 4:3,
+// not wide: the start of many levels shows what lies beyond the level's edge
+// in a wide picture's margins, and the menu's own list above avoids those.
+// `key` is left empty; the file name stem is stage_backdrop_key's.
+BackdropSpec stage_backdrop_spec(uint16_t place, uint16_t level, uint16_t attime);
+// "stage_p04_l2_t4" for place 4, level 2, AT-TIME 4.
+std::string stage_backdrop_key(uint16_t place, uint16_t level, uint16_t attime);
 
 struct BackdropImage {
     int width = 0, height = 0;
@@ -55,6 +74,10 @@ constexpr int kBackdropWideExtra = 40;
 // Frames run after the stage is taken before the picture is kept: the title
 // card has gone and the level has settled.
 constexpr int kBackdropSettleFrames = 480;
+// The stage pictures' walk and settling (stage_backdrop_spec).
+constexpr int kStageBackdropWalkFrom = 380;
+constexpr int kStageBackdropWalk = 160;
+constexpr int kStageBackdropSettle = 640;
 
 // How a caller steers a backdrop being rendered on another thread. Both flags
 // are read before every emulated frame of the backdrop machine.

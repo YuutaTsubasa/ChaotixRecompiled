@@ -3,6 +3,7 @@
 // it key presses and inspecting the Config it was bound to.
 #include "platform/menu.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <cmath>
@@ -14,10 +15,13 @@
 
 #include "frontend/config.h"
 #include "frontend/level_select.h"
+#include "frontend/portrait.h"
 #include "game/achievements.h"
 #include "platform/backdrops.h"
 #include "renderer/game_font.h"
+#include "runtime/character_mods.h"
 #include "runtime/rom.h"
+#include "runtime/sprite_replace.h"
 #include "test_framework.h"
 
 using namespace chaotix;
@@ -1639,11 +1643,12 @@ std::vector<float> row_heights(int w, int h, const std::string& page, bool game_
 TEST(menu_size, rows_grow_and_stay_on_the_screen) {
     // A desktop window, a phone in landscape (in its own pixels, and as an
     // 800x360 window) and a portrait window; the front end, the pause menu's
-    // row, two lists of settings and LEVEL SELECT; the game's font and the
+    // row, two lists of settings and the zone showcase (LEVEL SELECT and TIME
+    // ATTACK, issue #53); the game's font and the
     // pixel face.
     const std::pair<int, int> windows[] = {{1280, 720}, {800, 360}, {2400, 1080}, {412, 860}};
     for (const auto& [w, h] : windows) {
-        for (const char* page : {"front", "main", "video", "extras", "levelselect"}) {
+        for (const char* page : {"front", "main", "video", "extras", "levelselect", "timeattack"}) {
             for (bool game_font : {true, false}) {
                 const std::vector<float> hs = row_heights(w, h, page, game_font);
                 CHECK_EQ(int(hs.size()), ui::kMenuSizes);
@@ -1782,3 +1787,382 @@ TEST(level_select, a_kept_choice_it_does_not_offer_is_put_right) {
     CHECK_EQ(cfg.ls_place, 10);
     CHECK_EQ(cfg.ls_level, 0);
 }
+
+// ---------------------------------------------------------------------------
+// The zone showcase: TIME ATTACK and LEVEL SELECT's layout (issue #53)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The touch targets of one entry, in the order they were drawn (a row's
+// chips, then the row; an arrow, then the card or band it is on).
+std::vector<SDL_FRect> targets_of(const Menu& m, int index) {
+    std::vector<SDL_FRect> out;
+    for (const auto& [i, r] : m.drawn_rows())
+        if (i == index) out.push_back(r);
+    return out;
+}
+
+// The index of the entry with this label (walking to it).
+int index_of(Menu& m, const std::string& label) {
+    CHECK(select_row(m, label));
+    return m.selected_index();
+}
+
+void tap_centre(Drawn& d, Menu& m, const SDL_FRect& r) { d.tap(m, r.x + r.w * 0.5f, r.y + r.h * 0.5f); }
+
+} // namespace
+
+TEST(showcase, the_cards_go_beside_the_picture_or_under_it) {
+    // Landscape: the picture's column on the left, the cards on the right.
+    // Portrait: one column, the cards under the picture and its rows. At
+    // every MENU SIZE, for both pages.
+    struct Window { int w, h; bool portrait; };
+    for (const Window win : {Window{1280, 720, false}, Window{2400, 1080, false}, Window{412, 860, true}}) {
+        for (const char* page : {"timeattack", "levelselect"}) {
+            for (int z = 0; z < ui::kMenuSizes; ++z) {
+                Drawn d(win.w, win.h);
+                CHECK(d.ok);
+                if (!d.ok) return;
+                Config cfg;
+                cfg.set_defaults();
+                cfg.menu_size = z;
+                Menu m;
+                m.bind(cfg);
+                CHECK(m.show_page(page));
+                const int place = index_of(m, "PLACE");
+                const int player = index_of(m, "PLAYER");
+                const int time = index_of(m, "AT-TIME");
+                CHECK(select_row(m, "PLACE"));
+                d.draw(m);
+                const auto picture = targets_of(m, place);
+                CHECK(!picture.empty());
+                if (picture.empty()) continue;
+                const SDL_FRect band = picture.back();
+                CHECK(select_row(m, "PLAYER"));
+                d.draw(m);
+                const auto card = targets_of(m, player);
+                CHECK(!card.empty());
+                if (card.empty()) continue;
+                const SDL_FRect c = card.back();
+                if (win.portrait) {
+                    // Under it (scrolled to, at a larger size).
+                    CHECK(c.y >= band.y + band.h || z > 0);
+                    CHECK(c.x < band.x + band.w);
+                } else if (z == 0) {
+                    CHECK(c.x >= band.x + band.w);  // beside it
+                    CHECK(c.y < band.y + band.h);
+                }
+                CHECK(select_row(m, "AT-TIME"));
+                d.draw(m);
+                // Four chips and the row itself.
+                CHECK_EQ(int(targets_of(m, time).size()), stage_select::kTimeCount + 1);
+            }
+        }
+    }
+}
+
+TEST(showcase, chips_arrows_and_start_act_on_one_tap) {
+    // Touch drives the page directly: the place's arrows step it, a chip
+    // chooses its level, time of day or player count, and START starts --
+    // with the same request the keys make.
+    for (const auto& [w, h] : {std::pair<int, int>{1280, 720}, {412, 860}, {800, 360}}) {
+        Drawn d(w, h);
+        CHECK(d.ok);
+        if (!d.ok) return;
+        Config cfg;
+        cfg.set_defaults();
+        Menu m;
+        m.bind(cfg);
+        int started = 0;
+        stage_select::Request got;
+        Menu::Hooks hooks;
+        hooks.start_stage = [&](const stage_select::Request& r) { ++started; got = r; };
+        m.set_hooks(hooks);
+        m.open_front();
+        CHECK(select_row(m, "TIME ATTACK"));
+        CHECK(m.on_key(SDLK_RETURN));
+        const int place = index_of(m, "PLACE");
+        const int level = index_of(m, "LEVEL");
+        const int time = index_of(m, "AT-TIME");
+        const int players = index_of(m, "PLAYERS");
+        const int start = index_of(m, "START");
+
+        CHECK(select_row(m, "PLACE"));
+        d.draw(m);
+        auto t = targets_of(m, place);  // "<", ">", the band
+        CHECK_EQ(int(t.size()), 3);
+        if (t.size() != 3) continue;
+        tap_centre(d, m, t[1]);
+        CHECK_EQ(cfg.ta_place, 1);  // BOTANIC BASE -> SPEED SLIDER
+        tap_centre(d, m, t[0]);
+        CHECK_EQ(cfg.ta_place, 0);
+        tap_centre(d, m, t[1]);
+        CHECK_EQ(cfg.ta_place, 1);
+
+        CHECK(select_row(m, "LEVEL"));
+        d.draw(m);
+        t = targets_of(m, level);  // 1..5, the row
+        CHECK_EQ(int(t.size()), 6);
+        if (t.size() == 6) tap_centre(d, m, t[2]);
+        CHECK_EQ(cfg.ta_level, 3);
+        CHECK_EQ(m.selected_index(), level);
+
+        CHECK(select_row(m, "AT-TIME"));
+        d.draw(m);
+        t = targets_of(m, time);
+        if (t.size() == 5) tap_centre(d, m, t[1]);
+        CHECK_EQ(cfg.ta_time, 2);  // DAY
+
+        CHECK(select_row(m, "PLAYERS"));
+        d.draw(m);
+        t = targets_of(m, players);
+        if (t.size() == 3) tap_centre(d, m, t[1]);
+        CHECK(cfg.ta_two_players);
+
+        CHECK(select_row(m, "START"));
+        d.draw(m);
+        t = targets_of(m, start);
+        CHECK_EQ(int(t.size()), 1);
+        if (!t.empty()) tap_centre(d, m, t[0]);
+        CHECK_EQ(started, 1);
+        CHECK_EQ(got.place, 1);
+        CHECK_EQ(got.level, 3);
+        CHECK_EQ(got.attime, 2);
+        CHECK(got.two_players);
+        CHECK_EQ(got.player, stage_select::kKnuckles);
+        CHECK_EQ(got.combi, stage_select::kEspio);
+        CHECK(!m.open());
+    }
+}
+
+TEST(showcase, the_keys_and_the_taps_make_the_same_request) {
+    // LEVEL SELECT, chosen once with the keys and once with taps, asks for
+    // the same stage (and still through start_level, NO SAVE).
+    auto run = [](bool touch) {
+        Drawn d(1280, 720);
+        Config cfg;
+        cfg.set_defaults();
+        Menu m;
+        m.bind(cfg);
+        stage_select::Request got;
+        int started = 0, timed = 0;
+        Menu::Hooks hooks;
+        hooks.start_level = [&](const stage_select::Request& r) { ++started; got = r; };
+        hooks.start_stage = [&](const stage_select::Request&) { ++timed; };
+        m.set_hooks(hooks);
+        CHECK(m.show_page("levelselect"));
+        const int place = index_of(m, "PLACE"), level = index_of(m, "LEVEL"), time = index_of(m, "AT-TIME");
+        const int combi = index_of(m, "COMBI"), start = index_of(m, "START");
+        if (touch) {
+            CHECK(select_row(m, "PLACE"));
+            d.draw(m);
+            for (int i = 0; i < 4; ++i) {  // -> MARINA MADNESS
+                const auto t = targets_of(m, place);
+                if (t.size() == 3) tap_centre(d, m, t[1]);
+            }
+            CHECK(select_row(m, "LEVEL"));
+            d.draw(m);
+            auto t = targets_of(m, level);
+            if (t.size() == 6) tap_centre(d, m, t[4]);  // 5
+            CHECK(select_row(m, "AT-TIME"));
+            d.draw(m);
+            t = targets_of(m, time);
+            if (t.size() == 5) tap_centre(d, m, t[3]);  // NIGHT
+            CHECK(select_row(m, "COMBI"));
+            d.draw(m);
+            t = targets_of(m, combi);  // "<", ">", the card
+            if (t.size() == 3) tap_centre(d, m, t[0]);
+            CHECK(select_row(m, "START"));
+            d.draw(m);
+            t = targets_of(m, start);
+            if (!t.empty()) tap_centre(d, m, t[0]);
+        } else {
+            CHECK(select_row(m, "PLACE"));
+            for (int i = 0; i < 4; ++i) m.on_key(SDLK_RIGHT);
+            CHECK(select_row(m, "LEVEL"));
+            m.on_key(SDLK_LEFT);
+            CHECK(select_row(m, "AT-TIME"));
+            m.on_key(SDLK_LEFT);
+            CHECK(select_row(m, "COMBI"));
+            m.on_key(SDLK_LEFT);
+            CHECK(select_row(m, "START"));
+            m.on_key(SDLK_RETURN);
+        }
+        CHECK_EQ(started, 1);
+        CHECK_EQ(timed, 0);
+        return got;
+    };
+    const stage_select::Request keys = run(false), taps = run(true);
+    CHECK_EQ(keys.place, 4);
+    CHECK_EQ(keys.level, 5);
+    CHECK_EQ(keys.attime, 6);
+    CHECK_EQ(keys.combi, 6);  // ESPIO -> HEAVY
+    CHECK_EQ(taps.place, keys.place);
+    CHECK_EQ(taps.level, keys.level);
+    CHECK_EQ(taps.attime, keys.attime);
+    CHECK_EQ(taps.player, keys.player);
+    CHECK_EQ(taps.combi, keys.combi);
+    CHECK(taps.two_players == keys.two_players);
+    CHECK(level_select::valid(taps));
+}
+
+TEST(showcase, it_asks_for_the_picture_and_sprites_of_what_is_chosen) {
+    // The picture follows the place, level and time of day; the cards ask
+    // for the two characters chosen.
+    Drawn d(1280, 720);
+    CHECK(d.ok);
+    if (!d.ok) return;
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    stage_select::Request asked;
+    int pictures = 0;
+    std::vector<int> sprites;
+    Menu::Hooks hooks;
+    hooks.stage_picture = [&](const stage_select::Request& r, float*, float*, int* state) -> SDL_Texture* {
+        ++pictures;
+        asked = r;
+        *state = Menu::kPictureMaking;
+        return nullptr;
+    };
+    hooks.character_sprite = [&](int who, float*, float*) -> SDL_Texture* {
+        sprites.push_back(who);
+        return nullptr;
+    };
+    m.set_hooks(hooks);
+    CHECK(m.show_page("timeattack"));
+    cfg.ta_place = 3;
+    cfg.ta_level = 4;
+    cfg.ta_time = 6;
+    cfg.ta_player = 4;
+    cfg.ta_combi = 5;
+    d.draw(m);
+    CHECK(pictures >= 1);
+    CHECK_EQ(asked.place, 3);
+    CHECK_EQ(asked.level, 4);
+    CHECK_EQ(asked.attime, 6);
+    CHECK(std::find(sprites.begin(), sprites.end(), 4) != sprites.end());
+    CHECK(std::find(sprites.begin(), sprites.end(), 5) != sprites.end());
+}
+
+#ifdef CHAOTIX_TEST_ROM
+TEST(showcase, character_portraits_come_from_the_rom_with_the_mods) {
+    Rom rom;
+    std::string err;
+    CHECK(rom.load(CHAOTIX_TEST_ROM, &err));
+    for (int id = 0; id < 8; ++id) {
+        Portrait p;
+        std::string why;
+        const bool ok = character_portrait(rom, id, nullptr, nullptr, p, &why);
+        // Slot 1 has no graphics; everyone else stands.
+        CHECK(ok == (id != stage_select::kBrokenCharacter));
+        if (!ok) continue;
+        CHECK_EQ(p.frame, kPortraitFrame);
+        CHECK(p.width > 10 && p.width < 64 && p.height > 10 && p.height < 64);
+        CHECK_EQ(int(p.argb.size()), p.width * p.height);
+        int opaque = 0;
+        for (uint32_t px : p.argb) opaque += px != 0;
+        CHECK(opaque > p.width * p.height / 5);
+        CHECK(!p.replaced);
+    }
+    // A character mod's colours, and a sprite mod's image.
+    Portrait plain;
+    CHECK(character_portrait(rom, stage_select::kKnuckles, nullptr, nullptr, plain, nullptr));
+    CharacterMod mod;
+    mod.id = stage_select::kKnuckles;
+    for (int i = 0; i < characters::kColours; ++i) {
+        mod.palette[size_t(i)] = 0x001F;  // pure red
+        mod.palette_set[size_t(i)] = true;
+    }
+    Portrait red;
+    CHECK(character_portrait(rom, stage_select::kKnuckles, nullptr, &mod, red, nullptr));
+    CHECK_EQ(red.width, plain.width);
+    bool all_red = true, changed = false;
+    for (size_t i = 0; i < red.argb.size(); ++i) {
+        if (!red.argb[i]) continue;
+        all_red = all_red && red.argb[i] == 0xFFFF0000u;
+        changed = changed || red.argb[i] != plain.argb[i];
+    }
+    CHECK(all_red);
+    CHECK(changed);
+    SpritePack pack;
+    SpriteImage box;
+    box.width = 8;
+    box.height = 4;
+    box.px.assign(32, 1);
+    pack.add(stage_select::kKnuckles, kPortraitFrame, box);
+    Portrait modded;
+    CHECK(character_portrait(rom, stage_select::kKnuckles, &pack, nullptr, modded, nullptr));
+    CHECK(modded.replaced);
+    CHECK_EQ(modded.width, 8);
+    CHECK_EQ(modded.height, 4);
+    CHECK(!modded.argb.empty() && modded.argb[0] != 0);
+}
+
+TEST(showcase, stage_pictures_are_made_on_demand_and_cached) {
+    // Any stage at any time of day: made when asked for -- even with MENU
+    // BACKGROUND on PLAIN -- kept in the cache, and from there at once the
+    // next time. A stage that cannot be pictured (the bonus stage, whose
+    // picture is not in the frame buffer) says so rather than loading for
+    // ever.
+    Drawn d;
+    CHECK(d.ok);
+    if (!d.ok) return;
+    Rom rom;
+    std::string err;
+    CHECK(rom.load(CHAOTIX_TEST_ROM, &err));
+    const std::string dir = "showcase_cache_test/";
+    std::error_code ec;
+    std::filesystem::remove_all(dir, ec);
+    {
+        MenuBackdrops b;
+        b.configure(rom, dir);
+        b.update(d.renderer, false, true);
+        MenuBackdrops::Shown shown;
+        bool exact = true, none = true;
+        CHECK(!b.stage(3, 2, 6, shown, &exact, &none));  // nothing of the place yet
+        CHECK(!exact);
+        CHECK(!none);
+        for (int i = 0; i < 12000 && !(b.stage(3, 2, 6, shown, &exact, &none) && exact); ++i) {
+            b.update(d.renderer, false, true);
+            SDL_Delay(2);
+        }
+        CHECK(exact);
+        CHECK_EQ(int(shown.width), 320);  // 4:3
+        CHECK_EQ(int(shown.height), 224);
+        CHECK_EQ(b.ready_count(), 0);     // not one of the menu's own
+        // Another time of day of the place: the one made stands in meanwhile.
+        CHECK(b.stage(3, 2, 0, shown, &exact, &none));
+        CHECK(!exact);
+        // (The worker that made the first may take a moment to be done.)
+        for (int i = 0; i < 500 && b.making() != stage_backdrop_key(3, 2, 0); ++i) {
+            b.stage(3, 2, 0, shown, &exact, &none);
+            b.update(d.renderer, false, true);
+            SDL_Delay(2);
+        }
+        CHECK_STR(b.making(), stage_backdrop_key(3, 2, 0));
+        // The bonus stage.
+        for (int i = 0; i < 20000 && !none; ++i) {
+            b.stage(9, 0, 0, shown, &exact, &none);
+            b.update(d.renderer, false, true);
+            SDL_Delay(2);
+        }
+        CHECK(none);
+        b.shutdown();
+    }
+    {
+        MenuBackdrops b;
+        b.configure(rom, dir);
+        b.update(d.renderer, false, true);
+        MenuBackdrops::Shown shown;
+        bool exact = false;
+        CHECK(b.stage(3, 2, 6, shown, &exact));
+        CHECK(exact);  // from the cache, at once
+        CHECK(!b.busy());
+        b.shutdown();
+    }
+    std::filesystem::remove_all(dir, ec);
+}
+#endif

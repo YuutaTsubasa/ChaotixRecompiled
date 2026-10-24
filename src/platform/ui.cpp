@@ -249,7 +249,8 @@ float Ui::game_text(Font f, float x, float y, const std::string& s, Color c) {
     // Not below about two thirds: the shaded yellow turns muddy darker than
     // that, and the marker already says which entry is chosen.
     const Uint8 mod = Uint8(std::clamp(bright * 255 / int(theme::text.b), 170, 255));
-    SDL_SetTextureColorMod(game_tex_, mod, mod, mod);
+    if (game_tint_) SDL_SetTextureColorMod(game_tex_, c.r, c.g, c.b);
+    else SDL_SetTextureColorMod(game_tex_, mod, mod, mod);
     SDL_SetTextureAlphaMod(game_tex_, c.a);
     // Whole pixels, like the pixel face: a glyph between screen pixels would
     // be sampled unevenly.
@@ -263,6 +264,29 @@ float Ui::game_text(Font f, float x, float y, const std::string& s, Color c) {
         SDL_RenderTexture(renderer_, game_tex_, &src, &dst);
     }
     return float(s.size()) * cw;
+}
+
+void Ui::image(SDL_Texture* tex, const SDL_FRect& src, const SDL_FRect& dst, bool smooth, bool flip_h,
+               uint8_t alpha) {
+    if (!tex || dst.w <= 0 || dst.h <= 0) return;
+    SDL_ScaleMode was = SDL_SCALEMODE_LINEAR;
+    SDL_GetTextureScaleMode(tex, &was);
+    SDL_SetTextureScaleMode(tex, smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+    SDL_SetTextureAlphaMod(tex, alpha);
+    SDL_RenderTextureRotated(renderer_, tex, &src, &dst, 0.0, nullptr, flip_h ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE);
+    SDL_SetTextureAlphaMod(tex, 255);
+    SDL_SetTextureScaleMode(tex, was);
+}
+
+void Ui::clip(const SDL_FRect* r) {
+    if (!renderer_) return;
+    if (!r) {
+        SDL_SetRenderClipRect(renderer_, nullptr);
+        return;
+    }
+    const int x0 = int(std::floor(r->x)), y0 = int(std::floor(r->y));
+    const SDL_Rect c{x0, y0, std::max(0, int(std::ceil(r->x + r->w)) - x0), std::max(0, int(std::ceil(r->y + r->h)) - y0)};
+    SDL_SetRenderClipRect(renderer_, &c);
 }
 
 void Ui::image_cover(SDL_Texture* tex, float tex_w, float tex_h, const SDL_FRect& r, uint8_t alpha) {

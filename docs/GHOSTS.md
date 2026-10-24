@@ -4,7 +4,7 @@ Race a translucent copy of a run you made before.
 
 ## Using them
 
-- **TIME ATTACK > GHOST**: OFF, BEST or LAST. BEST races the fastest run of
+- **TIME ATTACK > GHOST** (the chips in the page's records card, issue #53): OFF, BEST or LAST. BEST races the fastest run of
   the selected stage that is kept, whoever ran it; LAST races the run of the
   stage finished last. It starts as BEST on computers and OFF on phones and
   tablets (see Cost below); `Ghost` in `[TimeAttack]` of `Config/chaotix.ini`.

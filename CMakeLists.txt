@@ -85,6 +85,7 @@ add_library(chaotix_runtime STATIC
     src/frontend/livesplit.cpp
     src/frontend/input_display.cpp
     src/frontend/backdrop.cpp
+    src/frontend/portrait.cpp
     src/frontend/ghost.cpp
     src/input/input.cpp
     src/input/touch_controls.cpp

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <memory>
 #include <thread>
 
@@ -87,6 +88,24 @@ int backdrop_find_zone(const std::string& zone) {
     return -1;
 }
 
+BackdropSpec stage_backdrop_spec(uint16_t place, uint16_t level, uint16_t attime) {
+    BackdropSpec s;
+    s.place = place;
+    s.level = level;
+    s.attime = attime;
+    s.wide = false;
+    s.walk = kStageBackdropWalk;
+    s.walk_from = kStageBackdropWalkFrom;
+    s.settle = kStageBackdropSettle;
+    return s;
+}
+
+std::string stage_backdrop_key(uint16_t place, uint16_t level, uint16_t attime) {
+    char b[48];
+    std::snprintf(b, sizeof b, "stage_p%02u_l%u_t%u", unsigned(place), unsigned(level), unsigned(attime));
+    return b;
+}
+
 bool render_backdrop(const Rom& rom, const BackdropSpec& spec, BackdropImage& out, std::string* why,
                      BackdropControl* control) {
     auto fail = [why](const char* m) { if (why) *why = m; return false; };
@@ -113,7 +132,7 @@ bool render_backdrop(const Rom& rom, const BackdropSpec& spec, BackdropImage& ou
     m->stage_pending = true;
     int kick = 0;
     uint64_t taken = 0;
-    constexpr uint64_t kGiveUp = 1500;
+    const uint64_t kGiveUp = 1020 + uint64_t(spec.settle);
     while (m->frame_count < kGiveUp) {
         if (control) {
             // Paused between frames, so the game gets the CPU back within one
@@ -128,19 +147,27 @@ bool render_backdrop(const Rom& rom, const BackdropSpec& spec, BackdropImage& ou
             ++kick;
         } else if (!taken) {
             taken = m->frame_count;
+        } else if (spec.walk > 0 && m->frame_count >= taken + uint64_t(spec.walk_from) &&
+                   m->frame_count < taken + uint64_t(spec.walk_from) + uint64_t(spec.walk)) {
+            pad = uint16_t(PAD_RIGHT);
         }
         m->input.pad[0] = pad;
         m->input.pad[1] = 0;
         m->run_frame();
         if (control) control->frames.fetch_add(1);
-        if (taken && m->frame_count >= taken + kBackdropSettleFrames) break;
+        if (taken && m->frame_count >= taken + uint64_t(spec.settle)) break;
     }
-    if (!taken || m->frame_count < taken + kBackdropSettleFrames) return fail("the stage did not start");
+    if (!taken || m->frame_count < taken + uint64_t(spec.settle)) return fail("the stage did not start");
     out.width = m->fb_width;
     out.height = m->fb_height;
     out.pixels.resize(size_t(out.width) * size_t(out.height));
     for (int y = 0; y < out.height; ++y)
         std::copy_n(m->framebuffer + size_t(y) * kScreenWidth, out.width, out.pixels.data() + size_t(y) * size_t(out.width));
+    // A stage whose picture is not in the frame buffer (the bonus stage
+    // comes out black) has nothing to show.
+    size_t dark = 0;
+    for (uint32_t p : out.pixels) dark += (p & 0xF0F0F0u) == 0;
+    if (dark * 100 >= out.pixels.size() * 99) return fail("the picture is blank");
     out.hidden_draws = out.sprite_draws = 0;
     for (const SpriteDraw& d : recorder->displayed(*m).draws) {
         ++out.sprite_draws;

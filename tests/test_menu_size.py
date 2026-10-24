@@ -80,10 +80,10 @@ class MenuSize(unittest.TestCase):
                 self.assertGreater(larger, smaller + 1.0, f"{page} {window}: {heights}")
 
     def test_a_phone_in_landscape(self):
-        self.check("800x360", ["front", "main", "video", "levelselect"])
+        self.check("800x360", ["front", "main", "video", "levelselect", "timeattack"])
 
     def test_a_portrait_window(self):
-        self.check("412x860", ["front", "main", "video"])
+        self.check("412x860", ["front", "main", "video", "timeattack"])
 
     def test_a_desktop_window(self):
         self.check("1280x720", ["front", "video"])

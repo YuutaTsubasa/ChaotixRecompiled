@@ -99,8 +99,19 @@ public:
         std::function<void()> netplay_leave;
         std::function<std::string()> netplay_status;
         std::function<bool()> netplay_active;
+        // TIME ATTACK and LEVEL SELECT's zone showcase (issue #53): a picture
+        // of the stage asked for at its time of day (only the place, level
+        // and AT-TIME count; platform/backdrops.h makes it on demand), with
+        // its size, and how it stands (*state, kPicture...): ready; being
+        // made, with another picture of the place standing in if there is
+        // one (else null); or there is none to be had. And a character
+        // standing (frontend/portrait.h), by id, null for one without
+        // graphics.
+        std::function<SDL_Texture*(const stage_select::Request&, float* w, float* h, int* state)> stage_picture;
+        std::function<SDL_Texture*(int character, float* w, float* h)> character_sprite;
     };
 
+    static constexpr int kPictureMaking = 0, kPictureReady = 1, kPictureNone = 2;
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
     // TIME ATTACK's character names, by id (stage_select::character_names,
     // read from the ROM); without them, stage_select::kCharacters.
@@ -209,9 +220,37 @@ private:
     void build_time_attack();
     // LEVEL SELECT (issue #51).
     void build_level_select();
-    // The PLAYER, COMBI and PLAYERS rows TIME ATTACK and LEVEL SELECT share,
-    // editing the settings given.
-    void add_character_rows(int* player, int* combi, bool* two_players);
+    // The PLAYER and COMBI rows and the PLAYERS row TIME ATTACK and LEVEL
+    // SELECT share, editing the settings given.
+    void add_character_rows(int* player, int* combi);
+    void add_players_row(bool* two_players);
+    // TIME ATTACK and LEVEL SELECT are one layout (issue #53), the zone
+    // showcase: the stage's picture with the place's name over it and rows
+    // of chips for its levels and the time of day under it; beside it (under
+    // it on a portrait screen) the player's and partner's cards, the records
+    // (or LEVEL SELECT's note), PLAYERS and START. The entries are the pages'
+    // own, in the order up and down step through them; this says what they
+    // edit and which entry is drawn where.
+    struct Showcase {
+        bool timed = false;  // TIME ATTACK: records and a ghost
+        int* place = nullptr;
+        int* level = nullptr;
+        int* time = nullptr;
+        int* player = nullptr;
+        int* combi = nullptr;
+        bool* two_players = nullptr;
+        int* ghost = nullptr;
+        // The entries, by index into items_; -1 where the page has none.
+        int place_row = -1, level_row = -1, time_row = -1, player_row = -1, combi_row = -1, best_row = -1,
+            ghost_row = -1, players_row = -1, start_row = -1, back_row = -1;
+    };
+    bool is_showcase() const { return page_ == Page::TimeAttack || page_ == Page::LevelSelect; }
+    // What START asks for, as the page stands.
+    stage_select::Request showcase_request() const;
+    // The levels the place offers, and how a chip names one.
+    std::vector<int> showcase_levels() const;
+    std::string showcase_level_label(int level) const;
+    void draw_showcase(ui::Ui& g);
     void build_keys();
     void build_states();
     void build_state_keys();
@@ -283,6 +322,9 @@ private:
     // Rebuilds the page in place, keeping the selection.
     void refresh();
     std::vector<Item> items_;
+    Showcase sc_;
+    // Each showcase column's scroll, for a screen too small for all of it.
+    float sc_scroll_[2] = {0, 0};
     int selected_ = 0;
     int scroll_ = 0;          // achievements page
     int rows_ = 1;            // rows the achievements page had room for
@@ -293,6 +335,10 @@ private:
         int index;
         // Where a value row's "<" arrow is; zero width when it has none.
         float back_x = 0, back_w = 0;
+        // A target that acts at once when tapped (the showcase's chips,
+        // arrows and START), after selecting its entry; without, the first
+        // tap selects and the second acts.
+        std::function<void()> tap = {};
     };
     std::vector<Hit> hits_;
     // Hit indices of the markers a list too long for the screen shows.

@@ -47,6 +47,9 @@ constexpr Color text_faint{102, 110, 134};
 constexpr Color good{110, 216, 152};
 constexpr Color warn{240, 190, 96};
 constexpr Color bad{238, 120, 120};
+// The value chosen in a row of choices (TIME ATTACK, LEVEL SELECT): the
+// yellow of the game's own menu letters.
+constexpr Color highlight{255, 222, 66};
 } // namespace theme
 
 enum class Font {
@@ -140,10 +143,21 @@ public:
     bool game_font_active() const { return game_on_ && game_tex_ != nullptr; }
     // Whether s, in f, is drawn with the game's font right now.
     bool uses_game_font(Font f, const std::string& s) const;
+    // The game's letters normally keep their own colours, the colour asked
+    // for setting only how bright they are. While tinted they are drawn in
+    // that colour instead (multiplied: white digits come out in it, yellow
+    // letters stay yellow) -- for a choice marked in yellow, say.
+    void tint_game_font(bool on) { game_tint_ = on; }
 
     // Draws a texture over r, cropped to r's shape rather than stretched, so
     // a picture fills a window of any aspect.
     void image_cover(SDL_Texture* tex, float tex_w, float tex_h, const SDL_FRect& r, uint8_t alpha = 255);
+    // Draws src of a texture over dst: smoothed, or with square pixels (for a
+    // whole-number scale of pixel art), and mirrored if asked.
+    void image(SDL_Texture* tex, const SDL_FRect& src, const SDL_FRect& dst, bool smooth, bool flip_h = false,
+               uint8_t alpha = 255);
+    // Limits drawing to r until clip(nullptr).
+    void clip(const SDL_FRect* r);
 
     void rect(const SDL_FRect& r, Color c, float radius = 0);
     void outline(const SDL_FRect& r, Color c, float radius = 0, float thickness = 1);
@@ -175,6 +189,7 @@ private:
     SDL_Texture* game_tex_ = nullptr;
     std::array<int16_t, 128> game_glyph_{};
     bool game_on_ = false;
+    bool game_tint_ = false;
     float pixel_sizes_[size_t(Font::Count_)] = {};
     int game_scales_[size_t(Font::Count_)] = {1, 1, 1, 1, 1, 2};
 

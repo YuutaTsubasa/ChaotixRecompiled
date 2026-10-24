@@ -24,6 +24,7 @@
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
 #include "platform/backdrops.h"
+#include "frontend/portrait.h"
 #include "platform/frame_pacing.h"
 #include "platform/menu.h"
 #include "platform/ui.h"
@@ -133,6 +134,11 @@ struct App {
     bool packs_restart = false;  // the list now differs from that
     struct Preview { SDL_Texture* texture = nullptr; float w = 0, h = 0; };
     std::map<std::string, Preview> mod_previews;  // by pack folder, loaded when first shown
+    // The TIME ATTACK and LEVEL SELECT cards' characters (issue #53), by id:
+    // made from the ROM when first shown, with the sprite and character mods
+    // (portrait_mods: their colours), and made again when those change.
+    std::map<int, Preview> portraits;
+    std::vector<CharacterMod> portrait_mods;
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> script;
     // --hold: the same thing but fed into the host's own input path, so it
@@ -1578,6 +1584,13 @@ void update_sprite_recorder(App& app) {
     if (app.m->sprites != app.sprites) app.m->sprites = app.sprites;
 }
 
+// The character cards' sprites are made again after the mods change.
+void drop_portraits(App& app) {
+    for (auto& entry : app.portraits)
+        if (entry.second.texture) SDL_DestroyTexture(entry.second.texture);
+    app.portraits.clear();
+}
+
 // Graphics replacements (issue #35), in Mods/Textures: Mega Drive tiles as
 // md_<hash>.png and 32X sprites as 32x_<bank>_<frame>.png or 32x_<hash>.png.
 // With DUMP GRAPHICS on, each one drawn is also written to Mods/Textures/Dump
@@ -1661,6 +1674,41 @@ void load_tiles(App& app) {
     if (sn) LOGI("sprites", "%d sprite replacement(s) from %zu folder(s)", sn, dirs.size());
     app.sprite_pack = sn ? pack : nullptr;
     update_sprite_recorder(app);
+    drop_portraits(app);
+}
+
+// The character cards' sprites (issue #53, frontend/portrait.h): a
+// character standing, from the ROM's bank with the sprite mods and the
+// character's colours applied; made when first asked for. Null for a
+// character without graphics.
+SDL_Texture* character_sprite(App& app, int who, float* w, float* h) {
+    if (!app.m || !app.renderer) return nullptr;
+    auto it = app.portraits.find(who);
+    if (it == app.portraits.end()) {
+        App::Preview pv;
+        const CharacterMod* mod = nullptr;
+        for (const CharacterMod& c : app.portrait_mods)
+            if (c.id == who) mod = &c;
+        Portrait portrait;
+        std::string why;
+        if (character_portrait(app.m->rom, who, app.sprite_pack.get(), mod, portrait, &why)) {
+            pv.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC,
+                                           portrait.width, portrait.height);
+            if (pv.texture) {
+                SDL_UpdateTexture(pv.texture, nullptr, portrait.argb.data(), portrait.width * 4);
+                SDL_SetTextureBlendMode(pv.texture, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(pv.texture, SDL_SCALEMODE_NEAREST);
+                pv.w = float(portrait.width);
+                pv.h = float(portrait.height);
+            }
+        } else {
+            LOGI("menu", "no card sprite for character %d: %s", who, why.c_str());
+        }
+        it = app.portraits.emplace(who, pv).first;
+    }
+    *w = it->second.w;
+    *h = it->second.h;
+    return it->second.texture;
 }
 
 // Character mods (docs/CHARACTER_MODS.md): Mods/Characters/<name>.ini, read
@@ -1732,7 +1780,9 @@ void load_mods(App& app, bool force = false) {
     load_touch_skin(app, mods + "Touch", mod_folders(app, mod_packs::kTouch));
     load_tiles(app);
     // The characters' colours, from the ROM as it runs (patched or not).
-    auto palettes = std::make_shared<CharacterPalettes>(app.m->rom, read_character_mods(app));
+    app.portrait_mods = read_character_mods(app);
+    drop_portraits(app);
+    auto palettes = std::make_shared<CharacterPalettes>(app.m->rom, app.portrait_mods);
     app.character_palettes = palettes->empty() ? nullptr : palettes;
     app.m->characters = app.character_palettes;
     if (app.character_palettes) LOGI("characters", "character colours from %sCharacters", mods.c_str());
@@ -2359,6 +2409,20 @@ int main(int argc, char** argv) {
         hooks.netplay_status = [&app] { return netplay_status(app); };
         hooks.netplay_active = [&app] { return app.net.on; };
         hooks.music_status = [&app] { return app.jukebox.status(); };
+        // TIME ATTACK and LEVEL SELECT (issue #53): the stage's picture, made
+        // on demand by the backdrop worker and cached with the others, and
+        // the characters standing.
+        hooks.stage_picture = [&app](const stage_select::Request& r, float* w, float* h, int* state) -> SDL_Texture* {
+            MenuBackdrops::Shown shown;
+            bool exact = false, none = false;
+            const bool any = app.backdrops.stage(r.place, r.level, r.attime, shown, &exact, &none);
+            *state = exact ? Menu::kPictureReady : none ? Menu::kPictureNone : Menu::kPictureMaking;
+            if (!any) return nullptr;
+            *w = shown.width;
+            *h = shown.height;
+            return shown.texture;
+        };
+        hooks.character_sprite = [&app](int who, float* w, float* h) { return character_sprite(app, who, w, h); };
         hooks.music_replaced = [&app](uint8_t id) { return app.music.has(id); };
         app.start_stage = hooks.start_stage;
         app.menu.set_hooks(std::move(hooks));
@@ -2452,6 +2516,25 @@ int main(int argc, char** argv) {
         MenuBackdrops::Shown shown;
         while (!app.backdrops.current(shown) && SDL_GetTicks() < give_up) {
             app.backdrops.update(app.renderer, true, true);
+            SDL_Delay(20);
+        }
+    }
+    if (app.autotest_frames && app.ui.ready() &&
+        (app.menu.page_name() == "timeattack" || app.menu.page_name() == "levelselect")) {
+        // Likewise TIME ATTACK and LEVEL SELECT's picture of the stage chosen
+        // (issue #53), whatever MENU BACKGROUND is.
+        const bool ta = app.menu.page_name() == "timeattack";
+        const uint16_t place = uint16_t(ta ? app.cfg.ta_place : app.cfg.ls_place);
+        const uint16_t level = uint16_t(ta ? app.cfg.ta_level : app.cfg.ls_level);
+        const uint16_t attime = uint16_t(ta ? app.cfg.ta_time : app.cfg.ls_time);
+        const Uint64 give_up = SDL_GetTicks() + 60000;
+        MenuBackdrops::Shown shown;
+        bool exact = false;
+        app.backdrops.update(app.renderer, app.cfg.menu_backdrop_on(), true);
+        bool none = false;
+        while (!(app.backdrops.stage(place, level, attime, shown, &exact, &none) && exact) && !none &&
+               SDL_GetTicks() < give_up) {
+            app.backdrops.update(app.renderer, app.cfg.menu_backdrop_on(), true);
             SDL_Delay(20);
         }
     }

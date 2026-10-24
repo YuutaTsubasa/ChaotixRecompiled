@@ -28,6 +28,15 @@ What differs is the frontend (`frontend/level_select.h`, `platform/sdl_main.cpp`
 | DATA slot | NO SAVE | NO SAVE |
 | When the level is over | back to the page, with the time | back to the page |
 
+## The page
+
+LEVEL SELECT and TIME ATTACK share the zone showcase layout (issue #53,
+docs/MENU_ART.md): the stage's picture at the time of day chosen, chips for
+the level and the time, the two characters' cards, PLAYERS and START. Where
+TIME ATTACK has its records card, LEVEL SELECT says "practice: no clock,
+records or saving". The hub and the bonus stage have one level each, shown
+as a single chip.
+
 ## What is offered
 
 Measured on the stage select, from the title screen with Knuckles and Espio

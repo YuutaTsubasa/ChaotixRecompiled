@@ -64,7 +64,22 @@ public:
     };
     // False while no picture is ready.
     bool current(Shown& out) const;
+    // The menu's own pictures that are ready (not the stages' below).
     int ready_count() const;
+
+    // TIME ATTACK and LEVEL SELECT (issue #53): the picture of a stage at a
+    // time of day (stage_backdrop_spec), asked for once a frame while the
+    // page shows it. True with it in `out` once it is ready -- from the cache,
+    // or made. Until then the next update makes it, ahead of the menu's own
+    // pictures and whatever the MENU BACKGROUND setting, giving up one being
+    // made for a stage asked for before; meanwhile `out` holds another
+    // picture of the same place if there is one ready (*exact false), and the
+    // result is false when there is none. Pictures are made only while a
+    // menu is open, like the rest. A stage that cannot be made (*none) is not
+    // tried again this run.
+    bool stage(uint16_t place, uint16_t level, uint16_t attime, Shown& out, bool* exact, bool* none = nullptr);
+    // The stage picture being made (for tests and logs), empty when none.
+    std::string making() const;
 
     // Stops the worker (it gives up at its next frame) and frees the textures.
     void shutdown();
@@ -76,7 +91,15 @@ private:
         int width = 0, height = 0;
         uint32_t tint = 0, accent = 0;
         bool failed = false;   // the worker could not make it; not tried again this run
+        std::string file;      // the cache's file name stem
+        // A stage's picture (stage()), made only when asked for.
+        bool on_demand = false;
+        bool looked = false;   // the cache has been looked in for it
+        uint64_t used = 0;     // when stage() last asked for it
     };
+    // Stage pictures kept as textures; the ones asked for longest ago are let
+    // go beyond this (their PNGs stay in the cache).
+    static constexpr int kStageTextures = 24;
     struct Finished {
         size_t index = 0;
         bool ok = false;
@@ -85,6 +108,10 @@ private:
         double ms = 0;
         BackdropImage image;
     };
+    // Starts the worker on entry i (it must be free).
+    void start(size_t i);
+    // Loads the entry's PNG from the cache, if it is there.
+    bool load_cached(SDL_Renderer* renderer, Entry& e);
     void make_texture(SDL_Renderer* renderer, Entry& e, const BackdropImage& image);
     std::string path_of(const Entry& e) const;
 
@@ -94,6 +121,9 @@ private:
     bool loaded_ = false;
     int current_ = -1;
     int chosen_ = -1;  // choose()
+    SDL_Renderer* renderer_ = nullptr;  // the last update's
+    int demand_ = -1;       // the stage asked for since the last update
+    uint64_t asks_ = 0;     // stage() calls, for `used`
 
     std::thread worker_;
     int working_index_ = -1;  // the entry the worker is making (main thread)

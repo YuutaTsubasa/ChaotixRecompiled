@@ -544,7 +544,7 @@ void Menu::build_state_keys() {
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Controls); }});
 }
 
-void Menu::add_character_rows(int* player, int* combi, bool* two_players) {
+void Menu::add_character_rows(int* player, int* combi) {
     using namespace stage_select;
     // The names are the ROM's, so a ROM patch that renames a character shows
     // here. The two character rows skip the gap in the game's table, which
@@ -561,15 +561,54 @@ void Menu::add_character_rows(int* player, int* combi, bool* two_players) {
             if (!is_placeholder_name(names[size_t(who)])) return;
         }
     };
+    sc_.player = player;
+    sc_.player_row = int(items_.size());
     items_.push_back({"PLAYER",
                       [player, name_of] { return name_of(*player); },
                       [player, step_character](int s) { if (s) step_character(*player, s); }});
+    sc_.combi = combi;
+    sc_.combi_row = int(items_.size());
     items_.push_back({"COMBI",
                       [combi, name_of] { return name_of(*combi); },
                       [combi, step_character](int s) { if (s) step_character(*combi, s); }});
+}
+
+void Menu::add_players_row(bool* two_players) {
+    sc_.two_players = two_players;
+    sc_.players_row = int(items_.size());
     items_.push_back({"PLAYERS",
                       [two_players] { return std::string(*two_players ? "2 PLAYERS" : "1 PLAYER"); },
                       [two_players](int s) { if (s) *two_players = !*two_players; }});
+}
+
+stage_select::Request Menu::showcase_request() const {
+    stage_select::Request r;
+    if (!sc_.place) return r;
+    r.place = uint16_t(*sc_.place);
+    r.level = uint16_t(*sc_.level);
+    r.attime = uint16_t(*sc_.time);
+    r.player = uint16_t(*sc_.player);
+    r.combi = uint16_t(*sc_.combi);
+    r.two_players = *sc_.two_players;
+    return r;
+}
+
+std::vector<int> Menu::showcase_levels() const {
+    std::vector<int> out;
+    if (!sc_.place) return out;
+    for (int l = 0; l < 8; ++l)
+        if (sc_.timed ? stage_select::has_level(*sc_.place, l) : level_select::has_level(*sc_.place, l))
+            out.push_back(l);
+    return out;
+}
+
+std::string Menu::showcase_level_label(int level) const {
+    if (!sc_.place) return "";
+    if (sc_.timed) return std::to_string(level);
+    // The hub and the bonus stage have one level each, which the list page
+    // showed as "-"; a chip of its own says there is the one.
+    const std::string label = level_select::level_label(*sc_.place, level);
+    return label == "-" ? "1" : label;
 }
 
 // LEVEL SELECT (issue #51, frontend/level_select.h): TIME ATTACK's choices
@@ -577,11 +616,17 @@ void Menu::add_character_rows(int* player, int* combi, bool* two_players) {
 // bonus stage as well. Kept apart from TIME ATTACK's in the settings file.
 void Menu::build_level_select() {
     items_.clear();
+    sc_ = Showcase{};
     Config* c = cfg_;
     if (!c) return;
     if (!level_select::offered(c->ls_place)) c->ls_place = level_select::kPlaces[0];
     if (!level_select::has_level(c->ls_place, c->ls_level)) c->ls_level = level_select::first_level(c->ls_place);
+    sc_.timed = false;
+    sc_.place = &c->ls_place;
+    sc_.level = &c->ls_level;
+    sc_.time = &c->ls_time;
 
+    sc_.place_row = int(items_.size());
     items_.push_back({"PLACE",
                       [c] { return std::string(stage_select::kPlaces[c->ls_place].name); },
                       [c](int s) {
@@ -590,36 +635,41 @@ void Menu::build_level_select() {
                           if (!level_select::has_level(c->ls_place, c->ls_level))
                               c->ls_level = level_select::first_level(c->ls_place);
                       }});
+    sc_.level_row = int(items_.size());
     items_.push_back({"LEVEL",
                       [c] { return level_select::level_label(c->ls_place, c->ls_level); },
                       [c](int s) { if (s) c->ls_level = level_select::step_level(c->ls_place, c->ls_level, s); }});
+    sc_.time_row = int(items_.size());
     items_.push_back({"AT-TIME",
                       [c] { return std::string(stage_select::kTimes[(c->ls_time >> 1) & 3]); },
                       [c](int s) { if (s) c->ls_time = ((c->ls_time / 2 + s + 4) % 4) * 2; }});
-    add_character_rows(&c->ls_player, &c->ls_combi, &c->ls_two_players);
-    items_.push_back({"START", {}, [this, c](int) {
-        stage_select::Request r;
-        r.place = uint16_t(c->ls_place);
-        r.level = uint16_t(c->ls_level);
-        r.attime = uint16_t(c->ls_time);
-        r.player = uint16_t(c->ls_player);
-        r.combi = uint16_t(c->ls_combi);
-        r.two_players = c->ls_two_players;
+    add_character_rows(&c->ls_player, &c->ls_combi);
+    add_players_row(&c->ls_two_players);
+    sc_.start_row = int(items_.size());
+    items_.push_back({"START", {}, [this](int) {
+        const stage_select::Request r = showcase_request();
         if (!level_select::valid(r)) return;
         close();
         if (hooks_.start_level) hooks_.start_level(r);
     }, "practice: no clock, records or saving"});
+    sc_.back_row = int(items_.size());
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
-// TIME ATTACK: the fields the game's own stage select offers, in its order, so
-// the choices are the game's rather than an invention of ours. Everything is
-// kept in the settings file, so the same run can be set up again in one go.
+// TIME ATTACK: the fields the game's own stage select offers, so the choices
+// are the game's rather than an invention of ours. Everything is kept in the
+// settings file, so the same run can be set up again in one go.
 void Menu::build_time_attack() {
     using namespace stage_select;
     items_.clear();
+    sc_ = Showcase{};
     Config* c = cfg_;
     if (!c) return;
+    sc_.timed = true;
+    sc_.place = &c->ta_place;
+    sc_.level = &c->ta_level;
+    sc_.time = &c->ta_time;
+    sc_.ghost = &c->ta_ghost;
 
     // A place only has certain levels, so changing the place pulls the level
     // to one it actually has.
@@ -628,6 +678,7 @@ void Menu::build_time_attack() {
     };
     fix_level();
 
+    sc_.place_row = int(items_.size());
     items_.push_back({"PLACE",
                       [c] { return std::string(kPlaces[c->ta_place].name); },
                       [c, fix_level](int s) {
@@ -635,6 +686,7 @@ void Menu::build_time_attack() {
                           c->ta_place = (c->ta_place + s + kPlayablePlaces) % kPlayablePlaces;
                           fix_level();
                       }});
+    sc_.level_row = int(items_.size());
     items_.push_back({"LEVEL",
                       [c] { return std::to_string(c->ta_level); },
                       [c](int s) {
@@ -645,12 +697,14 @@ void Menu::build_time_attack() {
                               if (has_level(c->ta_place, c->ta_level)) return;
                           }
                       }});
+    sc_.time_row = int(items_.size());
     items_.push_back({"AT-TIME",
                       [c] { return std::string(kTimes[(c->ta_time >> 1) & 3]); },
                       [c](int s) { if (s) c->ta_time = ((c->ta_time / 2 + s + 4) % 4) * 2; }});
-    add_character_rows(&c->ta_player, &c->ta_combi, &c->ta_two_players);
+    add_character_rows(&c->ta_player, &c->ta_combi);
     // Not a setting: the record for whatever is selected above, so choosing a
-    // stage shows what there is to beat. Left and right do nothing.
+    // stage shows what there is to beat. Left and right do nothing, and up
+    // and down step over it.
     Item best{"BEST TIME",
               [c] {
                   const int b = best_time(*c, c->ta_place, c->ta_level);
@@ -658,28 +712,27 @@ void Menu::build_time_attack() {
               },
               [](int) {}};
     best.read_only = true;
+    sc_.best_row = int(items_.size());
     items_.push_back(std::move(best));
     // Issue #41: a translucent copy of a run kept before races this one.
     // It is a second game running alongside, which a phone may not have the
     // time for, so there it starts off and says so.
+    sc_.ghost_row = int(items_.size());
     items_.push_back({"GHOST",
                       [c] { return std::string(ghost::mode_name(ghost::Mode(c->ta_ghost))); },
                       [c](int s) { if (s) c->ta_ghost = (c->ta_ghost + s + 3) % 3; },
                       ghost::default_mode() == ghost::Mode::Off
                           ? "a second game: may slow a phone"
                           : "race a past run of the stage"});
-    items_.push_back({"START", {}, [this, c](int) {
-        Request r;
-        r.place = uint16_t(c->ta_place);
-        r.level = uint16_t(c->ta_level);
-        r.attime = uint16_t(c->ta_time);
-        r.player = uint16_t(c->ta_player);
-        r.combi = uint16_t(c->ta_combi);
-        r.two_players = c->ta_two_players;
+    add_players_row(&c->ta_two_players);
+    sc_.start_row = int(items_.size());
+    items_.push_back({"START", {}, [this](int) {
+        const Request r = showcase_request();
         if (!valid(r)) return;
         close();
         if (hooks_.start_stage) hooks_.start_stage(r);
     }});
+    sc_.back_row = int(items_.size());
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
 }
 
@@ -1592,6 +1645,17 @@ bool Menu::on_touch_down(float x, float y) {
             drag_total_ = 1e9f;
             return true;
         }
+        // The showcase's chips, arrows and START act on the first tap.
+        if (h.tap) {
+            if (h.index >= 0 && h.index != selected_) {
+                selected_ = h.index;
+                anim_ = 0;
+            }
+            const std::function<void()> act = h.tap;  // it may rebuild the page
+            act();
+            drag_total_ = 1e9f;
+            return true;
+        }
         // A tap on an entry selects it; a second tap acts on it, which keeps
         // one finger enough to drive the whole menu. On a value, the "<"
         // arrow steps it back and anywhere else on the row steps it forward.
@@ -1711,6 +1775,8 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
         draw_front(g);
     else if (page_ == Page::Main)
         draw_row_page(g, "Left/Right choose    Enter select    Esc close");
+    else if (is_showcase())
+        draw_showcase(g);
     else if (is_list_page(page_))
         draw_options(g);
     else
@@ -2086,6 +2152,683 @@ void Menu::draw_options(ui::Ui& g) {
         const float mw = g.text_width(ui::Font::Pixel, "v");
         g.text(ui::Font::Pixel, x + column - mw, y + g.px(2), "v", accent());
         hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), hint_h + g.px(20)}, kScrollDown});
+    }
+}
+
+// TIME ATTACK and LEVEL SELECT (issue #53): the zone showcase. A landscape
+// window has the stage's picture on the left, about three fifths of the
+// width, with the place's name over its foot between arrows and the rows of
+// levels and times of day under it; the cards on the right. A portrait one
+// (or one too narrow for both) stacks the same pieces in one column. A
+// column taller than the window scrolls to keep the selected entry in view,
+// as the long lists do. Everything is measured in the menu's letters, so
+// MENU SIZE grows all of it.
+void Menu::draw_showcase(ui::Ui& g) {
+    const Showcase& s = sc_;
+    if (!s.place || !s.level || !s.time || !s.player || !s.combi || !s.two_players) return;
+    using ui::Font;
+    const float W = g.width(), H = g.height();
+    const int zoom = g.zoom();
+    const float M = std::clamp(W * 0.03f, g.px(6), g.px(20));
+    const float lh_s = g.line_height(Font::Small);
+    const float lh_p = g.line_height(Font::Pixel);
+    const float lh_b = g.line_height(Font::PixelBig);
+    const ui::Color acc = accent();
+    const ui::Color yellow = ui::theme::highlight;
+    const float bob = std::sin(anim_ * 3.0f) * g.px(2);
+
+    // The whole window: the zone's picture under a heavy tint, or plain.
+    fill(g, {0, 0, W, H}, ui::theme::background.alpha(238), 222);
+
+    // --- Header: the page's name, and BACK. -------------------------------
+    const float head_h = lh_b + g.px(14);
+    const float head_y = std::max(g.px(4), M * 0.6f);
+    const std::string back_label = "< BACK";
+    const float back_w = g.text_width(Font::Pixel, back_label) + g.px(28);
+    const float back_h = std::min(head_h, lh_p + g.px(14) + g.px(2.0f * float(zoom)));
+    const SDL_FRect back_r{W - M - back_w, head_y + (head_h - back_h) * 0.5f, back_w, back_h};
+    const char* title = s.timed ? "TIME ATTACK" : "LEVEL SELECT";
+    // The large letters, or the smaller ones on a narrow window at a larger
+    // MENU SIZE rather than cut short.
+    const Font title_font = g.text_width(Font::PixelBig, title) <= back_r.x - M - g.px(12) ? Font::PixelBig : Font::Pixel;
+    g.text_fit(title_font, M, head_y + (head_h - g.line_height(title_font)) * 0.5f, back_r.x - M - g.px(12), title, acc);
+    {
+        const bool sel = selected_ == s.back_row;
+        g.rect(back_r, sel ? acc.alpha(90) : ui::theme::background.alpha(160), g.px(4));
+        g.outline(back_r, sel ? acc : ui::theme::outline_strong, g.px(4), sel ? g.px(3) : g.px(2));
+        g.text(Font::Pixel, back_r.x + g.px(14), back_r.y + (back_r.h - lh_p) * 0.5f, back_label,
+               sel ? ui::theme::text : ui::theme::text_dim);
+        if (s.back_row >= 0) {
+            const int row = s.back_row;
+            hits_.push_back({back_r, row, 0, 0, [this, row] { items_[size_t(row)].act(0); }});
+        }
+    }
+
+    // --- Hint along the foot. --------------------------------------------
+    const float hint_h = lh_s + g.px(10);
+    // As much of it as the width takes, whole phrases only.
+    const char* hint = "Up/Down choose    Left/Right change    Enter start    Esc back";
+    for (const char* shorter : {"Up/Down choose    Left/Right change    Esc back", "Up/Down choose    Left/Right change"})
+        if (g.text_width(Font::Small, hint) > W - 2 * M) hint = shorter;
+    g.text_fit(Font::Small, M, H - hint_h + (hint_h - lh_s) * 0.5f - g.px(2), W - 2 * M, hint, faint());
+
+    const float body_top = head_y + head_h + g.px(10);
+    const float body_bottom = H - hint_h - g.px(2);
+    const float body_h = std::max(g.px(40), body_bottom - body_top);
+    const float body_w = W - 2 * M;
+
+    // --- Measurements. ---------------------------------------------------
+    const float gap = g.px(10);
+    const float rp = g.px(8);                 // inside a row or card
+    const float mark = g.px(22);              // the bobbing marker's room
+    const float chip_h = lh_p + g.px(12) + g.px(3.0f * float(zoom));
+    const float chip_pad = g.px(11);
+    const float chip_gap = g.px(7);
+    const bool special = !s.timed && *s.place == level_select::kSpecialStage;
+    const std::string act_caption = special ? "STAGE" : "ACT";
+    float cap_w = 0;
+    for (const char* c : {"STAGE", "ACT", "TIME", "GHOST", "PLAYERS"}) cap_w = std::max(cap_w, g.text_width(Font::Pixel, c));
+    cap_w += g.px(12);
+    const float aw = g.text_width(Font::Pixel, "<");
+
+    // The choices of each row of chips.
+    struct Choices {
+        int row = -1;
+        std::string caption;
+        std::vector<std::string> labels;
+        std::vector<std::function<void()>> set;
+        int current = -1;
+    };
+    std::vector<int> levels = showcase_levels();
+    Choices act{s.level_row, act_caption, {}, {}, -1};
+    for (size_t i = 0; i < levels.size(); ++i) {
+        const int l = levels[i];
+        act.labels.push_back(showcase_level_label(l));
+        int* level = s.level;
+        act.set.push_back([level, l] { *level = l; });
+        if (l == *s.level) act.current = int(i);
+    }
+    Choices times{s.time_row, "TIME", {}, {}, (*s.time >> 1) & 3};
+    for (int i = 0; i < stage_select::kTimeCount; ++i) {
+        times.labels.push_back(stage_select::kTimes[i]);
+        int* t = s.time;
+        times.set.push_back([t, i] { *t = i * 2; });
+    }
+    Choices players{s.players_row, "PLAYERS", {"1 PLAYER", "2 PLAYERS"}, {}, *s.two_players ? 1 : 0};
+    {
+        bool* two = s.two_players;
+        players.set = {[two] { *two = false; }, [two] { *two = true; }};
+    }
+    Choices ghosts{s.ghost_row, "GHOST", {}, {}, s.ghost ? *s.ghost : 0};
+    if (s.ghost)
+        for (int i = 0; i < 3; ++i) {
+            ghosts.labels.push_back(ghost::mode_name(ghost::Mode(i)));
+            int* gh = s.ghost;
+            ghosts.set.push_back([gh, i] { *gh = i; });
+        }
+
+    // A row of chips laid out in `width`: the caption on the left, or above
+    // the chips when there is no room beside them, and the chips flowing onto
+    // further lines when one is not enough.
+    struct ChipRow {
+        bool caption_above = false;
+        float h = 0;
+        std::vector<SDL_FRect> chips;  // relative to the row
+    };
+    auto chip_w = [&](const std::string& label) { return g.text_width(Font::Pixel, label) + chip_pad * 2; };
+    auto flow_chips = [&](const Choices& c, float width, bool above, int* lines) {
+        ChipRow r;
+        r.caption_above = above;
+        const float x0 = above ? rp + mark : rp + mark + cap_w;
+        const float y0 = above ? rp + lh_p + g.px(6) : rp;
+        const float room = std::max(g.px(20), width - x0 - rp);
+        float x = 0, y = 0;
+        *lines = 1;
+        for (const auto& l : c.labels) {
+            const float w = std::min(chip_w(l), room);
+            if (x > 0 && x + w > room) {
+                x = 0;
+                y += chip_h + chip_gap;
+                ++*lines;
+            }
+            r.chips.push_back({x0 + x, y0 + y, w, chip_h});
+            x += w + chip_gap;
+        }
+        r.h = y0 + y + chip_h + rp;
+        return r;
+    };
+    auto layout_chips = [&](const Choices& c, float width) {
+        int beside = 0, above = 0;
+        ChipRow r = flow_chips(c, width, false, &beside);
+        if (beside == 1) return r;
+        ChipRow a = flow_chips(c, width, true, &above);
+        return above < beside || chip_w(c.labels.empty() ? std::string() : c.labels[0]) > width - rp * 2 - mark - cap_w
+                   ? a : r;
+    };
+
+    // The cards' size: the sprite's box and the room for the longest name.
+    std::vector<std::string> names = characters_;
+    if (names.size() != size_t(stage_select::kCharacterCount))
+        names.assign(std::begin(stage_select::kCharacters), std::end(stage_select::kCharacters));
+    float name_w = 0;
+    for (int i = 0; i < stage_select::kCharacterCount; ++i)
+        if (!stage_select::is_placeholder_name(names[size_t(i)]))
+            name_w = std::max(name_w, g.text_width(Font::Pixel, names[size_t(i)]));
+    // The sprites: every character's, so that one scale suits them all and
+    // switching keeps them in proportion. The box is about twice the
+    // tallest at NORMAL on a 720-line window.
+    float sprite_w = 0, sprite_h = 0;
+    if (hooks_.character_sprite)
+        for (int i = 0; i < stage_select::kCharacterCount; ++i) {
+            float w = 0, h = 0;
+            if (hooks_.character_sprite(i, &w, &h)) {
+                sprite_w = std::max(sprite_w, w);
+                sprite_h = std::max(sprite_h, h);
+            }
+        }
+    if (sprite_h <= 0) { sprite_w = 34; sprite_h = 55; }
+    float sprite_box = std::max(g.px(120), lh_p * 2 + g.px(18)) + g.px(6.0f * float(zoom));
+    const float least_box = lh_p * 2 + g.px(18);
+    const float full_box = sprite_box;
+    float card_h = sprite_box + rp * 2;
+    const float card_need = mark + sprite_box + g.px(12) + aw + g.px(12) + name_w + g.px(12) + aw + rp * 2;
+    // Standing up: the sprite between the caption and the name, for two
+    // cards side by side in one column.
+    const float vcard_h = rp + lh_p + g.px(6) + sprite_box + g.px(6) + lh_p + rp;
+    const float vcard_need = std::max(rp * 2 + mark + name_w + (aw + g.px(12)) * 2, sprite_box + rp * 2);
+    const float records_h = s.timed ? 0.0f : rp * 2 + lh_p + g.px(4) + lh_s;
+    const float start_h = lh_b + g.px(22) + g.px(4.0f * float(zoom));
+    const float pic_aspect = 320.0f / 224.0f;  // the stage pictures are 4:3, 320x224
+    // The place's name over the picture: in the large letters, unless they would
+    // cover too much of it (a phone's narrow picture at a larger MENU SIZE).
+    auto name_font = [&](const SDL_FRect& pic, const std::string& name) {
+        const bool fits = g.text_width(Font::PixelBig, name) <= pic.w - g.px(28) - (aw + g.px(14)) * 2;
+        return fits && lh_b + g.px(14) <= pic.h * 0.2f ? Font::PixelBig : Font::Pixel;
+    };
+
+    // The picture's size for a width and the height it may take: as large
+    // as fits, and at a whole multiple of its pixels when that is close.
+    auto picture_size = [&](float max_w, float max_h) {
+        float w = std::max(g.px(80), max_w), h = w / pic_aspect;
+        if (h > max_h) { h = std::max(g.px(56), max_h); w = h * pic_aspect; }
+        const float k = w / 320.0f;
+        const float whole = std::floor(k);
+        if (whole >= 1.0f && whole / k >= 0.85f) { w = 320.0f * whole; h = 224.0f * whole; }
+        return SDL_FRect{0, 0, std::round(w), std::round(h)};
+    };
+
+    // --- Where everything goes. -----------------------------------------
+    // Each piece in its column's own coordinates (y from the column's top);
+    // the columns scroll on their own when taller than the window.
+    const std::string place_name = stage_select::kPlaces[std::clamp(*s.place, 0, stage_select::kPlaceCount - 1)].name;
+    bool band_below = false;
+    Font below_font = Font::Pixel;
+    SDL_FRect pic_box{};
+    enum Piece { kPicture, kAct, kTime, kPlayer, kCombi, kRecords, kGhost, kPlayers, kStart, kPieces };
+    SDL_FRect at[kPieces] = {};
+    int col_of[kPieces] = {};
+    SDL_FRect view[2] = {};
+    float content_h[2] = {0, 0};
+    int columns = 1;
+    ChipRow act_l, time_l, players_l, ghost_l;
+    float ghost_top = 0;  // in the records card
+
+    auto records_height = [&](float width) {
+        if (!s.timed) return records_h;
+        ghost_l = layout_chips(ghosts, width);
+        ghost_top = rp + lh_p + g.px(6);
+        return ghost_top + ghost_l.h;
+    };
+
+    const float gutter = g.px(20);
+    float right_need = std::max(card_need, rp * 2 + mark + cap_w + chip_w("1 PLAYER") + chip_gap + chip_w("2 PLAYERS"));
+    float right_w = std::clamp(body_w * 0.38f, std::min(right_need, body_w * 0.5f), body_w * 0.5f);
+    bool landscape = W > H * 1.05f && body_w - gutter - right_w >= body_w * 0.42f;
+    if (landscape) {
+        columns = 2;
+        float left_w = body_w - gutter - right_w;
+        // The rows under the picture, at the picture's width, which the
+        // height may make narrower than the column.
+        act_l = layout_chips(act, left_w);
+        time_l = layout_chips(times, left_w);
+        float rows_h = act_l.h + time_l.h + gap * 2;
+        SDL_FRect pic = picture_size(left_w, body_h - rows_h);
+        if (pic.h < body_h * 0.4f) pic = picture_size(left_w, body_h * 0.4f);
+        // The rows as wide as the picture, unless that would fold them.
+        float lw = std::max(pic.w, std::min(left_w, g.px(240)));
+        const ChipRow act_n = layout_chips(act, lw), time_n = layout_chips(times, lw);
+        if (act_n.h + time_n.h > act_l.h + time_l.h + 0.5f) {
+            lw = left_w;
+        } else {
+            act_l = act_n;
+            time_l = time_n;
+        }
+        rows_h = act_l.h + time_l.h + gap * 2;
+        // The right column takes what the picture leaves, within reason, and
+        // the two are centred across the window together.
+        right_w = std::min(body_w - lw - gutter, std::max(right_need * 1.15f, body_w * 0.36f));
+        const float total_w = lw + gutter + right_w;
+        const float x0 = M + std::max(0.0f, (body_w - total_w) * 0.5f);
+        pic_box = pic;
+        if (g.text_width(Font::PixelBig, place_name) > pic.w - g.px(28) - (aw + g.px(14)) * 2) {
+            // The name under the picture (see the column below).
+            band_below = true;
+            below_font = g.text_width(Font::PixelBig, place_name) <= lw - g.px(28) - (aw + g.px(14)) * 2
+                             ? Font::PixelBig : Font::Pixel;
+            at[kPicture] = {0, 0, lw, pic.h + g.px(6) + g.line_height(below_font) + g.px(14)};
+        } else {
+            at[kPicture] = {0, 0, pic.w, pic.h};
+        }
+        at[kAct] = {0, at[kPicture].h + gap, lw, act_l.h};
+        at[kTime] = {0, at[kAct].y + act_l.h + gap, lw, time_l.h};
+        content_h[0] = at[kTime].y + time_l.h;
+        float y = 0;
+        players_l = layout_chips(players, right_w);
+        // The cards give up some of their height on a short window, down to
+        // two lines of letters, so that the column fits if it can.
+        {
+            const float rest = records_height(right_w) + players_l.h + start_h + gap * 4;
+            const float fit = (std::max(body_h, content_h[0]) - rest) * 0.5f - rp * 2;
+            sprite_box = std::clamp(fit, least_box, sprite_box);
+            card_h = sprite_box + rp * 2;
+        }
+        for (Piece p : {kPlayer, kCombi}) {
+            at[p] = {0, y, right_w, card_h};
+            y += card_h + gap;
+        }
+        const float rh = records_height(right_w);
+        at[kRecords] = {0, y, right_w, rh};
+        y += rh + gap;
+        at[kPlayers] = {0, y, right_w, players_l.h};
+        y += players_l.h + gap;
+        at[kStart] = {0, y, right_w, start_h};
+        content_h[1] = y + start_h;
+        // START at the foot of the picture's rows when the right column is
+        // the shorter, so the two columns end together.
+        if (content_h[1] < content_h[0]) {
+            at[kStart].y += content_h[0] - content_h[1];
+            content_h[1] = content_h[0];
+        }
+        for (Piece p : {kPlayer, kCombi, kRecords, kPlayers, kStart}) col_of[p] = 1;
+        const float tall = std::max(content_h[0], content_h[1]);
+        const float top = tall < body_h ? body_top + (body_h - tall) * 0.5f : body_top;
+        view[0] = {x0, top, lw, std::min(body_h, body_bottom - top)};
+        view[1] = {x0 + lw + gutter, top, right_w, std::min(body_h, body_bottom - top)};
+        // A larger MENU SIZE on a short window leaves the picture's column no
+        // room: one column then, which scrolls, with a picture worth seeing.
+        if (content_h[0] > body_h + 0.5f) landscape = false;
+    }
+    if (!landscape) {
+        columns = 1;
+        band_below = false;
+        for (int& c : col_of) c = 0;
+        sprite_box = full_box;
+        card_h = sprite_box + rp * 2;
+        // One column, as wide as a phone allows and no wider than reads well.
+        const float cw = std::min(body_w, std::max(g.px(420), body_w * 0.7f));
+        act_l = layout_chips(act, cw);
+        time_l = layout_chips(times, cw);
+        players_l = layout_chips(players, cw);
+        // On a short, wide window the picture may take most of the height: the
+        // column scrolls anyway.
+        const SDL_FRect pic = picture_size(cw, W > H ? body_h * 0.8f : std::max(body_h * 0.45f, g.px(120)));
+        float y = 0;
+        pic_box = pic;
+        // A name too long to go over the picture goes under it instead.
+        if (g.text_width(Font::PixelBig, place_name) > pic.w - g.px(28) - (aw + g.px(14)) * 2) {
+            band_below = true;
+            below_font = g.text_width(Font::PixelBig, place_name) <= cw - g.px(28) - (aw + g.px(14)) * 2
+                             ? Font::PixelBig : Font::Pixel;
+            at[kPicture] = {0, y, cw, pic.h + g.px(6) + g.line_height(below_font) + g.px(14)};
+        } else {
+            at[kPicture] = {(cw - pic.w) * 0.5f, y, pic.w, pic.h};
+        }
+        y += at[kPicture].h + gap;
+        at[kAct] = {0, y, cw, act_l.h};
+        y += act_l.h + gap;
+        at[kTime] = {0, y, cw, time_l.h};
+        y += time_l.h + gap;
+        // The two cards side by side when they fit, standing up if they
+        // must, else one above the other.
+        if (cw >= card_need * 2 + gap || cw >= vcard_need * 2 + gap) {
+            const float half = (cw - gap) * 0.5f;
+            const float h = cw >= card_need * 2 + gap ? card_h : vcard_h;
+            at[kPlayer] = {0, y, half, h};
+            at[kCombi] = {half + gap, y, half, h};
+            y += h + gap;
+        } else {
+            at[kPlayer] = {0, y, cw, card_h};
+            y += card_h + gap;
+            at[kCombi] = {0, y, cw, card_h};
+            y += card_h + gap;
+        }
+        const float rh = records_height(cw);
+        at[kRecords] = {0, y, cw, rh};
+        y += rh + gap;
+        at[kPlayers] = {0, y, cw, players_l.h};
+        y += players_l.h + gap;
+        at[kStart] = {0, y, cw, start_h};
+        content_h[0] = y + start_h;
+        const float top = content_h[0] < body_h ? body_top + (body_h - content_h[0]) * 0.5f : body_top;
+        view[0] = {M + (body_w - cw) * 0.5f, top, cw, std::min(body_h, body_bottom - top)};
+    }
+    if (s.timed) {
+        at[kGhost] = {at[kRecords].x, at[kRecords].y + ghost_top, at[kRecords].w, ghost_l.h};
+        col_of[kGhost] = col_of[kRecords];
+    }
+
+    // The selected entry's piece, kept in view.
+    auto piece_of_row = [&](int row) -> int {
+        if (row < 0) return -1;
+        if (row == s.place_row) return kPicture;
+        if (row == s.level_row) return kAct;
+        if (row == s.time_row) return kTime;
+        if (row == s.player_row) return kPlayer;
+        if (row == s.combi_row) return kCombi;
+        if (row == s.ghost_row) return kGhost;
+        if (row == s.players_row) return kPlayers;
+        if (row == s.start_row) return kStart;
+        return -1;
+    };
+    for (int c = 0; c < columns; ++c) {
+        const float most = std::max(0.0f, content_h[c] - view[c].h);
+        float& sc = sc_scroll_[c];
+        const int p = piece_of_row(selected_);
+        if (p >= 0 && col_of[p] == c) {
+            const float y0 = at[p].y - gap * 0.5f, y1 = at[p].y + at[p].h + gap * 0.5f;
+            if (y0 < sc) sc = y0;
+            if (y1 > sc + view[c].h) sc = y1 - view[c].h;
+        }
+        sc = std::clamp(sc, 0.0f, most);
+        if (most <= 0) sc = 0;
+    }
+    // A piece on the screen.
+    auto screen = [&](int p) {
+        const int c = col_of[p];
+        return SDL_FRect{view[c].x + at[p].x, view[c].y + at[p].y - sc_scroll_[c], at[p].w, at[p].h};
+    };
+    // Touch targets are only where they can be seen: cut to the column.
+    int clip_col = 0;
+    auto add_hit = [&](SDL_FRect r, int row, std::function<void()> tap = {}, float back_x = 0, float back_w = 0) {
+        if (row < 0) return;
+        const SDL_FRect v = view[clip_col];
+        const float y0 = std::max(r.y, v.y), y1 = std::min(r.y + r.h, v.y + v.h);
+        if (y1 - y0 < std::min(r.h, g.px(16)) * 0.6f) return;
+        const float x0 = std::max(r.x, 0.0f), x1 = std::min(r.x + r.w, W);
+        if (x1 <= x0) return;
+        hits_.push_back({{x0, y0, x1 - x0, y1 - y0}, row, back_x, back_w, std::move(tap)});
+    };
+    auto step_tap = [this](int row, int step) {
+        return std::function<void()>([this, row, step] {
+            if (row >= 0 && items_[size_t(row)].act) items_[size_t(row)].act(step);
+        });
+    };
+
+    // A frame for a row or a card: quiet, or in the accent when selected.
+    auto frame = [&](const SDL_FRect& r, bool sel) {
+        g.rect(r, ui::theme::background.alpha(sel ? 200 : 150), g.px(6));
+        g.outline(r, sel ? acc : ui::theme::outline, g.px(6), sel ? g.px(3) : g.px(1.5f));
+    };
+    auto marker = [&](float x, float y, bool sel) {
+        if (sel) g.text(Font::Pixel, x + bob, y, ">", acc);
+    };
+    // Text in the yellow of a choice: the game's letters tinted, or the
+    // pixel face in that colour.
+    auto yellow_text = [&](Font f, float x, float y, float w, const std::string& t) {
+        g.tint_game_font(true);
+        const float drawn = g.text_fit(f, x, y, w, t, yellow);
+        g.tint_game_font(false);
+        return drawn;
+    };
+    auto draw_chips = [&](const SDL_FRect& r, const Choices& c, const ChipRow& l, bool sel) {
+        frame(r, sel);
+        const float cy = r.y + (l.caption_above ? rp : rp + (chip_h - lh_p) * 0.5f);
+        marker(r.x + rp - g.px(2), cy, sel);
+        g.text_fit(Font::Pixel, r.x + rp + mark, cy, r.w - rp * 2 - mark, c.caption,
+                   sel ? ui::theme::text : ui::theme::text_dim);
+        for (size_t i = 0; i < l.chips.size(); ++i) {
+            const SDL_FRect cr{r.x + l.chips[i].x, r.y + l.chips[i].y, l.chips[i].w, l.chips[i].h};
+            const bool cur = int(i) == c.current;
+            if (cur) {
+                g.rect(cr, yellow.alpha(sel ? 70 : 46), g.px(4));
+                g.outline(cr, yellow.alpha(sel ? 255 : 200), g.px(4), g.px(2));
+            } else {
+                g.rect(cr, ui::theme::surface.alpha(170), g.px(4));
+                g.outline(cr, ui::theme::outline, g.px(4), g.px(1));
+            }
+            const float tw = std::min(g.text_width(Font::Pixel, c.labels[i]), cr.w - chip_pad);
+            const float tx = cr.x + (cr.w - tw) * 0.5f, ty = cr.y + (cr.h - lh_p) * 0.5f;
+            if (cur) yellow_text(Font::Pixel, tx, ty, cr.w - chip_pad, c.labels[i]);
+            else g.text_fit(Font::Pixel, tx, ty, cr.w - chip_pad, c.labels[i], ui::theme::text_faint);
+            if (i < c.set.size()) add_hit(cr, c.row, c.set[i]);
+        }
+        // The row's caption and the space around the chips select it.
+        add_hit(r, c.row);
+    };
+    // Hits are pushed in drawing order and the first that contains a tap
+    // wins, so a chip goes before the row it lies on (draw_chips adds the
+    // row last); the same for the arrows on the picture and the cards.
+    auto draw_card = [&](const SDL_FRect& r, int row, const char* caption, int who, bool mirror) {
+        const bool sel = selected_ == row;
+        frame(r, sel);
+        // Lying down (the sprite on the left) when the card is as tall as
+        // one, else standing up (the sprite between the caption and name).
+        const bool lying = r.h < vcard_h - 0.5f;
+        const float bw = std::min(sprite_box, lying ? r.w * 0.4f : r.w - rp * 2);
+        const SDL_FRect box = lying ? SDL_FRect{r.x + rp + mark, r.y + rp, bw, sprite_box}
+                                    : SDL_FRect{r.x + (r.w - bw) * 0.5f, r.y + rp + lh_p + g.px(6), bw, sprite_box};
+        g.rect(box, ui::theme::surface.alpha(150), g.px(4));
+        float tw = 0, th = 0;
+        SDL_Texture* tex = hooks_.character_sprite ? hooks_.character_sprite(who, &tw, &th) : nullptr;
+        if (tex && tw > 0 && th > 0) {
+            // One whole multiple of their pixels for every character (from
+            // the largest), standing on the box's floor.
+            const float fit = std::min((box.w - g.px(8)) / sprite_w, (box.h - g.px(8)) / sprite_h);
+            const float k = fit >= 1.0f ? std::floor(fit) : fit;
+            const float w = tw * k, h = th * k;
+            g.image(tex, {0, 0, tw, th},
+                    {std::round(box.x + (box.w - w) * 0.5f), std::round(box.y + box.h - g.px(4) - h), w, h}, fit < 1.0f,
+                    mirror);
+        } else {
+            g.text(Font::PixelBig, box.x + (box.w - g.text_width(Font::PixelBig, "?")) * 0.5f,
+                   box.y + (box.h - lh_b) * 0.5f, "?", ui::theme::text_faint);
+        }
+        float tx, tr, ty, ny;
+        if (lying) {
+            tx = box.x + box.w + g.px(12);
+            tr = r.x + r.w - rp;
+            const float block = lh_p * 2 + g.px(8);
+            ty = r.y + (r.h - block) * 0.5f;
+            ny = ty + lh_p + g.px(8);
+            marker(r.x + rp - g.px(2), r.y + (r.h - lh_p) * 0.5f, sel);
+        } else {
+            tx = r.x + rp + mark;
+            tr = r.x + r.w - rp;
+            ty = r.y + rp;
+            ny = box.y + box.h + g.px(6);
+            marker(r.x + rp - g.px(2), ty, sel);
+        }
+        g.text_fit(Font::Pixel, tx, ty, tr - tx, caption, sel ? ui::theme::text_dim : ui::theme::text_faint);
+        const float lx = lying ? tx : r.x + rp;
+        const std::string name = who >= 0 && who < int(names.size()) ? names[size_t(who)] : std::string("?");
+        g.text(Font::Pixel, lx, ny, "<", sel ? acc : ui::theme::text_faint);
+        g.text(Font::Pixel, tr - aw, ny, ">", sel ? acc : ui::theme::text_faint);
+        const float room = tr - aw - g.px(8) - (lx + aw + g.px(8));
+        const float nw = std::min(g.text_width(Font::Pixel, name), room);
+        g.text_fit(Font::Pixel, lx + aw + g.px(8) + (room - nw) * 0.5f, ny, room, name,
+                   sel ? ui::theme::text : ui::theme::text_dim);
+        // The arrows' targets: the name's line, a finger's height either side;
+        // the rest of the card selects it.
+        const float hw = std::max(g.px(40), aw + g.px(20));
+        const float hy = std::max(r.y, ny - g.px(14));
+        const float hh = std::min(r.y + r.h, ny + lh_p + g.px(14)) - hy;
+        add_hit({lx - g.px(10), hy, hw, hh}, row, step_tap(row, -1));
+        add_hit({tr - hw + g.px(10), hy, hw, hh}, row, step_tap(row, +1));
+        add_hit(r, row);
+    };
+
+    // --- Drawing, a column at a time. -------------------------------------
+    const stage_select::Request req = showcase_request();
+    for (int c = 0; c < columns; ++c) {
+        clip_col = c;
+        const SDL_FRect v = view[c];
+        // Room for the frames' outlines and the marker's bob either side.
+        const SDL_FRect clip{v.x - g.px(6), v.y - g.px(4), v.w + g.px(12), v.h + g.px(8)};
+        g.clip(&clip);
+        const size_t first_hit = hits_.size();
+        for (int p = 0; p < kPieces; ++p) {
+            if (col_of[p] != c) continue;
+            const SDL_FRect r = screen(p);
+            if (r.y > v.y + v.h || r.y + r.h < v.y) continue;
+            switch (p) {
+            case kPicture: {
+                const bool sel = selected_ == s.place_row;
+                float tw = 0, th = 0;
+                int state = kPictureNone;
+                SDL_Texture* tex = hooks_.stage_picture ? hooks_.stage_picture(req, &tw, &th, &state) : nullptr;
+                const bool exact = state == kPictureReady && tex;
+                // The picture, and the band with the place's name: over its
+                // foot, or under it at the column's width (band_below).
+                const SDL_FRect pr = band_below ? SDL_FRect{std::round(r.x + (r.w - pic_box.w) * 0.5f), r.y, pic_box.w, pic_box.h} : r;
+                const Font nf = band_below ? below_font : name_font(r, place_name);
+                const float band_h = g.line_height(nf) + g.px(14);
+                const std::string& name = place_name;
+                const float o = sel ? g.px(3) : g.px(2);
+                g.rect({pr.x - o, pr.y - o, pr.w + o * 2, pr.h + o * 2}, sel ? acc : ui::theme::outline_strong, g.px(3));
+                if (tex && tw > 0 && th > 0) {
+                    if (exact && std::fabs(tw / th - pic_aspect) < 0.01f) {
+                        const float k = pr.w / tw;
+                        g.image(tex, {0, 0, tw, th}, pr, std::fabs(k - std::round(k)) > 0.01f);
+                    } else {
+                        g.image_cover(tex, tw, th, pr);
+                    }
+                    if (!exact) g.rect(pr, ui::theme::background.alpha(120));
+                } else {
+                    // Nothing of the place yet (or none to be had): the menu's own
+                    // zone, darkened, rather than an empty box.
+                    g.rect(pr, ui::theme::surface);
+                    if (backdrop_) {
+                        g.image_cover(backdrop_, backdrop_w_, backdrop_h_, pr);
+                        g.rect(pr, ui::theme::background.alpha(185));
+                    }
+                }
+                if (state == kPictureMaking) {
+                    // Being made: a word and a few dots that move, in the
+                    // middle of the picture, until it is there.
+                    const int dots = int(anim_ * 2.0f) % 4;
+                    const std::string word = "LOADING" + std::string(size_t(dots), '.');
+                    const float ww = g.text_width(Font::Pixel, "LOADING...");
+                    g.text(Font::Pixel, pr.x + (pr.w - ww) * 0.5f, pr.y + ((band_below ? pr.h : pr.h - band_h) - lh_p) * 0.5f, word,
+                           ui::theme::text_dim);
+                }
+                // The place's name over the picture's foot, between arrows.
+                const SDL_FRect band = band_below ? SDL_FRect{r.x, pr.y + pr.h + g.px(6), r.w, band_h}
+                                                  : SDL_FRect{r.x, r.y + r.h - band_h, r.w, band_h};
+                if (band_below) {
+                    g.rect(band, ui::theme::background.alpha(170), g.px(6));
+                    g.outline(band, sel ? acc : ui::theme::outline, g.px(6), sel ? g.px(3) : g.px(1.5f));
+                } else {
+                    g.rect({band.x, band.y - g.px(10), band.w, g.px(10)}, ui::theme::background.alpha(70));
+                    g.rect(band, ui::theme::background.alpha(170));
+                }
+                const float ny = band.y + (band_h - g.line_height(nf)) * 0.5f;
+                const float ay = band.y + (band_h - lh_p) * 0.5f;
+                const float lx = band.x + g.px(14);
+                const float room = std::max(g.px(20), band.w - g.px(28) - (aw + g.px(14)) * 2);
+                g.text(Font::Pixel, lx, ay, "<", sel ? acc : ui::theme::text_dim);
+                const float nw = g.text_fit(nf, lx + aw + g.px(14), ny, room, name, ui::theme::text);
+                const float rx = lx + aw + g.px(14) + nw + g.px(14);
+                g.text(Font::Pixel, rx, ay, ">", sel ? acc : ui::theme::text_dim);
+                const float hw = std::max(g.px(44), aw + g.px(28));
+                const int row = s.place_row;
+                add_hit({band.x, band.y, std::max(hw, lx + aw + g.px(8) - band.x), band.h}, row, step_tap(row, -1));
+                add_hit({rx - g.px(10), band.y, hw, band.h}, row, step_tap(row, +1));
+                add_hit(band, row);
+                break;
+            }
+            case kAct: draw_chips(r, act, act_l, selected_ == s.level_row); break;
+            case kTime: draw_chips(r, times, time_l, selected_ == s.time_row); break;
+            case kPlayer: draw_card(r, s.player_row, "PLAYER", *s.player, false); break;
+            case kCombi:
+                draw_card(r, s.combi_row, *s.two_players ? "PARTNER  2P" : "PARTNER", *s.combi, true);
+                break;
+            case kRecords:
+                if (s.timed) {
+                    // The record for the stage chosen, and the ghost row.
+                    const bool sel = selected_ == s.ghost_row;
+                    g.rect(r, ui::theme::background.alpha(150), g.px(6));
+                    g.outline(r, ui::theme::outline, g.px(6), g.px(1.5f));
+                    const float y = r.y + rp + g.px(2);
+                    g.text(Font::Pixel, r.x + rp + mark, y, "BEST TIME", ui::theme::text_dim);
+                    const std::string best = s.best_row >= 0 ? items_[size_t(s.best_row)].value() : std::string();
+                    const float bw = g.text_width(Font::Pixel, best);
+                    yellow_text(Font::Pixel, r.x + r.w - rp - g.px(6) - bw, y, bw + g.px(2), best);
+                    const SDL_FRect gr = screen(kGhost);
+                    if (sel) g.outline(gr, acc, g.px(6), g.px(3));
+                    // The ghost's chips, without a frame of their own.
+                    const float cy = gr.y + (ghost_l.caption_above ? rp : rp + (chip_h - lh_p) * 0.5f);
+                    marker(gr.x + rp - g.px(2), cy, sel);
+                    g.text(Font::Pixel, gr.x + rp + mark, cy, "GHOST", sel ? ui::theme::text : ui::theme::text_dim);
+                    for (size_t i = 0; i < ghost_l.chips.size(); ++i) {
+                        const SDL_FRect cr{gr.x + ghost_l.chips[i].x, gr.y + ghost_l.chips[i].y, ghost_l.chips[i].w,
+                                           ghost_l.chips[i].h};
+                        const bool cur = int(i) == ghosts.current;
+                        g.rect(cr, cur ? yellow.alpha(sel ? 70 : 46) : ui::theme::surface.alpha(170), g.px(4));
+                        g.outline(cr, cur ? yellow.alpha(sel ? 255 : 200) : ui::theme::outline, g.px(4),
+                                  cur ? g.px(2) : g.px(1));
+                        const float tw = g.text_width(Font::Pixel, ghosts.labels[i]);
+                        const float tx = cr.x + (cr.w - tw) * 0.5f, ty = cr.y + (cr.h - lh_p) * 0.5f;
+                        if (cur) yellow_text(Font::Pixel, tx, ty, cr.w, ghosts.labels[i]);
+                        else g.text(Font::Pixel, tx, ty, ghosts.labels[i], ui::theme::text_faint);
+                        add_hit(cr, s.ghost_row, ghosts.set[i]);
+                    }
+                    add_hit(gr, s.ghost_row);
+                } else {
+                    // LEVEL SELECT keeps nothing: it says so where the
+                    // records would be.
+                    g.rect(r, ui::theme::background.alpha(150), g.px(6));
+                    g.outline(r, ui::theme::outline, g.px(6), g.px(1.5f));
+                    g.text_fit(Font::Pixel, r.x + rp + mark, r.y + rp, r.w - rp * 2 - mark, "PRACTICE", acc);
+                    g.text_fit(Font::Small, r.x + rp + mark, r.y + rp + lh_p + g.px(4), r.w - rp * 2 - mark,
+                               "No clock, records or saving.", ui::theme::text_dim);
+                }
+                break;
+            case kPlayers: draw_chips(r, players, players_l, selected_ == s.players_row); break;
+            case kStart: {
+                const bool sel = selected_ == s.start_row;
+                g.rect(r, acc.alpha(sel ? 210 : 120), g.px(8));
+                g.outline(r, sel ? yellow : acc, g.px(8), sel ? g.px(3) : g.px(2));
+                const float tw = g.text_width(Font::PixelBig, "START");
+                const float ty = r.y + (r.h - lh_b) * 0.5f;
+                if (sel) {
+                    yellow_text(Font::PixelBig, r.x + (r.w - tw) * 0.5f + bob, ty, tw + g.px(4), "START");
+                } else {
+                    g.text(Font::PixelBig, r.x + (r.w - tw) * 0.5f, ty, "START", ui::theme::text);
+                }
+                const int row = s.start_row;
+                add_hit(r, row, [this, row] { items_[size_t(row)].act(0); });
+                break;
+            }
+            default: break;
+            }
+        }
+        g.clip(nullptr);
+        // More above or below: markers at the column's right, which step the
+        // selection that way.
+        const float most = content_h[c] - v.h;
+        const float mw = g.px(48);
+        if (sc_scroll_[c] > 0.5f) {
+            const SDL_FRect m{v.x + v.w - mw, v.y, mw, lh_p + g.px(10)};
+            g.rect(m, ui::theme::background.alpha(220), g.px(4));
+            g.text(Font::Pixel, m.x + (mw - g.text_width(Font::Pixel, "^")) * 0.5f, m.y + g.px(5), "^", acc);
+            hits_.insert(hits_.begin() + std::ptrdiff_t(first_hit), Hit{m, kScrollUp});
+        }
+        if (most - sc_scroll_[c] > 0.5f) {
+            const SDL_FRect m{v.x + v.w - mw, v.y + v.h - lh_p - g.px(10), mw, lh_p + g.px(10)};
+            g.rect(m, ui::theme::background.alpha(220), g.px(4));
+            g.text(Font::Pixel, m.x + (mw - g.text_width(Font::Pixel, "v")) * 0.5f, m.y + g.px(5), "v", acc);
+            hits_.insert(hits_.begin() + std::ptrdiff_t(first_hit), Hit{m, kScrollDown});
+        }
     }
 }
 
