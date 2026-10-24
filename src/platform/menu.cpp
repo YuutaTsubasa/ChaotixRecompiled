@@ -808,6 +808,12 @@ void Menu::build_video() {
     items_.push_back({"V-SYNC",
                       [c] { return on_off(c->vsync); },
                       [c, video](int s) { if (s) { c->vsync = !c->vsync; video(); } }});
+    // Issue #54: frame rates and emulation time in a corner, to see how fast
+    // the game runs (on a phone especially).
+    items_.push_back({"SHOW FPS",
+                      [c] { return on_off(c->show_fps); },
+                      [c](int s) { if (s) c->show_fps = !c->show_fps; },
+                      "frame rate and emulation time in a corner"});
     // Issue #49: this menu's rows, letters and touch targets. AUTO is LARGE
     // on a phone or tablet and says so. It changes as soon as it is stepped,
     // so the row being stepped grows under the finger.

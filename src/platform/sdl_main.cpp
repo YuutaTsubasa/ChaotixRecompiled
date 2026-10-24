@@ -21,6 +21,7 @@
 #include "frontend/livesplit.h"
 #include "frontend/speedrun.h"
 #include "frontend/debug_overlay.h"
+#include "frontend/fps_counter.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
 #include "platform/backdrops.h"
@@ -260,6 +261,11 @@ struct App {
     // Touch devices have neither Esc nor a stick to click, so the progress
     // counter doubles as the way in. Empty when it is not being drawn.
     SDL_FRect achievement_tap{0, 0, 0, 0};
+    // SHOW FPS (issue #54): last second's figures, the host overlays drawn
+    // this frame that the counter keeps clear of, and where it was drawn.
+    fps_counter::Stats fps_stats;
+    std::vector<fps_counter::Box> overlay_boxes;
+    fps_counter::Box fps_box;
     // Notifications: unlocks, time attack results, save states. `caption` is
     // the small line above the title.
     struct Toast {
@@ -1341,6 +1347,7 @@ void draw_speedrun(App& app, const SDL_FRect& image) {
             const float w = pad * 2 + w0 + gap + w1 + (w2 > 0 ? gap + w2 : 0);
             const SDL_FRect box = corner_box(image, speedrun::parse_corner(c.sr_timer_corner, speedrun::Corner::TopRight),
                                              w, h + pad * 2, margin);
+            app.overlay_boxes.push_back({box.x, box.y, box.w, box.h});
             g.panel(box, fade(ui::theme::surface.alpha(225)), fade(ui::theme::outline), g.px(6));
             float y = box.y + pad;
             for (const Row& r : rows) {
@@ -1364,6 +1371,7 @@ void draw_speedrun(App& app, const SDL_FRect& image) {
         const float gap = g.px(6);
         const speedrun::Corner k = speedrun::parse_corner(c.sr_input_corner, speedrun::Corner::BottomLeft);
         const SDL_FRect all = corner_box(image, k, bw, bh * float(players) + gap * float(players - 1), margin);
+        app.overlay_boxes.push_back({all.x, all.y, all.w, all.h});
         for (int p = 0; p < players; ++p) {
             const SDL_FRect box{all.x, all.y + float(p) * (bh + gap), bw, bh};
             g.rect(box, fade(ui::Color{0, 0, 0, 175}), g.px(4));
@@ -1380,6 +1388,35 @@ void draw_speedrun(App& app, const SDL_FRect& image) {
             }
         }
     }
+}
+
+// SHOW FPS (issue #54): drawn last, over the window, by the host; top right,
+// below the award counter, a speedrun timer there or any touch button it
+// would cover. SDL's debug font at a whole-number scale that follows the
+// window and MENU SIZE.
+void draw_fps_counter(App& app, int ow, int oh) {
+    const std::vector<std::string> lines = fps_counter::lines(app.fps_stats);
+    const int s = fps_counter::scale_for(ow, oh, app.cfg.menu_zoom());
+    std::vector<fps_counter::Box> avoid = app.overlay_boxes;
+    const SDL_FRect& t = app.achievement_tap;
+    if (t.w > 0) avoid.push_back({t.x, t.y, t.w, t.h});
+    if (app.touch_enabled)
+        for (const TouchButton& b : app.touch.buttons())
+            avoid.push_back({b.cx - b.r * 1.15f, b.cy - b.r * 1.15f, b.r * 2.3f, b.r * 2.3f});
+    const fps_counter::Box b = fps_counter::place(float(ow), float(oh), int(lines.size()), s, avoid);
+    app.fps_box = b;
+    SDL_SetRenderDrawBlendMode(app.renderer, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 150);
+    const SDL_FRect bg{b.x, b.y, b.w, b.h};
+    SDL_RenderFillRect(app.renderer, &bg);
+    SDL_SetRenderScale(app.renderer, float(s), float(s));
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (i >= 2) SDL_SetRenderDrawColor(app.renderer, 255, 130, 90, 255);  // INTERPRETER
+        else SDL_SetRenderDrawColor(app.renderer, 255, 255, 200, 230);
+        SDL_RenderDebugText(app.renderer, b.x / float(s) + fps_counter::kPad,
+                            b.y / float(s) + fps_counter::kPad + float(i) * fps_counter::kLineHeight, lines[i].c_str());
+    }
+    SDL_SetRenderScale(app.renderer, 1, 1);
 }
 
 void handle_pad_button(App& app, Uint8 button) {
@@ -2132,6 +2169,8 @@ int main(int argc, char** argv) {
         else if (a == "--user-dir" && i + 1 < argc) ++i;  // handled above
         else if (a == "--touch") app.cfg.touch = TouchMode::On;
         else if (a == "--debug") app.cfg.debug_overlay = true;
+        else if (a == "--show-fps") app.cfg.show_fps = true;
+        else if (a == "--no-show-fps") app.cfg.show_fps = false;
         else if (a == "--autotest" && i + 1 < argc) app.autotest_frames = std::strtoull(argv[++i], nullptr, 10);
         else if (a == "--autotest-shot" && i + 1 < argc) app.autotest_shot = argv[++i];
         else if (a == "--mods-dir" && i + 1 < argc) app.mods_dir = argv[++i];
@@ -2492,6 +2531,7 @@ int main(int argc, char** argv) {
     RecompStatus rs = install_recompiled_code(*app.m, app.cfg.use_recompiled && !force_interp);
     LOGI("app", "execution: %s", rs.description.c_str());
     app.recompiled = rs.active;
+    app.fps_stats.interpreter = !rs.active;
     if (!app.autotest_frames || !app.mods_dir.empty()) {  // autotests are hermetic unless asked
         load_mods(app);
         // --menu mods opened the page before there was a list to show.
@@ -2592,6 +2632,7 @@ int main(int argc, char** argv) {
     uint64_t fps_t0 = last, fps_frames = 0, fps_sims = 0;
     uint64_t pass_start = last;
     double worst_pass = 0, worst_emu = 0, worst_present = 0;
+    double emu_sum_ms = 0, emu_worst_frame_ms = 0;  // SHOW FPS, over the current second
 
     if (app.cli_net_host > 0) {
         app.cfg.netplay_port = app.cli_net_host;
@@ -2918,7 +2959,11 @@ int main(int argc, char** argv) {
                 if (const int n = write_sprite_dumps(*app.sprites, app.tiles_dir + "/Dump")) LOGI("sprites", "%d sprite(s) dumped", n);
         }
         uint64_t emu_t1 = SDL_GetPerformanceCounter();
-        if (steps) app.timing.emu_ms = double(emu_t1 - emu_t0) * 1000.0 / double(freq) / steps;
+        if (steps) {
+            app.timing.emu_ms = double(emu_t1 - emu_t0) * 1000.0 / double(freq) / steps;
+            emu_sum_ms += app.timing.emu_ms * steps;
+            emu_worst_frame_ms = std::max(emu_worst_frame_ms, app.timing.emu_ms);
+        }
         fps_sims += uint64_t(steps);
 
         // Audio: hand over what the machine produced; keep ~50 ms queued with a
@@ -3006,6 +3051,7 @@ int main(int argc, char** argv) {
             draw_touch_controls(app, uint16_t(touch_held | (app.fast_forward ? TOUCH_FAST_FORWARD : 0) |
                                               (app.rewinding ? TOUCH_REWIND : 0)));
         }
+        app.overlay_boxes.clear();
         if (app.ui.ready()) {
             draw_speedrun(app, dst);
             app.menu.draw(app.ui, app.achievements);
@@ -3018,6 +3064,7 @@ int main(int argc, char** argv) {
                 const float w = g.text_width(ui::Font::Pixel, label.c_str()) + g.px(28);
                 const float h = g.line_height(ui::Font::Pixel) + g.px(14);
                 const SDL_FRect r{g.px(12), g.px(12), w, h};
+                app.overlay_boxes.push_back({r.x, r.y, r.w, r.h});
                 g.panel(r, ui::theme::surface.alpha(170), app.net.stalled > 10 ? ui::theme::accent : ui::theme::surface,
                         h * 0.5f);
                 g.text(ui::Font::Pixel, r.x + g.px(14), r.y + g.px(7), label.c_str(), ui::theme::text);
@@ -3029,6 +3076,7 @@ int main(int argc, char** argv) {
                 const float w = g.text_width(ui::Font::Pixel, label) + g.px(28);
                 const float h = g.line_height(ui::Font::Pixel) + g.px(14);
                 const SDL_FRect r{(g.width() - w) * 0.5f, g.px(12), w, h};
+                app.overlay_boxes.push_back({r.x, r.y, r.w, r.h});
                 g.panel(r, ui::theme::surface.alpha(200), ui::theme::accent, h * 0.5f);
                 g.text(ui::Font::Pixel, r.x + g.px(14), r.y + g.px(7), label, ui::theme::text);
             }
@@ -3054,7 +3102,15 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < lines.size(); ++i) SDL_RenderDebugText(app.renderer, 4, 4 + 10.0f * float(i), lines[i].c_str());
             SDL_SetRenderScale(app.renderer, 1, 1);
         }
+        if (app.cfg.show_fps && !app.menu.open()) draw_fps_counter(app, ow, oh);
         if (app.autotest_frames && app.m->frame_count + app.held_frames >= app.autotest_frames) {
+            // For tests of SHOW FPS (issue #54): where the counter is, and the
+            // game's own picture, which it must leave alone.
+            if (app.cfg.show_fps && !app.menu.open())
+                LOGI("fps", "autotest: counter at %.0f,%.0f size %.0fx%.0f in %dx%d", double(app.fps_box.x),
+                     double(app.fps_box.y), double(app.fps_box.w), double(app.fps_box.h), ow, oh);
+            LOGI("app", "autotest: picture hash %016llx",
+                 (unsigned long long)image_hash(app.m->framebuffer, app.m->fb_width, app.m->fb_height, kScreenWidth));
             if (!app.autotest_shot.empty()) capture_output(app);
             if (app.menu.open()) {
                 // Where the menu's touch targets were, for tests of MENU SIZE
@@ -3099,6 +3155,12 @@ int main(int argc, char** argv) {
             double s = double(now - fps_t0) / double(freq);
             app.timing.render_fps = double(fps_frames) / s;
             app.timing.sim_fps = double(fps_sims) / s;
+            app.fps_stats.presented_fps = app.timing.render_fps;
+            app.fps_stats.emulated_fps = app.timing.sim_fps;
+            app.fps_stats.emu_avg_ms = fps_sims ? emu_sum_ms / double(fps_sims) : 0.0;
+            app.fps_stats.emu_worst_ms = emu_worst_frame_ms;
+            app.fps_stats.interpreter = !dispatch_snapshot().recompiled;
+            emu_sum_ms = emu_worst_frame_ms = 0;
             if (app.log_timing)
                 LOGI("timing", "frame %llu: %.1f presented/s, %.1f emulated/s, slowest pass %.1f ms (emulation %.1f, present %.1f)%s",
                      (unsigned long long)app.m->frame_count, app.timing.render_fps, app.timing.sim_fps, worst_pass,

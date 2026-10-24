@@ -33,6 +33,8 @@ add_executable(chaotix_tests
     test_ghost.cpp
     test_jukebox.cpp
     test_speedrun.cpp
+    test_fps_counter.cpp
+    test_divide.cpp
     test_netplay.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
@@ -91,6 +93,13 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_menu_size.py"
                         $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
             set_tests_properties(menu_size_rows_grow_and_stay_on_the_screen PROPERTIES TIMEOUT 900)
+            # SHOW FPS (issue #54): the counter is drawn by the host inside
+            # its box at the top right; the game's picture and every window
+            # pixel outside the box are as with it off.
+            add_test(NAME fps_counter_stays_in_its_box
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_fps_counter.py"
+                        $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
+            set_tests_properties(fps_counter_stays_in_its_box PROPERTIES TIMEOUT 1200)
         endif()
     endif()
     # Issue #35: ROM patches from the Mods folder, over data and over code.

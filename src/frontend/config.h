@@ -44,6 +44,9 @@ struct Config {
     WindowMode window_mode = WindowMode::Windowed;
     int window_scale = 3;
     bool vsync = true;
+    // SHOW FPS (issue #54): a small counter in a corner with the frame rates and
+    // the emulation time per frame (frontend/fps_counter.h). Off by default.
+    bool show_fps = false;
     bool widescreen = true;  // true widescreen in levels (margins follow AspectRatio)
     // Widescreen in the scenes kept 4:3 because they show glitches there: the
     // lobby and the INTRODUCTION Eggman scene.

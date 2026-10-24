@@ -2,6 +2,7 @@
 #include "log.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "runtime/patches.h"
+#include "runtime/divide.h"
 #include "cpu/sh2/sh2_interp.h"
 #include "runtime/sprite_record.h"
 #include <algorithm>
@@ -226,7 +227,7 @@ void Machine::run_slice(uint64_t end_mclk) {
     // 68000
     {
         ProfScope ps(profile, &stats.prof_ns[PROF_M68K]);
-        uint64_t target = end_mclk / 7;
+        uint64_t target = div_const<7>(end_mclk);
         if (target > m68k_clock) {
             int32_t budget = int32_t(target - m68k_clock);
             m68k.cycles = budget;
@@ -251,7 +252,7 @@ void Machine::run_slice(uint64_t end_mclk) {
         z80_sync(end_mclk);
     }
     // SH-2 master then slave (only after the 68K releases them from reset)
-    const uint64_t sh_target = end_mclk * 3 / 7;
+    const uint64_t sh_target = div_const<7>(end_mclk * 3);
     for (int c = 0; c < 2; ++c) {
         if (!boot_hle_done || !(mars.adapter_ctrl & 2)) { sh2_clock[c] = sh_target; continue; }
         if (sh_target <= sh2_clock[c]) continue;
@@ -275,7 +276,7 @@ void Machine::run_slice(uint64_t end_mclk) {
     uint64_t start = mclk;
     mclk = end_mclk;
     ProfScope ps(profile, &stats.prof_ns[PROF_AUDIO]);
-    if (boot_hle_done) pwm_advance(uint32_t((end_mclk * 3 / 7) - (start * 3 / 7)));
+    if (boot_hle_done) pwm_advance(uint32_t(sh_target - div_const<7>(start * 3)));
     audio_advance(end_mclk);
 }
 
@@ -301,7 +302,7 @@ void Machine::set_z80_busreq(bool requested) {
 }
 
 void Machine::audio_advance(uint64_t end_mclk) {
-    const uint64_t target = end_mclk / kMclkPerAudioSample;
+    const uint64_t target = div_const<kMclkPerAudioSample>(end_mclk);
     if (target <= audio_pos) return;
     const int n = int(target - audio_pos);
     audio_pos = target;

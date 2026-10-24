@@ -950,7 +950,9 @@ TEST(menu, options_is_split_into_pages_that_fit) {
         int rows = 0;
         const std::string first = m.selected_label();
         do { ++rows; m.on_key(SDLK_DOWN); } while (m.selected_label() != first && rows < 64);
-        CHECK(rows <= 10);
+        // Ten rows and BACK at most: VIDEO has that many since SHOW FPS
+        // (issue #54); a page longer than the screen scrolls (issue #49).
+        CHECK(rows <= 11);
         CHECK(m.on_key(SDLK_ESCAPE));
         CHECK_STR(m.page_name(), "options");
     }
@@ -1590,6 +1592,46 @@ TEST(menu_size, is_a_video_setting_and_is_kept) {
     CHECK_EQ(parse_menu_size("Extra Large"), 2);
     CHECK_EQ(parse_menu_size("large"), 1);
     CHECK_EQ(parse_menu_size("huge"), -1);
+}
+
+TEST(show_fps, is_a_video_setting_off_by_default_and_kept) {
+    // Issue #54: OPTIONS > VIDEO > SHOW FPS, OFF or ON, in [Video] ShowFps.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK(!cfg.show_fps);
+    Menu m;
+    m.bind(cfg);
+    open_category(m, "VIDEO");
+    CHECK(select_row(m, "SHOW FPS"));
+    CHECK_STR(m.selected_value(), "OFF");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK(cfg.show_fps);
+    CHECK_STR(m.selected_value(), "ON");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK(!cfg.show_fps);
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(cfg.show_fps);
+
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_show_fps_test.ini").string();
+    for (bool on : {true, false}) {
+        cfg.show_fps = on;
+        CHECK(cfg.save(path));
+        Config back;
+        back.set_defaults();
+        back.show_fps = !on;
+        CHECK(back.load(path));
+        CHECK_EQ(back.show_fps, on);
+    }
+    // Written as a [Video] key, and read from one.
+    std::FILE* f = std::fopen(path.c_str(), "w");
+    CHECK(f != nullptr);
+    if (!f) return;
+    std::fprintf(f, "[Video]\nShowFps = true\n");
+    std::fclose(f);
+    Config old;
+    CHECK(old.load(path));
+    CHECK(old.show_fps);
+    std::filesystem::remove(path);
 }
 
 namespace {

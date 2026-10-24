@@ -49,7 +49,62 @@ const uint8_t* sh2_host_ptr(int cpu, uint32_t addr) {
 
 #if CHAOTIX_HAVE_GENERATED
 
-std::unordered_map<uint32_t, recomp::M68kFn> g_m68k_map;
+// The block entry points, looked up on every dispatch. Open addressing in a
+// power-of-two table with a multiplicative hash: std::unordered_map reduces
+// its hash modulo a prime bucket count, a division per lookup, and 32-bit ARM
+// (armeabi-v7a) has no divide instruction, so that is a library call each
+// time (issue #54). Lookups find exactly what the map found.
+template <class V>
+class EntryTable {
+public:
+    void clear() {
+        keys_.clear();
+        vals_.clear();
+        shift_ = 32;
+        count_ = 0;
+    }
+    // Inserts or overwrites, as map[key] = v.
+    void set(uint32_t key, V v) {
+        if (key == kEmpty) return;  // not an address code can start at (odd)
+        if ((count_ + 1) * 2 > keys_.size()) grow();
+        uint32_t i = slot(key);
+        const uint32_t mask = uint32_t(keys_.size() - 1);
+        while (keys_[i] != kEmpty && keys_[i] != key) i = (i + 1) & mask;
+        if (keys_[i] == kEmpty) ++count_;
+        keys_[i] = key;
+        vals_[i] = v;
+    }
+    const V* find(uint32_t key) const {
+        if (keys_.empty() || key == kEmpty) return nullptr;
+        const uint32_t mask = uint32_t(keys_.size() - 1);
+        for (uint32_t i = slot(key);; i = (i + 1) & mask) {
+            if (keys_[i] == key) return &vals_[i];
+            if (keys_[i] == kEmpty) return nullptr;
+        }
+    }
+
+private:
+    static constexpr uint32_t kEmpty = 0xFFFFFFFFu;
+    uint32_t slot(uint32_t key) const { return shift_ >= 32 ? 0 : (key * 0x9E3779B1u) >> shift_; }
+    void grow() {
+        std::vector<uint32_t> keys = std::move(keys_);
+        std::vector<V> vals = std::move(vals_);
+        const size_t cap = keys.empty() ? 64 : keys.size() * 2;
+        keys_.assign(cap, kEmpty);
+        vals_.assign(cap, V{});
+        shift_ = 32;
+        for (size_t c = cap; c > 1; c >>= 1) --shift_;
+        count_ = 0;
+        for (size_t i = 0; i < keys.size(); ++i)
+            if (keys[i] != kEmpty) set(keys[i], vals[i]);
+    }
+    std::vector<uint32_t> keys_;
+    std::vector<V> vals_;
+    int shift_ = 32;
+    size_t count_ = 0;
+};
+
+EntryTable<recomp::M68kFn> g_m68k_map;
 
 struct Sh2FnState {
     recomp::Sh2Fn fn = nullptr;
@@ -58,7 +113,7 @@ struct Sh2FnState {
     bool valid[2] = {false, false};
 };
 std::vector<Sh2FnState> g_sh2_fns;
-std::unordered_map<uint32_t, uint32_t> g_sh2_map;  // pc -> index in g_sh2_fns
+EntryTable<uint32_t> g_sh2_map;  // pc -> index in g_sh2_fns
 
 inline recomp::M68kFn lookup_m68k(const m68k::State* c) {
     // The 68000 PC is 32 bits wide; generated code is keyed by the exact
@@ -67,8 +122,8 @@ inline recomp::M68kFn lookup_m68k(const m68k::State* c) {
     if (c->pc >> 24) return nullptr;
     uint32_t key = c->pc;
     if (key >= 0x900000 && key < 0xA00000) key |= uint32_t((g_m->mars.bank & 3) + 1) << 24;
-    auto it = g_m68k_map.find(key);
-    return it == g_m68k_map.end() ? nullptr : it->second;
+    const recomp::M68kFn* fn = g_m68k_map.find(key);
+    return fn ? *fn : nullptr;
 }
 
 
@@ -95,9 +150,9 @@ bool sh2_validate(Sh2FnState& s, int cpu) {
 }
 
 inline Sh2FnState* lookup_sh2(const sh2::State* c) {
-    auto it = g_sh2_map.find(c->pc);
-    if (it == g_sh2_map.end()) return nullptr;
-    Sh2FnState& s = g_sh2_fns[it->second];
+    const uint32_t* index = g_sh2_map.find(c->pc);
+    if (!index) return nullptr;
+    Sh2FnState& s = g_sh2_fns[*index];
     return sh2_validate(s, c->id) ? &s : nullptr;
 }
 
@@ -199,9 +254,9 @@ uint32_t sh2_code32(const sh2::State* c, uint32_t addr) {
 bool sh2_callee_valid(const sh2::State* c, uint32_t* cache) {
 #if CHAOTIX_HAVE_GENERATED
     if (!*cache) {
-        auto it = chaotix::g_sh2_map.find(c->pc);
-        if (it == chaotix::g_sh2_map.end()) return false;
-        *cache = it->second + 1;
+        const uint32_t* index = chaotix::g_sh2_map.find(c->pc);
+        if (!index) return false;
+        *cache = *index + 1;
     }
     return chaotix::sh2_validate(chaotix::g_sh2_fns[*cache - 1], c->id);
 #else
@@ -244,7 +299,7 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
         return st;
     }
     g_m68k_map.clear();
-    for (size_t i = 0; i < recomp::g_m68k_entry_count; ++i) g_m68k_map[recomp::g_m68k_entries[i].key] = recomp::g_m68k_entries[i].fn;
+    for (size_t i = 0; i < recomp::g_m68k_entry_count; ++i) g_m68k_map.set(recomp::g_m68k_entries[i].key, recomp::g_m68k_entries[i].fn);
     g_sh2_fns.clear();
     g_sh2_map.clear();
     std::map<recomp::Sh2Fn, uint32_t> index;
@@ -261,7 +316,7 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
             it = index.emplace(e.fn, uint32_t(g_sh2_fns.size())).first;
             g_sh2_fns.push_back(s);
         }
-        g_sh2_map[e.pc] = it->second;
+        g_sh2_map.set(e.pc, it->second);
     }
     for (size_t i = 0; i < recomp::g_sh2_range_count; ++i) {
         const recomp::CodeRange& r = recomp::g_sh2_ranges[i];

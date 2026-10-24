@@ -84,6 +84,7 @@ add_library(chaotix_runtime STATIC
     src/frontend/speedrun.cpp
     src/frontend/livesplit.cpp
     src/frontend/input_display.cpp
+    src/frontend/fps_counter.cpp
     src/frontend/backdrop.cpp
     src/frontend/portrait.cpp
     src/frontend/ghost.cpp
