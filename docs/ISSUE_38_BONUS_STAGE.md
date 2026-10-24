@@ -160,3 +160,100 @@ mode, zone and level stay the level's.
   `lockstep_results_screen_widescreen` (new, at 80 px margins).
 - The full `ctest` suite passes, golden frames included, and the 33-config
   lockstep sweep is bit-identical.
+
+## Issue #52: the bonus stage entered from a level stayed 4:3
+
+A player's bonus stage, reached from a giant ring in a level, was 4:3 on a
+recent version. The tests above only ever started the bonus stage from the
+stage select.
+
+### How a level enters it
+
+The giant ring is object `0x30` (`$8927CC`, in the object table at `$891D72`).
+It takes the player once they have 20 rings (`FFE008`), stores the
+toucher's character in `FFE048`, plays sound `$46` and calls the bonus stage
+(`$892970 jsr $8BCC9A`). Headless reaches it by turning the level's second
+object into a giant ring on the player:
+
+```
+chaotix_headless --stage 300:0:1:4:2:7:0 --wide 53 --trace-wide --frames 4500 \
+    --poke 1000:8046:00 --poke 1000:8047:30 --poke 1000:8068:00 \
+    --poke 1000:8048:01 --poke 1000:8049:08 --poke 1000:804C:06 --poke 1000:804D:6C \
+    --poke 1000:E008:00 --poke 1000:E009:32
+```
+
+(object `$FF8040`: id `0x30` at +6, +28 cleared so it sets itself up, X and Y
+at +8 and +C the player's, 50 rings). The bonus stage begins at frame 1080,
+ends at 3767 and hands back to the level.
+
+### What varies between visits
+
+- **The palette set** is the time of day, `FFDFF6 & 6` (`$8BCFCC`): four sets
+  of tunnel colours (MORNING purple, DAY green, SUNSET red, NIGHT blue), each
+  cycled. The picture, its rings and its radii are the same in all four, and
+  the stage select reaches every one (`--stage 300:9:L:T:...`, T = 0, 2, 4, 6):
+  all of them were already widened.
+- **The character** (`FFE048`, copied to `FFE038`) only chooses the ball's
+  art.
+- **What the level leaves behind.** The bonus stage sets up its own planes but
+  never writes VDP register 11, so it keeps the level's scroll modes. BOTANIC
+  BASE, SPEED SLIDER and TECHNO TOWER scroll by line (`0x03`); AMAZING ARENA
+  and MARINA MADNESS scroll as a whole (`0x00`).
+
+### Why it stayed 4:3
+
+`bonus_tunnel` refused any scroll mode but "the whole plane" (`reg[11] & 7`
+must be 0), so in three of the five zones the picture was never measured. The
+stage clears the whole scroll table, so the picture is as unscrolled as in the
+stage select; only the mode differs.
+
+### The fix
+
+- The check now reads plane A's scroll the way `Vdp::render_line` does, for
+  every line (per line or per 8 lines, as register 11 says) and, with
+  2-cell vertical scroll, every column, and requires all of them to be 0. It
+  runs after the corner cells, so it costs nothing in levels.
+- **Plane B in the margins.** Entered from a level, plane B's name table
+  beyond the stage's own 40 columns still holds whatever the level left in
+  that VRAM (in SPEED SLIDER: tile data, read as cells, many with the
+  priority bit). In the 4:3 picture those columns are never shown. In the
+  margins the rings are opaque but low priority, so high-priority leftovers
+  showed over them as white blocks. Where the margins carry the rings
+  (`radial_lut`), plane B is now left out: the stage's own plane B cells have
+  no priority bit and are wholly hidden behind the rings anyway.
+- 4:3 is untouched: the detector runs only with margins, and the renderer
+  change only where the rings are drawn into the margins.
+
+### Coverage
+
+Entered from level 1 of every zone at every time of day (18 of the 20 could
+be scripted this way; TECHNO TOWER at SUNSET and NIGHT has no second object
+to turn into a ring at frame 1000): before the fix BOTANIC BASE, SPEED SLIDER
+and TECHNO TOWER stayed 4:3 (0 widened frames), AMAZING ARENA and MARINA
+MADNESS were widened; after it all 18 are widened for the whole stage (2121
+frames, MARINA MADNESS 2090) with clean margins.
+
+The widened bonus stage's centre matches a 4:3 run's frame for frame when
+entered from a level too, until the SH-2's extra work beyond the 4:3 edges
+delays a frame buffer flip (frame 1270 of the run above); from there the two
+runs are a frame apart, as described for random input above. With the level
+played in 4:3 and only the bonus stage widened, the 68K work RAM stays
+identical until frame 3638.
+
+### Validation
+
+- `bonus_stage_from_a_level_is_widescreen` (new): margins live in the level,
+  in the bonus stage (from frame 1080 to 3767) and in the level again,
+  3783 frames in 3 stretches. Before the fix: 1096 frames in 2 stretches.
+- `bonus_stage_from_speed_slider_is_widescreen` (new), and
+  `vdp_widescreen.bonus_stage_rings_hide_plane_b_in_the_margins` (new, fails
+  without the renderer change).
+- `bonus_stage_from_a_level_centre_matches_4_3` (new, 654 frames, the level
+  and the bonus stage up to frame 1260) and `lockstep_bonus_stage_from_a_level`
+  (new, random input from frame 1100: the player leaves the bonus stage at
+  frame 2061 and plays on in the level).
+- `bonus_stage_L_at_time_T_is_widescreen` (new, both bonus stages at DAY,
+  SUNSET and NIGHT; MORNING is `bonus_stage_is_widescreen`) and
+  `bonus_stage_at_sunset_centre_matches_4_3` (new).
+- The full `ctest` suite passes and the 33-config lockstep sweep is
+  bit-identical.

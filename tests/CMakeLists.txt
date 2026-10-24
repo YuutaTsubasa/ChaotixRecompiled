@@ -406,6 +406,60 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --stage 300:9:0:0:2:7:0 --poke 600:DFDE:00 --poke 600:DFDF:18)
     set_tests_properties(bonus_stage_is_widescreen_in_the_level_mode PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "margins live from frame 4[5-6][0-9].*margins live for 11[0-9][0-9] frames in 1 stretches")
+    # Issue #52: entered from a level, the bonus stage stayed 4:3. It keeps
+    # the level's scroll mode, line scroll in most zones, which the tunnel
+    # check refused. Its palette set is the level's time of day (FFDFF6,
+    # $8BCFCC). A giant ring (object 0x30, $8927CC) is put on the player in
+    # BOTANIC BASE 1 at SUNSET, with 50 rings: the margins are live in the
+    # level, in the bonus stage (frames 1080 to 3767) and in the level again.
+    # Before the fix: 1094 frames in 2 stretches.
+    set(BONUS_FROM_LEVEL --stage 300:0:1:4:2:7:0 --poke 1000:8046:00 --poke 1000:8047:30 --poke 1000:8068:00
+        --poke 1000:8048:01 --poke 1000:8049:08 --poke 1000:804C:06 --poke 1000:804D:6C
+        --poke 1000:E008:00 --poke 1000:E009:32)
+    add_test(NAME bonus_stage_from_a_level_is_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4500 --wide 53 --trace-wide ${BONUS_FROM_LEVEL})
+    set_tests_properties(bonus_stage_from_a_level_is_widescreen PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "margins live from frame 5[5-6][0-9].*WIDE f=10[7-9][0-9] active=1.*WIDE f=37[0-9][0-9] active=0.*margins live for 3[6-9][0-9][0-9] frames in 3 stretches")
+    # SPEED SLIDER 1 at NIGHT: its VRAM left in plane B's unused columns has
+    # high-priority cells, which must not show over the rings in the margins
+    # (see also vdp_widescreen.bonus_stage_rings_hide_plane_b_in_the_margins).
+    add_test(NAME bonus_stage_from_speed_slider_is_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4500 --wide 53 --trace-wide
+                --stage 300:1:1:6:2:7:0 --poke 1000:95C6:00 --poke 1000:95C7:30 --poke 1000:95E8:00
+                --poke 1000:95C8:01 --poke 1000:95C9:56 --poke 1000:95CC:08 --poke 1000:95CD:CC
+                --poke 1000:E008:00 --poke 1000:E009:32)
+    set_tests_properties(bonus_stage_from_speed_slider_is_widescreen PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "margins live from frame 5[8-9][0-9].*WIDE f=10[7-9][0-9] active=1.*WIDE f=37[0-9][0-9] active=0.*margins live for 3[6-9][0-9][0-9] frames in 3 stretches")
+    # The centre matches a 4:3 machine's, the level and then the bonus stage,
+    # until frame 1270: there the SH-2's extra work beyond the 4:3 edges
+    # delays a frame buffer flip, as in the special stage and the bonus stage
+    # with random input (see docs/ISSUE_38_BONUS_STAGE.md), and the two runs
+    # are a frame apart.
+    add_test(NAME bonus_stage_from_a_level_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1260 --wide 53 --compare-native
+                --min-centre-frames 640 ${BONUS_FROM_LEVEL})
+    set_tests_properties(bonus_stage_from_a_level_centre_matches_4_3 PROPERTIES TIMEOUT 600)
+    # With random input from frame 1100 the player leaves the bonus stage at
+    # frame 2061 and is back in the level.
+    add_test(NAME lockstep_bonus_stage_from_a_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --wide 53 --lockstep ${BONUS_FROM_LEVEL}
+                --fuzz 5:1100:3000)
+    set_tests_properties(lockstep_bonus_stage_from_a_level PROPERTIES TIMEOUT 900)
+    # Every palette set (MORNING is bonus_stage_is_widescreen above), in both
+    # bonus stages.
+    foreach(bonus_time 2 4 6)
+        foreach(bonus_level 0 1)
+            add_test(NAME bonus_stage_${bonus_level}_at_time_${bonus_time}_is_widescreen
+                COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --trace-wide
+                        --stage 300:9:${bonus_level}:${bonus_time}:2:7:0 --fuzz 3:700:2400)
+            set_tests_properties(bonus_stage_${bonus_level}_at_time_${bonus_time}_is_widescreen PROPERTIES TIMEOUT 600
+                PASS_REGULAR_EXPRESSION "margins live from frame 4[5-6][0-9].*margins live for 1[3-9][0-9][0-9] frames in 1 stretches")
+        endforeach()
+    endforeach()
+    add_test(NAME bonus_stage_at_sunset_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --compare-native
+                --min-centre-frames 1900 --stage 300:9:0:4:4:3:0)
+    set_tests_properties(bonus_stage_at_sunset_centre_matches_4_3 PROPERTIES TIMEOUT 900)
     # Issue #39: the results screen after a cleared special stage stayed 4:3.
     # The stage is cut short (its rings, at SDRAM 0x7DF0, run out) and the
     # result it would store on reaching the goal is put where the 68K reads

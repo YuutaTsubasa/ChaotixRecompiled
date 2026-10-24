@@ -341,6 +341,21 @@ uint8_t plane_a_pixel(const Vdp& v, int x, int y) {
     return c ? uint8_t(((e >> 9) & 0x30) | c) : 0;
 }
 
+// Whether plane A is drawn unscrolled on every line and in every column of
+// the active screen, whatever the scroll modes (register 11).
+bool plane_a_unscrolled(const Vdp& v) {
+    const uint32_t hs = uint32_t(v.reg[13] & 0x3F) << 10;
+    const int lines = (v.reg[11] & 3) >= 2 ? kActiveLines : 1;
+    for (int y = 0; y < lines; ++y) {
+        const uint32_t a = hs + uint32_t((v.reg[11] & 3) == 2 ? (y & ~7) : y) * 4;
+        if (((v.vram[a & 0xFFFF] << 8) | v.vram[(a + 1) & 0xFFFF]) & 0x3FF) return false;
+    }
+    const int columns = (v.reg[11] & 4) ? 20 : 1;
+    for (int c = 0; c < columns; ++c)
+        if (v.vsram[2 * c] & 0x3FF) return false;
+    return true;
+}
+
 // Distance of screen pixel (x, y) from the screen's centre, in quarter pixels
 // (as Vdp::render_line measures it).
 int radius4(int x, int y) {
@@ -364,10 +379,8 @@ static_assert(sizeof(Machine::radial_lut) >= size_t(kRadialLen), "Machine::radia
 
 bool bonus_tunnel(const Machine& m, uint8_t* lut) {
     const Vdp& v = m.vdp;
-    // A 64x32-cell plane, scrolled as a whole, and not at all.
-    if (v.reg[16] != kLevelPlaneSize || (v.reg[11] & 7) != 0) return false;
-    const uint32_t hs = uint32_t(v.reg[13] & 0x3F) << 10;
-    if (v.vram[hs] || v.vram[hs + 1] || (v.vsram[0] & 0x3FF)) return false;
+    // A 64x32-cell plane.
+    if (v.reg[16] != kLevelPlaneSize) return false;
     // A quarter of a picture, mirrored into the other three: a cheap first
     // look at the corners' cells before the whole picture is measured.
     const uint32_t base = uint32_t(v.reg[2] & 0x38) << 10;
@@ -379,6 +392,11 @@ bool bonus_tunnel(const Machine& m, uint8_t* lut) {
     if (!(corner & 0x7FF) || cell(39, 0) != (corner ^ 0x0800) || cell(0, 27) != (corner ^ 0x1000) ||
         cell(39, 27) != (corner ^ 0x1800))
         return false;
+    // Not scrolled at all. In play the stage is called from inside a level
+    // and keeps the level's scroll modes, line scroll in most zones (issue
+    // #52), so every line's and every column's scroll is looked at, as
+    // Vdp::render_line reads them.
+    if (!plane_a_unscrolled(v)) return false;
     // Each radius's colour, by vote over the top left quarter of the picture
     // (it is drawn mirrored). Whole rings stop short of the corners (r 195).
     constexpr int kInPicture = 4 * 190;

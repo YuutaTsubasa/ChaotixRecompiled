@@ -134,3 +134,25 @@ TEST(vdp_widescreen, a_hidden_frame_sprite_is_not_drawn_but_still_collides) {
         CHECK_EQ(rgb[53 + 6], hide ? 0xFF00FF00u : red);
     }
 }
+
+TEST(vdp_widescreen, bonus_stage_rings_hide_plane_b_in_the_margins) {
+    // Issue #52: entered from a level, the bonus stage keeps the level's VRAM
+    // beyond its own 40 columns of plane B, high-priority cells included. In
+    // the margins the rings (low priority, opaque) must not be covered by
+    // them; in the 4:3 picture plane B is drawn as the game set it.
+    auto v = scene();
+    v.cram[33] = 0x00E0;  // palette 2, colour 1: green
+    const uint16_t high_b = 0x8000 | 0x4000 | 1;
+    for (int col : {10, 42, 63}) word(v, 0xA000 + 2 * uint32_t((line / 8) * 64 + col), high_b);
+    uint8_t lut[64];
+    std::fill(std::begin(lut), std::end(lut), uint8_t(1));  // red rings
+    v.radial_lut = lut;
+    v.radial_len = 64;
+    v.radial_cx2 = 320;
+    v.radial_cy2 = 224;
+    auto rgb = render(v, 53);
+    CHECK_EQ(rgb[53 + 10 * 8], 0xFF00FF00u);  // native: plane B's own cell
+    CHECK_EQ(rgb[53 + 42 * 8], red);          // right margin
+    CHECK_EQ(rgb[53 - 4], red);               // left margin (column 63)
+    CHECK_EQ(rgb[53 + 200], black);           // native: plane A as drawn
+}

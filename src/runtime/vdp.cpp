@@ -407,13 +407,18 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     render_plane(*this, line, true, a, xs, xe, win_x0, win_x1);
     if (win_x1 > win_x0) render_window(*this, line, a, xs, win_x0, win_x1);
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {
-        // The margins continue the scene's rings (see radial_lut).
+        // The margins continue the scene's rings (see radial_lut). The rings
+        // are opaque, and plane B (the scene's own cells stop at the 4:3
+        // edges) would only show over them where a cell left behind in its
+        // name table has the priority bit: the bonus stage, entered from a
+        // level, keeps the level's VRAM there (issue #52), so it is left out.
         const double dy = double(2 * line + 1 - radial_cy2);
         for (int x = xs; x < xe; ++x) {
             if (x == 0) x = width;
             const double dx = double(2 * x + 1 - radial_cx2);
             const int r4 = int(2.0 * std::sqrt(dx * dx + dy * dy));
             a[x - xs] = LinePix{radial_lut[r4 < radial_len ? r4 : radial_len - 1], 0};
+            b[x - xs] = LinePix{0, 0};
         }
     }
 
