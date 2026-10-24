@@ -79,6 +79,8 @@ people below. Thank you all: every report here led to a fix or a feature.
   slow PC ([#31](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/31)).
 - **[blueeeLove](https://github.com/blueeeLove)**: the Sonic CD touch layout
   ([#34](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/34)).
+- **[TramplinStu](https://github.com/TramplinStu)**: choosing no partner
+  ([#55](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/55)).
 - **[iisonic707ii-spec](https://github.com/iisonic707ii-spec)**: the special
   stage's black lines and its widescreen in play, and bonus stages entered
   from a level staying 4:3
