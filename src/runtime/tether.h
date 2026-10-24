@@ -122,6 +122,17 @@ uint16_t scaled_force(Strength s, uint16_t force);
 // Whether any setting differs from the original game.
 bool any(const Machine& m);
 
+// The PARTNER setting a frame is played with (issue #55), which the front end
+// puts in Machine::tether_partner: nothing changed in TIME ATTACK; SOLO where
+// the player picked NONE for a partner -- LEVEL SELECT's PARTNER card for that
+// session, or the lobby shortcuts' PARTNER (lobby::kPartnerNone) in story
+// mode -- whatever OPTIONS > GAMEPLAY says; otherwise GAMEPLAY's own setting.
+inline Partner partner_in_force(int gameplay, bool time_attack, bool picked_none) {
+    if (time_attack) return Partner::Normal;
+    if (picked_none) return Partner::Solo;
+    return gameplay > 0 && gameplay < kPartnerCount ? Partner(gameplay) : Partner::Normal;
+}
+
 // The hooks (called from patches::m68k_hook).
 void on_chars_update(Machine& m);
 void on_force(Machine& m, m68k::State* c);

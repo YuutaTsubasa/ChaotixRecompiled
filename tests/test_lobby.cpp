@@ -3,12 +3,14 @@
 // 68K work RAM. The ROM tests in CMakeLists.txt play it through.
 #include "runtime/lobby.h"
 
+#include "net/machine_game.h"
 #include "runtime/stage_select.h"
 #include "runtime/system.h"
 #include "test_framework.h"
 
 #include <algorithm>
 #include <memory>
+#include <string>
 
 using namespace chaotix;
 
@@ -93,4 +95,29 @@ TEST(lobby, off_writes_nothing_and_other_scenes_are_left_alone) {
     lobby::apply(*t);
     CHECK_EQ(rd16(*t, lobby::kPartner), 7u * 4);
     CHECK_EQ(rd16(*t, lobby::kTime), 3u);
+}
+
+TEST(lobby, none_keeps_the_game_partner_and_travels_to_a_netplay_guest) {
+    // Issue #55: NONE writes no partner (the front end plays the attractions
+    // SOLO instead), with a time chosen beside it or not ...
+    auto m = about_to_start(0, 1);
+    m->lobby_partner = lobby::kPartnerNone;
+    lobby::apply(*m);
+    CHECK_EQ(rd16(*m, lobby::kPartner), 7u * 4);
+    m->lobby_time = 2;
+    lobby::apply(*m);
+    CHECK_EQ(rd16(*m, lobby::kPartner), 7u * 4);
+    CHECK_EQ(rd16(*m, lobby::kTime), 5u);  // SUNSET, the half step kept
+    // ... and the host's settings carry it, with the SOLO it plays with.
+    m->tether_partner = 2;
+    const net::NetSettings host = net::NetSettings::of(*m);
+    net::NetSettings guest;
+    std::string why;
+    CHECK(guest.decode(host.encode(), &why));
+    CHECK_EQ(guest.lobby_partner, lobby::kPartnerNone);
+    CHECK_EQ(guest.tether_partner, 2);
+    auto g = std::make_unique<Machine>();
+    guest.apply(*g);
+    CHECK_EQ(g->lobby_partner, lobby::kPartnerNone);
+    CHECK_EQ(int(g->tether_partner), 2);
 }

@@ -2,6 +2,7 @@
 #include "frontend/backdrop.h"
 #include "frontend/ghost.h"
 #include "frontend/speedrun.h"
+#include "runtime/lobby.h"
 #include "runtime/tether.h"
 #include <algorithm>
 #include <cctype>
@@ -201,7 +202,7 @@ bool Config::load(const std::string& path) {
             else if (k == "StateSlot") state_slot = std::clamp(std::atoi(v.c_str()), 1, kStateSlots);
         } else if (section == "Lobby") {
             if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
-            else if (k == "Partner") lobby_partner = std::clamp(std::atoi(v.c_str()), -1, 7);
+            else if (k == "Partner") lobby_partner = std::clamp(std::atoi(v.c_str()), lobby::kPartnerNone, 7);
             else if (k == "Time") lobby_time = std::clamp(std::atoi(v.c_str()), -1, 3);
         } else if (section == "Tether") {
             // A name from the menu (NORMAL, WEAK, ...), any case, or its number.
@@ -254,6 +255,7 @@ bool Config::load(const std::string& path) {
             else if (k == "Player") ls_player = std::atoi(v.c_str());
             else if (k == "Combi") ls_combi = std::atoi(v.c_str());
             else if (k == "TwoPlayers") ls_two_players = parse_bool(v, ls_two_players);
+            else if (k == "NoPartner") ls_no_partner = parse_bool(v, ls_no_partner);
         } else if (section == "Debug") {
             if (k == "Overlay") debug_overlay = parse_bool(v, debug_overlay);
             else if (k == "UseRecompiledCode") use_recompiled = parse_bool(v, use_recompiled);
@@ -353,7 +355,8 @@ bool Config::save(const std::string& path) const {
                  rewind ? "true" : "false", kStateSlots);
     std::fprintf(f, "StateSlot = %d\n", state_slot);
     std::fprintf(f, "\n[Lobby]\n# Story mode: choose the partner and the time of day instead of the Combi Catcher and the clock.\n");
-    std::fprintf(f, "# Partner: -1 the catcher's, else 0 Mighty 2 Knuckles 3 Charmy 4 Vector 5 Bomb 6 Heavy 7 Espio.\n");
+    std::fprintf(f, "# Partner: -1 the catcher's, else 0 Mighty 2 Knuckles 3 Charmy 4 Vector 5 Bomb 6 Heavy 7 Espio;\n");
+    std::fprintf(f, "# -2 none (the attractions played as with [Tether] Partner = Solo, whatever that says).\n");
     std::fprintf(f, "# Time: -1 the game's own, else 0 morning 1 day 2 sunset 3 night.\n");
     std::fprintf(f, "Shortcuts = %s\nPartner = %d\nTime = %d\n", lobby_shortcuts ? "true" : "false", lobby_partner,
                  lobby_time);
@@ -389,6 +392,8 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Values are the game's own, as [TimeAttack]; Place 9 is the bonus stage, 10 a special stage.\n");
     std::fprintf(f, "Place = %d\nLevel = %d\nTime = %d\nPlayer = %d\nCombi = %d\nTwoPlayers = %s\n",
                  ls_place, ls_level, ls_time, ls_player, ls_combi, ls_two_players ? "true" : "false");
+    std::fprintf(f, "# NoPartner: play alone, as [Tether] Partner = Solo (one player, the five attractions only).\n");
+    std::fprintf(f, "NoPartner = %s\n", ls_no_partner ? "true" : "false");
     std::fprintf(f, "\n[Debug]\nOverlay = %s\nUseRecompiledCode = %s\n", debug_overlay ? "true" : "false", use_recompiled ? "true" : "false");
     std::fclose(f);
     return true;

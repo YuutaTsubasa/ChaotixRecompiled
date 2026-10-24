@@ -1,5 +1,6 @@
 #include "platform/menu.h"
 #include "runtime/tether.h"
+#include "runtime/lobby.h"
 
 #include <algorithm>
 #include <cmath>
@@ -544,7 +545,7 @@ void Menu::build_state_keys() {
     items_.push_back({"BACK", {}, [this](int) { set_page(Page::Controls); }});
 }
 
-void Menu::add_character_rows(int* player, int* combi) {
+void Menu::add_character_rows(int* player, int* combi, bool* no_partner) {
     using namespace stage_select;
     // The names are the ROM's, so a ROM patch that renames a character shows
     // here. The two character rows skip the gap in the game's table, which
@@ -567,10 +568,41 @@ void Menu::add_character_rows(int* player, int* combi) {
                       [player, name_of] { return name_of(*player); },
                       [player, step_character](int s) { if (s) step_character(*player, s); }});
     sc_.combi = combi;
+    sc_.no_partner = no_partner;
     sc_.combi_row = int(items_.size());
+    if (!no_partner) {
+        items_.push_back({"COMBI",
+                          [combi, name_of] { return name_of(*combi); },
+                          [combi, step_character](int s) { if (s) step_character(*combi, s); }});
+        return;
+    }
+    // LEVEL SELECT (issue #55): NONE after the last character, where it
+    // applies. The character picked before NONE stays in *combi: the request
+    // still names it, and stepping on from NONE starts from either end.
     items_.push_back({"COMBI",
-                      [combi, name_of] { return name_of(*combi); },
-                      [combi, step_character](int s) { if (s) step_character(*combi, s); }});
+                      [this, combi, name_of] { return showcase_no_partner() ? std::string("NONE") : name_of(*combi); },
+                      [this, combi, no_partner, step_character](int s) {
+                          if (!s) return;
+                          const bool offered = sc_.place && sc_.two_players &&
+                                               level_select::partner_none_offered(*sc_.place, *sc_.two_players);
+                          if (offered && *no_partner) {
+                              *no_partner = false;
+                              *combi = s > 0 ? kCharacterCount - 1 : 0;
+                              step_character(*combi, s > 0 ? 1 : -1);
+                              return;
+                          }
+                          *no_partner = false;
+                          const int before = *combi;
+                          step_character(*combi, s);
+                          // Past the last character (or back past the first):
+                          // NONE, in between.
+                          const bool wrapped = s > 0 ? *combi <= before : *combi >= before;
+                          if (offered && wrapped) {
+                              *combi = before;
+                              *no_partner = true;
+                          }
+                      },
+                      "1 player, the attractions: NONE plays alone (SOLO)"});
 }
 
 void Menu::add_players_row(bool* two_players) {
@@ -591,6 +623,11 @@ stage_select::Request Menu::showcase_request() const {
     r.combi = uint16_t(*sc_.combi);
     r.two_players = *sc_.two_players;
     return r;
+}
+
+bool Menu::showcase_no_partner() const {
+    return sc_.no_partner && *sc_.no_partner && !sc_.timed && sc_.place && sc_.two_players &&
+           level_select::partner_none_offered(*sc_.place, *sc_.two_players);
 }
 
 std::vector<int> Menu::showcase_levels() const {
@@ -643,14 +680,15 @@ void Menu::build_level_select() {
     items_.push_back({"AT-TIME",
                       [c] { return std::string(stage_select::kTimes[(c->ls_time >> 1) & 3]); },
                       [c](int s) { if (s) c->ls_time = ((c->ls_time / 2 + s + 4) % 4) * 2; }});
-    add_character_rows(&c->ls_player, &c->ls_combi);
+    add_character_rows(&c->ls_player, &c->ls_combi, &c->ls_no_partner);
     add_players_row(&c->ls_two_players);
     sc_.start_row = int(items_.size());
     items_.push_back({"START", {}, [this](int) {
         const stage_select::Request r = showcase_request();
         if (!level_select::valid(r)) return;
+        const bool solo = showcase_no_partner();
         close();
-        if (hooks_.start_level) hooks_.start_level(r);
+        if (hooks_.start_level) hooks_.start_level(r, solo);
     }, "practice: no clock, records or saving"});
     sc_.back_row = int(items_.size());
     items_.push_back({"BACK", {}, [this](int) { const Page back = return_to_; set_page(back); }});
@@ -1026,24 +1064,33 @@ void Menu::build_lobby() {
     items_.push_back({"SHORTCUTS", [c] { return on_off(c->lobby_shortcuts); },
                       [c](int s) { if (s) c->lobby_shortcuts = !c->lobby_shortcuts; },
                       "story mode, not TIME ATTACK"});
-    // -1 is the catcher; the gap in the game's table (slot 1) is skipped
-    // while it has only the placeholder for a name, as TIME ATTACK does.
+    // CATCHER (-1), the characters, then NONE (lobby::kPartnerNone, issue
+    // #55: the attractions played SOLO). The gap in the game's table (slot 1)
+    // is skipped while it has only the placeholder for a name, as TIME
+    // ATTACK does.
     items_.push_back({"PARTNER",
                       [c, names] {
+                          if (c->lobby_partner == lobby::kPartnerNone) return std::string("NONE");
                           return c->lobby_partner < 0 || c->lobby_partner >= kCharacterCount
                                      ? std::string("CATCHER")
                                      : names[size_t(c->lobby_partner)];
                       },
                       [c, names](int s) {
                           if (!s) return;
-                          for (int i = 0; i <= kCharacterCount; ++i) {
-                              c->lobby_partner += s;
-                              if (c->lobby_partner < -1) c->lobby_partner = kCharacterCount - 1;
-                              if (c->lobby_partner >= kCharacterCount) c->lobby_partner = -1;
-                              if (c->lobby_partner < 0 || !is_placeholder_name(names[size_t(c->lobby_partner)])) return;
+                          // As positions: 0 CATCHER, 1 .. kCharacterCount the
+                          // characters, kCharacterCount + 1 NONE.
+                          const int count = kCharacterCount + 2;
+                          int at = c->lobby_partner == lobby::kPartnerNone ? count - 1
+                                   : c->lobby_partner < 0 || c->lobby_partner >= kCharacterCount
+                                       ? 0
+                                       : c->lobby_partner + 1;
+                          for (int i = 0; i < count; ++i) {
+                              at = (at + (s > 0 ? 1 : -1) + count) % count;
+                              if (at == 0 || at == count - 1 || !is_placeholder_name(names[size_t(at - 1)])) break;
                           }
+                          c->lobby_partner = at == 0 ? -1 : at == count - 1 ? lobby::kPartnerNone : at - 1;
                       },
-                      "your own character keeps the catcher's"});
+                      "NONE: alone in the attractions (SOLO)"});
     items_.push_back({"TIME OF DAY",
                       [c] {
                           return c->lobby_time < 0 || c->lobby_time >= kTimeCount ? std::string("GAME")
@@ -2623,10 +2670,20 @@ void Menu::draw_showcase(ui::Ui& g) {
         const float bw = std::min(sprite_box, lying ? r.w * 0.4f : r.w - rp * 2);
         const SDL_FRect box = lying ? SDL_FRect{r.x + rp + mark, r.y + rp, bw, sprite_box}
                                     : SDL_FRect{r.x + (r.w - bw) * 0.5f, r.y + rp + lh_p + g.px(6), bw, sprite_box};
-        g.rect(box, ui::theme::surface.alpha(150), g.px(4));
+        // who < 0: PARTNER NONE (issue #55), an empty stand rather than a
+        // character -- the box dimmed, a faint frame where one would stand.
+        const bool none = who < 0;
+        g.rect(box, none ? ui::theme::background.alpha(110) : ui::theme::surface.alpha(150), g.px(4));
         float tw = 0, th = 0;
-        SDL_Texture* tex = hooks_.character_sprite ? hooks_.character_sprite(who, &tw, &th) : nullptr;
-        if (tex && tw > 0 && th > 0) {
+        SDL_Texture* tex = !none && hooks_.character_sprite ? hooks_.character_sprite(who, &tw, &th) : nullptr;
+        if (none) {
+            const float in = g.px(10);
+            g.outline({box.x + in, box.y + in, box.w - in * 2, box.h - in * 2}, ui::theme::outline, g.px(4),
+                      g.px(1.5f));
+            const float sw = g.text_width(Font::Pixel, "SOLO");
+            g.text_fit(Font::Pixel, box.x + std::max(in, (box.w - sw) * 0.5f), box.y + (box.h - lh_p) * 0.5f,
+                       box.w - in * 2, "SOLO", ui::theme::text_faint);
+        } else if (tex && tw > 0 && th > 0) {
             // One whole multiple of their pixels for every character (from
             // the largest), standing on the box's floor.
             const float fit = std::min((box.w - g.px(8)) / sprite_w, (box.h - g.px(8)) / sprite_h);
@@ -2656,7 +2713,8 @@ void Menu::draw_showcase(ui::Ui& g) {
         }
         g.text_fit(Font::Pixel, tx, ty, tr - tx, caption, sel ? ui::theme::text_dim : ui::theme::text_faint);
         const float lx = lying ? tx : r.x + rp;
-        const std::string name = who >= 0 && who < int(names.size()) ? names[size_t(who)] : std::string("?");
+        const std::string name = none ? std::string("NONE")
+                                 : who < int(names.size()) ? names[size_t(who)] : std::string("?");
         g.text(Font::Pixel, lx, ny, "<", sel ? acc : ui::theme::text_faint);
         g.text(Font::Pixel, tr - aw, ny, ">", sel ? acc : ui::theme::text_faint);
         const float room = tr - aw - g.px(8) - (lx + aw + g.px(8));
@@ -2756,7 +2814,8 @@ void Menu::draw_showcase(ui::Ui& g) {
             case kTime: draw_chips(r, times, time_l, selected_ == s.time_row); break;
             case kPlayer: draw_card(r, s.player_row, "PLAYER", *s.player, false); break;
             case kCombi:
-                draw_card(r, s.combi_row, *s.two_players ? "PARTNER  2P" : "PARTNER", *s.combi, true);
+                draw_card(r, s.combi_row, *s.two_players ? "PARTNER  2P" : "PARTNER",
+                          showcase_no_partner() ? -1 : *s.combi, true);
                 break;
             case kRecords:
                 if (s.timed) {
@@ -2795,8 +2854,14 @@ void Menu::draw_showcase(ui::Ui& g) {
                     g.rect(r, ui::theme::background.alpha(150), g.px(6));
                     g.outline(r, ui::theme::outline, g.px(6), g.px(1.5f));
                     g.text_fit(Font::Pixel, r.x + rp + mark, r.y + rp, r.w - rp * 2 - mark, "PRACTICE", acc);
+                    // With PARTNER NONE (issue #55), how the level is played,
+                    // or that the partner stays where NONE does not apply.
+                    const bool kept_none = s.no_partner && *s.no_partner && !showcase_no_partner();
                     g.text_fit(Font::Small, r.x + rp + mark, r.y + rp + lh_p + g.px(4), r.w - rp * 2 - mark,
-                               "No clock, records or saving.", ui::theme::text_dim);
+                               showcase_no_partner() ? "No partner: played as PARTNER SOLO."
+                               : kept_none           ? "NONE is for 1 player in the attractions."
+                                                     : "No clock, records or saving.",
+                               ui::theme::text_dim);
                 }
                 break;
             case kPlayers: draw_chips(r, players, players_l, selected_ == s.players_row); break;

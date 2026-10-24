@@ -6,7 +6,7 @@
 //                    [--interp]   (force interpreter even if generated code exists)
 //                    [--save-state FRAME:FILE] [--load-state FILE] [--state-hash-every N]
 //                    [--rewind INTERVAL[:BUDGET_MB]]   (issue #40, runtime/save_state.h)
-//                    [--lobby-partner ID] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
+//                    [--lobby-partner ID|none] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
 //                    [--tether-strength weak|normal|strong] [--tether-partner normal|follow|solo]
 //                    [--tether-at FRAME:STRENGTH:PARTNER]   (issue #43, runtime/tether.h)
 //                    [--mods-dir DIR [--mods-order A,B] [--mods-disable C] [--mods-no-loose]]
@@ -29,6 +29,7 @@
 #include "renderer/sprite_pack.h"
 #include "renderer/sprite_sheet.h"
 #include "renderer/tile_pack.h"
+#include "runtime/lobby.h"
 #include "runtime/mod_packs.h"
 #include "runtime/patches.h"
 #include "runtime/rewind.h"
@@ -437,6 +438,9 @@ int main(int argc, char** argv) {
     // reaches and ends is printed.
     bool level_select_on = false;
     level_select::Session ls;
+    // --level-select-none: and with PARTNER NONE (issue #55), so each session
+    // plays with the ring tether's PARTNER SOLO, as the app does it.
+    bool ls_solo = false;
     // --speedrun: the speedrun timer (frontend/speedrun.h) follows the session
     // as the frontend's does, on a clock of emulated frames (60 a second),
     // with the LiveSplit block published after every frame. --speedrun-start
@@ -487,6 +491,8 @@ int main(int argc, char** argv) {
     // character id, as FFE038/4) and --lobby-time T (0 MORNING .. 3 NIGHT)
     // stand in for the choices made on OPTIONS > EXTRAS > LOBBY. A recorded
     // session carries its own ("lobby FRAME PARTNER TIME" lines).
+    // --lobby-partner none (or -2, lobby::kPartnerNone, issue #55) is NONE:
+    // the attractions are played with the tether's PARTNER SOLO.
     int lobby_partner = -1, lobby_time = -1;
     std::map<uint64_t, std::pair<int, int>> replay_lobby;
     // Ring tether options (issue #43, runtime/tether.h): --tether-strength
@@ -681,7 +687,10 @@ int main(int argc, char** argv) {
         else if (a == "--three-button") six_button = 0;
         else if (a == "--audio") { want_audio = true; }
         else if (a == "--sram") sram_path = next();
-        else if (a == "--lobby-partner") lobby_partner = std::atoi(next().c_str());
+        else if (a == "--lobby-partner") {
+            const std::string v = next();
+            lobby_partner = v == "none" ? lobby::kPartnerNone : std::atoi(v.c_str());
+        }
         else if (a == "--lobby-time") lobby_time = std::atoi(next().c_str());
         else if (a == "--tether-strength" || a == "--tether-partner") {
             const bool strength = a == "--tether-strength";
@@ -794,6 +803,7 @@ int main(int argc, char** argv) {
                         replay_stages.size());
         }
         else if (a == "--level-select") level_select_on = true;
+        else if (a == "--level-select-none") level_select_on = ls_solo = true;
         else if (a == "--stage") {
             auto parts = split(next(), ':');
             if (parts.size() < 7) { std::fprintf(stderr, "bad --stage\n"); return 2; }
@@ -1082,11 +1092,25 @@ int main(int argc, char** argv) {
             if (x) { x->lobby_partner = partner; x->lobby_time = time; }
     };
     set_lobby(lobby_partner, lobby_time);
+    // The GAMEPLAY setting (as --tether-* and the tether events give it),
+    // and the one in force, as the app works it out each frame
+    // (tether::partner_in_force, issue #55): SOLO while a level select
+    // session with PARTNER NONE runs, or with the lobby shortcut's NONE.
+    int gameplay_partner = tether_partner;
     auto set_tether = [&](int strength, int partner) {
+        gameplay_partner = partner;
         for (Machine* x : {m.get(), ref.get(), nat.get()})
             if (x) { x->tether_strength = uint8_t(strength); x->tether_partner = uint8_t(partner); }
     };
     set_tether(tether_strength, tether_partner);
+    auto partner_in_force = [&](uint64_t frame) {
+        const bool picked_none = ls.solo_now() || (!ls.running && m->lobby_partner == lobby::kPartnerNone);
+        const int want = int(tether::partner_in_force(gameplay_partner, false, picked_none));
+        if (want == m->tether_partner) return;
+        for (Machine* x : {m.get(), ref.get(), nat.get()})
+            if (x) x->tether_partner = uint8_t(want);
+        std::printf("tether: partner %s from frame %llu\n", tether::kPartnerNames[want], (unsigned long long)frame);
+    };
     uint64_t start_frame = 0;
     if (!load_state_path.empty()) {
         std::vector<uint8_t> file;
@@ -1208,7 +1232,7 @@ int main(int argc, char** argv) {
             if (nat) { nat->stage_request = stage; nat->stage_pending = true; }
             stage_kick = 0;
             ta.begin(stage);
-            if (level_select_on) ls.begin(stage);
+            if (level_select_on) ls.begin(stage, ls_solo);
             if (!ghost_record_path.empty()) ghost_recorder.arm(stage);
         }
         // The same taps of Start the frontend gives a waiting request: the
@@ -1262,7 +1286,7 @@ int main(int argc, char** argv) {
                     ref->stage_pending = true;
                 }
                 ta.begin(q.request);
-                if (level_select_on) ls.begin(q.request);
+                if (level_select_on) ls.begin(q.request, ls_solo);
                 if (!ghost_record_path.empty()) ghost_recorder.arm(q.request);
                 stage_set = true;
                 stage_frame = f;
@@ -1272,6 +1296,7 @@ int main(int argc, char** argv) {
                 btn2 = uint16_t(replay[size_t(f)] >> 16);
             }
         }
+        partner_in_force(f);
         if (wide_at >= 0 && f == wide_at_frame) {
             m->wide_extra = wide_at;
             m->wide_extra_bottom = wide_at_bottom;

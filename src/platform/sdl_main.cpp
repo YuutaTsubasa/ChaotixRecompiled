@@ -31,6 +31,7 @@
 #include "platform/ui.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
+#include "runtime/lobby.h"
 #include "runtime/tether.h"
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
@@ -879,10 +880,17 @@ void apply_lobby_shortcuts(App& app) {
 
 // Issue #43: the ring tether options, set before each frame like the lobby
 // shortcuts. Off for TIME ATTACK runs, so their times compare like with like.
+// Issue #55: PARTNER NONE, picked on LEVEL SELECT's page for its session or
+// as the lobby shortcut (put in the machine just before, by
+// apply_lobby_shortcuts, which leaves it out for TIME ATTACK and LEVEL
+// SELECT), plays as PARTNER SOLO whatever GAMEPLAY says; once the session is
+// over, or the shortcut off, GAMEPLAY's own setting is back, since this is
+// worked out afresh every frame and the setting itself is never changed.
 void apply_tether(App& app) {
     const bool on = !app.ta.running;
+    const bool picked_none = app.ls.solo_now() || app.m->lobby_partner == lobby::kPartnerNone;
     const int strength = on ? std::clamp(app.cfg.tether_strength, 0, tether::kStrengthCount - 1) : 0;
-    const int partner = on ? std::clamp(app.cfg.tether_partner, 0, tether::kPartnerCount - 1) : 0;
+    const int partner = int(tether::partner_in_force(app.cfg.tether_partner, !on, picked_none));
     if (strength == app.m->tether_strength && partner == app.m->tether_partner) return;
     app.m->tether_strength = uint8_t(strength);
     app.m->tether_partner = uint8_t(partner);
@@ -2338,7 +2346,7 @@ int main(int argc, char** argv) {
             app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
                                            app.m->wide_extra_bottom, app.cfg.six_button});
         };
-        hooks.start_level = [&app](const stage_select::Request& r) {
+        hooks.start_level = [&app](const stage_select::Request& r, bool solo) {
             // Starting a stage on one side only would split the two games.
             if (app.net.on) { notice(app, "NETPLAY", "NOT DURING NETPLAY", "DISCONNECT FIRST."); return; }
             // LEVEL SELECT (issue #51): TIME ATTACK's hand-over, without its
@@ -2359,8 +2367,9 @@ int main(int argc, char** argv) {
             stop_ghost(app);
             // A speedrun going on is over: practice is not part of it.
             speedrun_reset(app);
-            app.ls.begin(r);
-            LOGI("stage", "level select: place %u level %u", unsigned(r.place), unsigned(r.level));
+            app.ls.begin(r, solo);
+            LOGI("stage", "level select: place %u level %u%s", unsigned(r.place), unsigned(r.level),
+                 app.ls.solo ? ", no partner" : "");
             app.recorded_stages.push_back({app.m->frame_count, r, app.m->wide_extra,
                                            app.m->wide_extra_bottom, app.cfg.six_button});
         };

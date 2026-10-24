@@ -20,8 +20,10 @@
 #include "platform/backdrops.h"
 #include "renderer/game_font.h"
 #include "runtime/character_mods.h"
+#include "runtime/lobby.h"
 #include "runtime/rom.h"
 #include "runtime/sprite_replace.h"
+#include "runtime/tether.h"
 #include "test_framework.h"
 
 using namespace chaotix;
@@ -765,7 +767,10 @@ TEST(menu, lobby_shortcuts_are_set_from_extras_and_kept) {
     CHECK(m.on_key(SDLK_LEFT));
     CHECK(m.on_key(SDLK_LEFT));
     CHECK_EQ(cfg.lobby_partner, -1);
-    CHECK(m.on_key(SDLK_LEFT));  // wraps to the last character
+    CHECK(m.on_key(SDLK_LEFT));  // wraps to NONE (issue #55), after the characters
+    CHECK_STR(m.selected_value(), "NONE");
+    CHECK_EQ(cfg.lobby_partner, lobby::kPartnerNone);
+    CHECK(m.on_key(SDLK_LEFT));  // the last character
     CHECK_STR(m.selected_value(), "ESPIO");
     CHECK(select_row(m, "TIME OF DAY"));
     CHECK_STR(m.selected_value(), "GAME");
@@ -788,6 +793,38 @@ TEST(menu, lobby_shortcuts_are_set_from_extras_and_kept) {
     CHECK_EQ(back.lobby_partner, 7);
     CHECK_EQ(back.lobby_time, 0);
     std::filesystem::remove(path);
+}
+
+TEST(menu, the_lobby_shortcut_partner_can_be_none) {
+    // Issue #55: CATCHER, the characters, NONE, round again; kept as -2.
+    Config cfg;
+    cfg.set_defaults();
+    cfg.lobby_shortcuts = true;
+    cfg.lobby_partner = stage_select::kEspio;
+    Menu m;
+    m.bind(cfg);
+    CHECK(m.show_page("lobby"));
+    CHECK(select_row(m, "PARTNER"));
+    CHECK_STR(m.selected_value(), "ESPIO");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "NONE");
+    CHECK_EQ(cfg.lobby_partner, lobby::kPartnerNone);
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_lobby_none.ini").string();
+    CHECK(cfg.save(path));
+    Config back;
+    CHECK(back.load(path));
+    CHECK_EQ(back.lobby_partner, lobby::kPartnerNone);
+    std::filesystem::remove(path);
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "CATCHER");
+    CHECK_EQ(cfg.lobby_partner, -1);
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "MIGHTY");
+    // NONE plays the attractions SOLO, whatever GAMEPLAY says; otherwise
+    // GAMEPLAY's setting applies.
+    CHECK(tether::partner_in_force(cfg.tether_partner, false, true) == tether::Partner::Solo);
+    CHECK(tether::partner_in_force(int(tether::Partner::Follow), false, true) == tether::Partner::Solo);
+    CHECK(tether::partner_in_force(int(tether::Partner::Follow), false, false) == tether::Partner::Follow);
 }
 
 TEST(menu, ring_tether_options_are_set_from_extras_and_kept) {
@@ -1739,7 +1776,7 @@ TEST(level_select, the_page_starts_the_level_chosen) {
     int started = 0, timed = 0;
     stage_select::Request got;
     Menu::Hooks h;
-    h.start_level = [&](const stage_select::Request& r) { ++started; got = r; };
+    h.start_level = [&](const stage_select::Request& r, bool) { ++started; got = r; };
     h.start_stage = [&](const stage_select::Request&) { ++timed; };
     m.set_hooks(h);
 
@@ -1829,6 +1866,145 @@ TEST(level_select, a_kept_choice_it_does_not_offer_is_put_right) {
     CHECK_EQ(cfg.ls_place, 10);
     CHECK_EQ(cfg.ls_level, 0);
 }
+
+// Issue #55: PARTNER NONE on LEVEL SELECT.
+TEST(level_select, partner_none_is_offered_after_the_characters_for_one_player) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    int started = 0;
+    bool solo = false;
+    stage_select::Request got;
+    Menu::Hooks h;
+    h.start_level = [&](const stage_select::Request& r, bool s) { ++started; got = r; solo = s; };
+    m.set_hooks(h);
+    CHECK(m.show_page("levelselect"));
+    CHECK(select_row(m, "COMBI"));
+    CHECK_STR(m.selected_value(), "ESPIO");
+    // Past the last character: NONE, then round to the first.
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "NONE");
+    CHECK(cfg.ls_no_partner);
+    CHECK_EQ(cfg.ls_combi, stage_select::kEspio);  // still the partner the request names
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "MIGHTY");
+    CHECK(!cfg.ls_no_partner);
+    // And back the other way: before the first character, NONE, then the last.
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "NONE");
+    CHECK_EQ(cfg.ls_combi, 0);
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "ESPIO");
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "NONE");
+    // START: a request with a partner the game accepts, and solo.
+    CHECK(select_row(m, "START"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_EQ(started, 1);
+    CHECK(solo);
+    CHECK_EQ(got.place, 0);
+    CHECK_EQ(got.combi, stage_select::kEspio);
+    CHECK(!got.two_players);
+    CHECK(level_select::valid(got));
+    // Kept.
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_level_select_none.ini").string();
+    CHECK(cfg.save(path));
+    Config back;
+    back.set_defaults();
+    CHECK(!back.ls_no_partner);
+    CHECK(back.load(path));
+    CHECK(back.ls_no_partner);
+    CHECK_EQ(back.ls_combi, stage_select::kEspio);
+    std::filesystem::remove(path);
+}
+
+TEST(level_select, partner_none_is_not_offered_with_two_players_or_outside_the_attractions) {
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    int started = 0;
+    bool solo = true;
+    stage_select::Request got;
+    Menu::Hooks h;
+    h.start_level = [&](const stage_select::Request& r, bool s) { ++started; got = r; solo = s; };
+    m.set_hooks(h);
+    // 2 PLAYERS: the characters only.
+    cfg.ls_two_players = true;
+    CHECK(m.show_page("levelselect"));
+    CHECK(select_row(m, "COMBI"));
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "MIGHTY");
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "ESPIO");
+    CHECK(!cfg.ls_no_partner);
+    // NONE kept from 1 PLAYER shows the partner the game gets, and START
+    // plays with it.
+    cfg.ls_no_partner = true;
+    CHECK_STR(m.selected_value(), "ESPIO");
+    CHECK(select_row(m, "START"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_EQ(started, 1);
+    CHECK(!solo);
+    CHECK(got.two_players);
+    // Back to 1 PLAYER, it is NONE again; in TRAINING, INTRODUCTION, the hub
+    // and the special and bonus stages it is not.
+    cfg.ls_two_players = false;
+    CHECK(m.show_page("levelselect"));
+    CHECK(select_row(m, "COMBI"));
+    CHECK_STR(m.selected_value(), "NONE");
+    for (int place : {5, 6, 7, 9, 10}) {
+        cfg.ls_place = place;
+        cfg.ls_level = level_select::first_level(place);
+        CHECK(m.show_page("levelselect"));
+        CHECK(select_row(m, "COMBI"));
+        CHECK_STR(m.selected_value(), "ESPIO");
+        CHECK(!level_select::partner_none_offered(place, false));
+    }
+    for (int place = 0; place < 5; ++place) {
+        CHECK(level_select::partner_none_offered(place, false));
+        CHECK(!level_select::partner_none_offered(place, true));
+    }
+    // Stepping there picks a character, and NONE is not among them.
+    CHECK(m.on_key(SDLK_RIGHT));
+    CHECK_STR(m.selected_value(), "MIGHTY");
+    CHECK(!cfg.ls_no_partner);
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK_STR(m.selected_value(), "ESPIO");
+}
+
+TEST(level_select, a_session_with_no_partner_plays_solo_only_while_it_runs) {
+    stage_select::Request r;  // BOTANIC BASE 1, one player
+    level_select::Session ls;
+    CHECK(!ls.solo_now());
+    ls.begin(r, true);
+    CHECK(ls.solo_now());
+    // GAMEPLAY's setting gives way to NONE, and is back once it is over.
+    CHECK(tether::partner_in_force(1, false, ls.solo_now()) == tether::Partner::Solo);
+    ls.cancel();
+    CHECK(!ls.solo_now());
+    CHECK(tether::partner_in_force(1, false, ls.solo_now()) == tether::Partner::Follow);
+    // Where NONE does not apply, the session keeps its partner.
+    r.place = 5;
+    r.level = 0;
+    ls.begin(r, true);
+    CHECK(!ls.solo_now());
+    r.place = 0;
+    r.level = 1;
+    r.two_players = true;
+    ls.begin(r, true);
+    CHECK(!ls.solo_now());
+    r.two_players = false;
+    ls.begin(r, false);
+    CHECK(!ls.solo_now());
+    // And TIME ATTACK never changes anything.
+    CHECK(tether::partner_in_force(2, true, true) == tether::Partner::Normal);
+    CHECK(tether::partner_in_force(2, false, false) == tether::Partner::Solo);
+    CHECK(tether::partner_in_force(0, false, false) == tether::Partner::Normal);
+    CHECK(tether::partner_in_force(9, false, false) == tether::Partner::Normal);
+}
+
 
 // ---------------------------------------------------------------------------
 // The zone showcase: TIME ATTACK and LEVEL SELECT's layout (issue #53)
@@ -1990,7 +2166,7 @@ TEST(showcase, the_keys_and_the_taps_make_the_same_request) {
         stage_select::Request got;
         int started = 0, timed = 0;
         Menu::Hooks hooks;
-        hooks.start_level = [&](const stage_select::Request& r) { ++started; got = r; };
+        hooks.start_level = [&](const stage_select::Request& r, bool) { ++started; got = r; };
         hooks.start_stage = [&](const stage_select::Request&) { ++timed; };
         m.set_hooks(hooks);
         CHECK(m.show_page("levelselect"));
@@ -2208,3 +2384,37 @@ TEST(showcase, stage_pictures_are_made_on_demand_and_cached) {
     std::filesystem::remove_all(dir, ec);
 }
 #endif
+
+TEST(level_select, the_no_partner_card_is_drawn_without_a_character) {
+    // The card asks for no sprite for NONE, at both window shapes, and the
+    // START tapped plays solo.
+    for (const auto& [w, h] : {std::pair{1280, 720}, std::pair{412, 860}}) {
+        Drawn d(w, h);
+        CHECK(d.ok);
+        Config cfg;
+        cfg.set_defaults();
+        cfg.ls_no_partner = true;
+        Menu m;
+        m.bind(cfg);
+        std::vector<int> asked;
+        int started = 0;
+        bool solo = false;
+        Menu::Hooks hooks;
+        hooks.character_sprite = [&](int who, float*, float*) -> SDL_Texture* { asked.push_back(who); return nullptr; };
+        hooks.start_level = [&](const stage_select::Request&, bool s) { ++started; solo = s; };
+        m.set_hooks(hooks);
+        CHECK(m.show_page("levelselect"));
+        CHECK(select_row(m, "COMBI"));
+        CHECK_STR(m.selected_value(), "NONE");
+        d.draw(m);
+        CHECK(!asked.empty());
+        for (int who : asked) CHECK(who >= 0);
+        const int start = index_of(m, "START");
+        d.draw(m);
+        const auto t = targets_of(m, start);
+        CHECK(!t.empty());
+        if (!t.empty()) tap_centre(d, m, t[0]);
+        CHECK_EQ(started, 1);
+        CHECK(solo);
+    }
+}

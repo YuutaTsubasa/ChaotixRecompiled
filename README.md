@@ -229,8 +229,10 @@ too, so finishing a level writes nothing to your DATA slots. When the level
 is over -- the game sends you to its lobby, or a special stage ends -- you are
 brought back to the LEVEL SELECT page; in WORLD ENTRANCE you play on until
 you go BACK TO TITLE. Loading a save state from story mode (one with a DATA
-slot) during it lets that game go on as it was. The choice is kept apart
-from TIME ATTACK's, in `[LevelSelect]`. See
+slot) during it lets that game go on as it was. With 1 PLAYER, in the five
+attractions, PARTNER also offers NONE: the level is played alone, as with
+GAMEPLAY > PARTNER SOLO (below), for that level only. The choice is kept
+apart from TIME ATTACK's, in `[LevelSelect]`. See
 [docs/LEVEL_SELECT.md](docs/LEVEL_SELECT.md).
 
 CONTROLS gives each player a device of its own: AUTO (the keyboard and any
@@ -342,14 +344,16 @@ while you walk the lobby:
 | Field | What it does |
 | --- | --- |
 | SHORTCUTS | OFF (the default) is the game as it was |
-| PARTNER | CATCHER, or Mighty, Knuckles, Charmy Bee, Vector, Bomb, Heavy or Espio |
+| PARTNER | CATCHER, or Mighty, Knuckles, Charmy Bee, Vector, Bomb, Heavy or Espio, or NONE |
 | TIME OF DAY | GAME, or Morning, Day, Sunset, Night |
 
 The choice is put into the game each time it starts the lobby or one of the
 five attractions, so the next one you enter has them. Both are things the
 game itself produces, and your progress saves into your DATA slot as usual.
-Choosing your own character as the partner keeps the catcher's. TIME ATTACK
-has its own choices and ignores these. See
+Choosing your own character as the partner keeps the catcher's. NONE plays
+the attractions alone, as GAMEPLAY > PARTNER SOLO does (below), whatever
+GAMEPLAY says; with any other PARTNER, GAMEPLAY's setting applies. TIME
+ATTACK has its own choices and ignores these. See
 [docs/LOBBY_SHORTCUTS.md](docs/LOBBY_SHORTCUTS.md).
 
 ## Speedrun tools
@@ -389,8 +393,9 @@ hit without rings ends the run, as for Sonic. The lifts that wait for both
 characters take you alone. If anything else needs two, hold CALL (A) for
 half a second: your partner comes back for the rest of that life.
 
-TIME ATTACK always plays the original tether, and achievements are not
-earned while any of these is changed. See
+NONE as the partner on LEVEL SELECT or in the lobby shortcuts is the same
+SOLO. TIME ATTACK always plays the original tether, and achievements are not
+earned while any of these is changed (NONE included). See
 [docs/RING_TETHER.md](docs/RING_TETHER.md) for how the tether works.
 
 ## Netplay (online two-player)
@@ -572,7 +577,7 @@ open your game is held, untouched, and it carries on when you leave. See
   `--record-input`, so that something only a person can do — finishing a level,
   say — can be studied here as often as needed. `--level-select` makes the
   requests LEVEL SELECT ones and prints the scene reached and when the level
-  is over. `--lobby-partner ID` and
+  is over (`--level-select-none`: with PARTNER NONE). `--lobby-partner ID|none` and
   `--lobby-time 0-3` stand in for the lobby shortcuts' choices.
 - `chaotix_headless --ghost-record FILE` writes a `--stage` or replayed run
   as a TIME ATTACK ghost when it ends, and `--ghost FILE` races one, drawn

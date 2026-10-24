@@ -38,6 +38,14 @@ constexpr uint32_t kTime = 0xDFF6;     // word: bits 1-2 the time of day, bit 0 
 
 constexpr int kTimeCount = 4;          // MORNING, DAY, SUNSET, NIGHT (stage_select::kTimes)
 
+// The PARTNER shortcut's NONE (issue #55), in Machine::lobby_partner: no
+// partner to put in place (the game keeps its own, as with -1, CATCHER), and
+// the front end plays the attractions' levels with the ring tether's PARTNER
+// SOLO (tether::partner_in_force), which sends whichever partner it is away.
+// apply() treats it as it treats -1; it is in the machine so that netplay's
+// host settings (net/machine_game.h) carry it to the other side as it is.
+constexpr int kPartnerNone = -2;
+
 // Whether the scene the dispatcher is about to start is one the choice is put
 // into: the lobby (WORLD ENTRANCE level 0) or a level of the five attractions
 // (places 0-4), in the level mode. INTRODUCTION and TRAINING keep their own
@@ -46,9 +54,9 @@ bool takes_choice(const Machine& m);
 
 // Writes Machine::lobby_partner and lobby_time into the game when
 // takes_choice. A partner that is the player's own character, or slot 1 (no
-// character), is left to the catcher; -1 leaves either alone. Called by the
-// patch hook at the mode dispatcher, on every machine alike, so lockstep
-// still compares like with like.
+// character), is left to the catcher; -1 (or kPartnerNone for the partner)
+// leaves either alone. Called by the patch hook at the mode dispatcher, on
+// every machine alike, so lockstep still compares like with like.
 void apply(Machine& m);
 
 } // namespace lobby

@@ -25,6 +25,7 @@ What differs is the frontend (`frontend/level_select.h`, `platform/sdl_main.cpp`
 | Awards | yes | no |
 | Save states, rewind, fast-forward | no | yes |
 | Lobby shortcuts | off | off (the page picks the partner and time) |
+| PARTNER: NONE | no (records are with the game's rules) | 1 player, the five attractions |
 | DATA slot | NO SAVE | NO SAVE |
 | When the level is over | back to the page, with the time | back to the page |
 
@@ -36,6 +37,37 @@ the level and the time, the two characters' cards, PLAYERS and START. Where
 TIME ATTACK has its records card, LEVEL SELECT says "practice: no clock,
 records or saving". The hub and the bonus stage have one level each, shown
 as a single chip.
+
+## PARTNER: NONE (issue #55)
+
+With 1 PLAYER, in the five attractions' levels (BOTANIC BASE .. MARINA
+MADNESS), PARTNER goes on past the last character to NONE (and back from
+the first). The level is then played alone: the session runs with the ring
+tether's PARTNER SOLO (docs/RING_TETHER.md), which sends the partner away the
+way the Combi Catcher does and keeps it away; holding CALL still brings it
+back for that life. The card shows NONE over an empty, dimmed stand with
+"SOLO" in it, and the note under it says "No partner: played as PARTNER
+SOLO."
+
+- The game still needs a partner to load the level, so the request names the
+  one picked before NONE (`Config::ls_combi`, kept beside
+  `Config::ls_no_partner`), which SOLO then sends away.
+- Only where SOLO applies. TRAINING, INTRODUCTION, the hub and the special
+  and bonus stages keep their partner (SOLO is for the attractions' levels),
+  and SOLO is for one player, so NONE is not offered there or with 2
+  PLAYERS: the card shows the partner the game gets, and a NONE kept from
+  before says "NONE is for 1 player in the attractions." until a place and
+  PLAYERS it applies to are picked again (then it is NONE again).
+- For that session only: `level_select::Session::solo` says so, and
+  `apply_tether` (`sdl_main.cpp`) plays SOLO while it runs, whatever OPTIONS
+  > GAMEPLAY > PARTNER says (`tether::partner_in_force`). The GAMEPLAY
+  setting is never changed, so it is back from the frame the session ends.
+- Fairness is SOLO's (and LEVEL SELECT keeps no awards or records anyway):
+  awards pause and a speedrun run is not kept as a best. Not during netplay,
+  like the rest of LEVEL SELECT. Not in TIME ATTACK, whose records are with
+  the game's own rules.
+
+Config: `[LevelSelect] NoPartner = true`.
 
 ## What is offered
 
@@ -93,4 +125,15 @@ nothing was written to it), and opens the LEVEL SELECT page again.
     level select: reached scene MODE:ZONE:LEVEL at frame N, save slot FFFF
     level select: the level is over at frame N (mode M zone Z level L)
 
-with the scene as `patches::scene_key` has it.
+with the scene as `patches::scene_key` has it. `--level-select-none` is the
+same with PARTNER NONE: the tether's PARTNER in force is printed when it
+changes,
+
+    tether: partner SOLO from frame N
+
+and goes back to the `--tether-partner` setting when the session is over.
+`level_select_partner_none_plays_alone` (BOTANIC BASE 1: Espio sent away and
+not drawn, lockstep) and `level_select_partner_none_ends_with_the_session`
+(random play with no rings dies, which sends the player to the lobby and
+ends the session; from that frame the partner is FOLLOW, the GAMEPLAY
+setting given, again) test it.

@@ -209,8 +209,10 @@ public:
     // Lobby shortcuts (issue #44, runtime/lobby.h): the partner (character
     // id) and time of day (0-3) the player chose, put into the game by the
     // same hook each time it starts the lobby or an attraction; -1 leaves
-    // the game's own. A setting like the widescreen ones: machines compared
-    // in lockstep must have the same values.
+    // the game's own, and so does lobby::kPartnerNone (-2, NONE: the front
+    // end plays the attractions SOLO, issue #55). A setting like the
+    // widescreen ones: machines compared in lockstep must have the same
+    // values.
     int lobby_partner = -1;
     int lobby_time = -1;
     // Ring tether options (issue #43, runtime/tether.h): tether::Strength

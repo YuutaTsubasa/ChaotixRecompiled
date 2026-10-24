@@ -804,6 +804,42 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --peek-every 3100:AE0F:1 --peek-every 3500:FDC5:1 --peek-every 4700:DFF2:2)
     set_tests_properties(tether_solo_finishes_a_level PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "peek 3100 AE0F 14\n.*peek 3500 FDC5 FF\n.*peek 4700 DFF2 0007\n.*lockstep: 4700 frames bit-identical")
+    # PARTNER NONE (issue #55). From LEVEL SELECT, BOTANIC BASE 1 alone: the
+    # session plays SOLO whatever GAMEPLAY says (FOLLOW here), so Espio is
+    # sent away and not drawn, as in tether_solo_leaves_the_player_alone, and
+    # lockstep holds.
+    add_test(NAME level_select_partner_none_plays_alone
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1000 --lockstep --level-select-none
+                --stage 300:0:1:0:2:7:0 --press 880:right:200 --tether-partner follow --sprites-log 1000
+                --peek-every 1000:AE0C:2 --peek-every 1000:AE0F:1 --peek-every 1000:FCEA:1)
+    set_tests_properties(level_select_partner_none_plays_alone PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "tether: partner SOLO from frame 300\n.*bank   2 frame .*peek 1000 AE0C 3460\npeek 1000 AE0F 14\npeek 1000 FCEA 04\n.*lockstep: 1000 frames bit-identical"
+        FAIL_REGULAR_EXPRESSION "bank   7 frame|bank  15 frame|bank  29 frame")
+    # And once the session is over, GAMEPLAY's own setting is back. Alone, a
+    # hit without rings is fatal, and a death sends the player to the lobby
+    # (Chaotix has no lives), which ends the session: random play with the
+    # rings kept at none dies at frame 1948, and from then the partner is
+    # FOLLOW again.
+    set(_no_rings "")
+    foreach(_f RANGE 400 2000 50)
+        list(APPEND _no_rings --poke ${_f}:E009:00)
+    endforeach()
+    add_test(NAME level_select_partner_none_ends_with_the_session
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2100 --lockstep --level-select-none
+                --stage 300:0:1:0:2:7:0 --fuzz 5:700:6000 ${_no_rings} --tether-partner follow)
+    set_tests_properties(level_select_partner_none_ends_with_the_session PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "tether: partner SOLO from frame 300\n.*level select: the level is over at frame 1948 \\(mode 0018 zone 7 level 0\\).*tether: partner FOLLOW from frame 1948\n.*lockstep: 2100 frames bit-identical")
+    # The lobby shortcut's NONE: the walk into BOTANIC BASE above, and the
+    # level starts with the game's partner (Espio, FFE03A = 7 x 4) sent away
+    # as SOLO does it, whatever GAMEPLAY says.
+    add_test(NAME lobby_shortcut_partner_none_plays_the_attractions_alone
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2600 --lockstep ${LOBBY_WALK}
+                --lobby-partner none --lobby-time 3 --tether-partner follow --sprites-log 2600
+                --peek-every 2600:E038:4 --peek-every 2600:DFF2:6 --peek-every 2600:AE0F:1 --peek-every 2600:FCEA:1)
+    set_tests_properties(lobby_shortcut_partner_none_plays_the_attractions_alone PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "tether: partner SOLO from frame 0\n.*bank   2 frame .*peek 2600 E038 0008001C\npeek 2600 DFF2 000000010006\npeek 2600 AE0F 14\npeek 2600 FCEA 04\n.*lockstep: 2600 frames bit-identical"
+        FAIL_REGULAR_EXPRESSION "bank   7 frame|bank  15 frame|bank  29 frame")
+
     # Long play in each mode with random input: no divergence between the
     # interpreter and the recompiled code, and the level still running at the
     # end (game mode $18, BOTANIC BASE 1).

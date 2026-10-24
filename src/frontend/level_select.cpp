@@ -62,9 +62,14 @@ bool valid(const stage_select::Request& r) {
     return has_level(int(r.place), int(r.level)) && stage_select::valid(r);
 }
 
-void Session::begin(const stage_select::Request& r) {
+bool partner_none_offered(int place, bool two_players) {
+    return !two_players && place >= 0 && place < kAttractions;
+}
+
+void Session::begin(const stage_select::Request& r, bool solo_) {
     running = true;
     request = r;
+    solo = solo_ && partner_none_offered(int(r.place), r.two_players);
     reached = false;
     scene = 0;
     reached_frame = 0;

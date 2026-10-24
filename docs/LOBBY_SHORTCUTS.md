@@ -122,6 +122,37 @@ in save states (the app gives it before every frame), and a session recording
 carries each change as a `lobby FRAME PARTNER TIME` line that
 `--replay-input` applies.
 
+### PARTNER: NONE (issue #55)
+
+The PARTNER row goes CATCHER, the characters, NONE. NONE is story mode
+played alone: the attractions' levels are played with the ring tether's
+PARTNER SOLO (docs/RING_TETHER.md), which sends whichever partner the game
+has away the way the Combi Catcher does and keeps it away (hold CALL to bring
+it back for that life). It writes no partner: `lobby::apply` leaves `FFE03A`
+to the game, as CATCHER does, so the lobby and the catcher work as before
+and the partner walks with you there; only in an attraction's level is it
+sent away. In INTRODUCTION, TRAINING, the special and bonus stages it stays,
+as with GAMEPLAY > PARTNER SOLO, which applies in the attractions only.
+
+Precedence: with LOBBY SHORTCUTS on and PARTNER NONE, the attractions are
+played SOLO whatever OPTIONS > GAMEPLAY > PARTNER says; otherwise (the
+shortcuts off, or any other PARTNER) GAMEPLAY's setting applies. GAMEPLAY's
+own setting is never changed, so turning the shortcut off (or picking a
+character) brings it back from the next frame. TETHER strength is
+GAMEPLAY's either way. Not in TIME ATTACK (the shortcuts are off there) and
+not in LEVEL SELECT, whose own PARTNER card offers NONE (docs/LEVEL_SELECT.md).
+Two players: SOLO is for one player, so NONE then does nothing.
+
+How: NONE is `lobby::kPartnerNone` (-2) in `Machine::lobby_partner`, given
+before every frame like any other choice. `apply_tether` in `sdl_main.cpp`
+works out the PARTNER to play with each frame through
+`tether::partner_in_force` (SOLO when NONE is picked, else GAMEPLAY's) and
+puts that in `Machine::tether_partner`, so the emulation sees an ordinary
+SOLO. Being in the machine, both travel to a netplay guest with the host's
+settings (`net::NetSettings`: `lobby=-2,..;tether=..,2`). Fairness is SOLO's:
+awards pause and a speedrun run is not kept as a best while it is in force
+(`tether::any`).
+
 Considered and not done: a menu popping up when the catcher starts, with the
 claw made to yield the pick (overriding `d0` at `$8A9960`). The claw would
 still lift the capsule it grabbed, showing one character and handing over
@@ -133,12 +164,21 @@ a setting applied at the dispatcher has neither problem.
 OPTIONS > EXTRAS > LOBBY SHORTCUTS opens a page of its own (like CHEATS), so
 EXTRAS stays short enough for a phone. It is the ordinary menu, so keyboard,
 gamepad and touch all work, and it is reachable from the pause menu. Config:
-`[Lobby] Shortcuts / Partner / Time` (-1 for CATCHER / GAME).
+`[Lobby] Shortcuts / Partner / Time` (-1 for CATCHER / GAME; Partner -2
+for NONE).
 
 ## Tests
 
 - Unit: `lobby.*` (which scenes take the choice, what is written, what is
-  left alone) and `menu.lobby_shortcuts_are_set_from_extras_and_kept`.
+  left alone; NONE writes nothing and travels in the netplay host settings),
+  `menu.lobby_shortcuts_are_set_from_extras_and_kept` and
+  `menu.the_lobby_shortcut_partner_can_be_none` (the cycle, the config round
+  trip of -2, the precedence over GAMEPLAY).
+- `lobby_shortcut_partner_none_plays_the_attractions_alone`: the walk below
+  with PARTNER NONE (and GAMEPLAY > PARTNER FOLLOW): the tether plays SOLO
+  from the start, BOTANIC BASE 1 starts with the game's partner (Espio,
+  `FFE03A` = `1C`), which is then sent away (state `$14`, `FFFCEA` = 4) and
+  not drawn; lockstep bit-identical. Headless: `--lobby-partner none`.
 - `lobby_shortcuts_pick_the_partner_and_the_time`: WORLD ENTRANCE as story
   mode leaves it (DATA 1, every attraction at level 1), walked into BOTANIC
   BASE 1 with VECTOR and NIGHT chosen; the level runs with `FFE03A` = `10`,

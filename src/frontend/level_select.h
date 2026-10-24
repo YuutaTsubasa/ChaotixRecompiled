@@ -60,6 +60,16 @@ int step_level(int place, int level, int step);
 std::string level_label(int place, int level);
 bool valid(const stage_select::Request& r);
 
+// PARTNER: NONE (issue #55): play the level alone, the way OPTIONS > GAMEPLAY
+// > PARTNER SOLO does it (runtime/tether.h) -- the request still names a
+// partner, which the game needs to load the level, and the session is played
+// with SOLO, which sends that partner away and keeps it away. Offered where
+// SOLO applies: one player, in the five attractions' levels (places 0-4).
+// INTRODUCTION, TRAINING, the hub and the special and bonus stages keep
+// their partner, so it is not offered there.
+inline constexpr int kAttractions = 5;
+bool partner_none_offered(int place, bool two_players);
+
 // Following a level select session, once per emulated frame, to know when the
 // level is over. The game just moves on when it is, so this watches for the
 // scene it moves on to:
@@ -72,13 +82,20 @@ bool valid(const stage_select::Request& r);
 struct Session {
     bool running = false;
     stage_select::Request request;
+    // PARTNER: NONE was picked: the session plays with the ring tether's
+    // PARTNER SOLO, whatever OPTIONS > GAMEPLAY says (tether::partner_in_force);
+    // GAMEPLAY's own setting is back once the session is over.
+    bool solo = false;
     // The scene asked for has been reached, as patches::scene_key has it.
     bool reached = false;
     uint64_t scene = 0;
     uint64_t reached_frame = 0;
 
-    void begin(const stage_select::Request& r);
+    // solo is dropped where partner_none_offered says NONE does not apply.
+    void begin(const stage_select::Request& r, bool solo = false);
     void cancel() { running = false; }
+    // Whether the session is playing with PARTNER: NONE just now.
+    bool solo_now() const { return running && solo; }
     // Returns true on the frame the session ends; running is false after.
     bool update(const Machine& m);
 };

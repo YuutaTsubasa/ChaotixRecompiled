@@ -154,6 +154,10 @@ struct Config {
     int ls_player = 2;   // KNUCKLES
     int ls_combi = 7;    // ESPIO
     bool ls_two_players = false;
+    // PARTNER: NONE (issue #55): play alone, as PARTNER SOLO does, where
+    // level_select::partner_none_offered; ls_combi is still the partner the
+    // request names (the game needs one) and the one picked before NONE.
+    bool ls_no_partner = false;
     // [Cheats] (game/cheats.h): the built-in ones switched on, by key, and
     // Action Replay codes of the player's own ("FFE009:63 + FFADFC:01").
     std::set<std::string> cheats;
@@ -163,9 +167,11 @@ struct Config {
     bool rewind = rewind_default();
     int state_slot = 1;
     // [Lobby] Lobby shortcuts (issue #44, runtime/lobby.h): in story mode,
-    // the partner (a character id, -1 the Combi Catcher's) and the time of
-    // day (0 MORNING .. 3 NIGHT, -1 the game's own) each time the game
-    // starts the lobby or an attraction. Off: the game as it was.
+    // the partner (a character id, -1 the Combi Catcher's, -2 NONE --
+    // lobby::kPartnerNone, issue #55: the attractions played as with PARTNER
+    // SOLO, whatever [Tether] says) and the time of day (0 MORNING .. 3
+    // NIGHT, -1 the game's own) each time the game starts the lobby or an
+    // attraction. Off: the game as it was.
     bool lobby_shortcuts = false;
     int lobby_partner = -1;
     int lobby_time = -1;

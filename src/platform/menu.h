@@ -51,7 +51,9 @@ public:
         std::function<void(const stage_select::Request&)> start_stage;
         // LEVEL SELECT (issue #51, frontend/level_select.h): the same way in,
         // untimed and unrecorded, NO SAVE, back to the page when it is over.
-        std::function<void(const stage_select::Request&)> start_level;
+        // solo: PARTNER NONE (issue #55), the session played with the ring
+        // tether's PARTNER SOLO; the request still names a partner.
+        std::function<void(const stage_select::Request&, bool solo)> start_level;
         // The front menu was closed (Escape, the menu button or the pad's back
         // button) instead of START GAME: the player goes on from the game's
         // own title screen.
@@ -222,7 +224,9 @@ private:
     void build_level_select();
     // The PLAYER and COMBI rows and the PLAYERS row TIME ATTACK and LEVEL
     // SELECT share, editing the settings given.
-    void add_character_rows(int* player, int* combi);
+    // no_partner (LEVEL SELECT, issue #55): COMBI offers NONE after the
+    // characters where level_select::partner_none_offered.
+    void add_character_rows(int* player, int* combi, bool* no_partner = nullptr);
     void add_players_row(bool* two_players);
     // TIME ATTACK and LEVEL SELECT are one layout (issue #53), the zone
     // showcase: the stage's picture with the place's name over it and rows
@@ -239,6 +243,7 @@ private:
         int* player = nullptr;
         int* combi = nullptr;
         bool* two_players = nullptr;
+        bool* no_partner = nullptr;  // LEVEL SELECT's PARTNER: NONE
         int* ghost = nullptr;
         // The entries, by index into items_; -1 where the page has none.
         int place_row = -1, level_row = -1, time_row = -1, player_row = -1, combi_row = -1, best_row = -1,
@@ -247,6 +252,9 @@ private:
     bool is_showcase() const { return page_ == Page::TimeAttack || page_ == Page::LevelSelect; }
     // What START asks for, as the page stands.
     stage_select::Request showcase_request() const;
+    // And whether it is without a partner: NONE chosen, and offered for the
+    // place and PLAYERS chosen.
+    bool showcase_no_partner() const;
     // The levels the place offers, and how a chip names one.
     std::vector<int> showcase_levels() const;
     std::string showcase_level_label(int level) const;

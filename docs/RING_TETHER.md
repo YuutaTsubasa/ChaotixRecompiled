@@ -295,6 +295,22 @@ dozens of objects read `[FFE036]`; and a partner that stays in play but
 hidden -- it would still take hits, collect rings, trip switches and be
 grabbed by objects in the player's place.
 
+### NONE where the partner is picked (issue #55)
+
+SOLO can also be picked as a partner of NONE: on LEVEL SELECT's PARTNER card
+(for that session, 1 player, in the attractions' levels;
+docs/LEVEL_SELECT.md) and as the lobby shortcuts' PARTNER (story mode;
+docs/LOBBY_SHORTCUTS.md). Either way the game is still given a partner (the
+one picked before, or the game's own), and the frame is played with PARTNER
+SOLO whatever GAMEPLAY says: `tether::partner_in_force(gameplay,
+time_attack, picked_none)` is SOLO when NONE is picked, nothing changed in
+TIME ATTACK, and GAMEPLAY's setting otherwise. The app works it out before
+every frame (`apply_tether`) and never changes the GAMEPLAY setting, so that
+is back as soon as the session ends or the shortcut is off. TETHER strength
+stays GAMEPLAY's. The emulation sees an ordinary SOLO in
+`Machine::tether_partner`, so everything below (fairness, state, netplay)
+is SOLO's.
+
 ### Fairness
 
 - **TIME ATTACK** runs ignore the options (the app gives the machine the
@@ -302,7 +318,7 @@ grabbed by objects in the player's place.
   times and ghosts compare like with like.
 - **Achievements** are not earned while any option differs from the
   original, as with cheats; a speedrun with one on is not kept as a personal
-  best.
+  best. PARTNER NONE (above) counts as SOLO.
 - A recorded session (`--record-input`) keeps each change of the options
   (`tether FRAME STRENGTH PARTNER` lines) and replays with them.
 
