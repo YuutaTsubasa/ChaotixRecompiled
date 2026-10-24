@@ -80,8 +80,10 @@ people below. Thank you all: every report here led to a fix or a feature.
 - **[blueeeLove](https://github.com/blueeeLove)**: the Sonic CD touch layout
   ([#34](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/34)).
 - **[iisonic707ii-spec](https://github.com/iisonic707ii-spec)**: the special
-  stage's black lines and its widescreen in play
-  ([#21](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/21)).
+  stage's black lines and its widescreen in play, and bonus stages entered
+  from a level staying 4:3
+  ([#21](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/21),
+  [#52](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/52)).
 
 ## Thanks also to
 
