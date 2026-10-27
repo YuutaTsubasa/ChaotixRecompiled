@@ -3,6 +3,7 @@
 #include "cpu/sh2/sh2_interp.h"
 #include "runtime/log.h"
 #include <algorithm>
+#include <climits>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -15,6 +16,8 @@
 
 namespace recomp {
 int g_depth = 0;
+bool g_idle_skip = true;
+uint64_t g_idle_skipped[3] = {};
 }
 
 namespace chaotix {
@@ -265,6 +268,13 @@ bool sh2_callee_valid(const sh2::State* c, uint32_t* cache) {
 #endif
 }
 
+int32_t sh2_poll_repeats_slow(const sh2::State* c, uint32_t a, int size, int32_t at, int32_t cost) {
+    const int32_t last = chaotix::g_m->sh2_read_stable_to(c->id, a, size, at);
+    if (last == INT32_MIN) return INT32_MAX;
+    const int64_t span = int64_t(at) - last;  // 32-bit division below (armeabi-v7a)
+    return span > INT32_MAX ? INT32_MAX : int32_t(span) / cost;
+}
+
 int sh2_call_dynamic(sh2::State* c) {
 #if CHAOTIX_HAVE_GENERATED
     chaotix::Sh2FnState* s = chaotix::lookup_sh2(c);
@@ -287,6 +297,7 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
     RecompStatus st;
     g_m = &m;
     g_stats = DispatchStats{};
+    for (uint64_t& n : recomp::g_idle_skipped) n = 0;
     g_fallback.clear();
 #if CHAOTIX_HAVE_GENERATED
     if (!enable) {
@@ -377,6 +388,8 @@ DispatchSnapshot dispatch_snapshot() {
     return s;
 }
 
+void set_idle_skip(bool on) { recomp::g_idle_skip = on; }
+
 void print_recomp_stats(const Machine& m) {
     std::printf("cycles: 68K %llu, MSH2 %llu, SSH2 %llu\n", (unsigned long long)m.stats.m68k_cycles,
                 (unsigned long long)m.stats.msh2_cycles, (unsigned long long)m.stats.ssh2_cycles);
@@ -386,6 +399,13 @@ void print_recomp_stats(const Machine& m) {
                 pct(g_stats.m68k_native, g_stats.m68k_interp), pct(g_stats.sh2_native[0], g_stats.sh2_interp[0]),
                 pct(g_stats.sh2_native[1], g_stats.sh2_interp[1]), (unsigned long long)g_stats.sh2_validations,
                 (unsigned long long)g_stats.sh2_invalid);
+    if (g_installed) {
+        const uint64_t* sk = recomp::g_idle_skipped;
+        auto share = [](uint64_t a, uint64_t b) { return b ? 100.0 * double(a) / double(b) : 0.0; };
+        std::printf("wait loops fast-forwarded: 68K %.1f%%, MSH2 %.1f%%, SSH2 %.1f%% of cycles%s\n",
+                    share(sk[0], m.stats.m68k_cycles), share(sk[1], m.stats.msh2_cycles), share(sk[2], m.stats.ssh2_cycles),
+                    recomp::g_idle_skip ? "" : " (off)");
+    }
     if (!g_fallback.empty()) {
         std::vector<std::pair<uint64_t, uint64_t>> v(g_fallback.begin(), g_fallback.end());
         std::sort(v.begin(), v.end(), [](const auto& a, const auto& b) { return a.second > b.second; });

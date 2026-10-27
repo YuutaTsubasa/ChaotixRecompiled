@@ -1,8 +1,10 @@
 // SH-2 address space and the 32X system registers (shared with the 68K side).
 #include "system.h"
+#include "divide.h"
 #include "patches.h"
 #include "log.h"
 #include "sprite_record.h"
+#include <climits>
 #include <cstring>
 
 namespace chaotix {
@@ -178,6 +180,36 @@ uint32_t Machine::vdp32x_read(int who, uint32_t off) {
     }
     default: return 0;
     }
+}
+
+int32_t Machine::sh2_read_stable_to(int cpu, uint32_t a, int size, int32_t at) const {
+    // Only the 32X VDP registers, $4100-$41FF (mirrored every 16 bytes): reads
+    // have no side effects, and only CPUs write them, so in one CPU's slice
+    // nothing changes them but time, through the status word ($A): HBLK and
+    // PEN follow the reader's own position in the line (vdp32x_read).
+    // (Memory and the COMM ports, whose reads never change in a slice, are
+    // recomp::sh2_pure_load's.)
+    if ((a >> 29) > 1 || !sh2_slice_[cpu].running) return at;
+    const uint32_t p = a & 0x1FFFFFFF;
+    if (p < 0x4100 || p + uint32_t(size) > 0x4200) return at;
+    if (((p & 0xE) != 0xA) && !(size == 4 && (p & 0xE) == 0x8)) return INT32_MIN;
+    // The status word is a function of hblank alone within a slice (`line`,
+    // the frame buffer and the bitmap mode stay as they are), and hblank
+    // (pos >= 2600 || pos < 0) changes as pos passes 0 and then 2600.
+    const SliceInfo& s = sh2_slice_[cpu];
+    const uint64_t done = s.base + uint64_t(int64_t(s.budget) - at);  // SH-2 clock at `at`
+    const int64_t pos = int64_t(done * 7 / 3) - int64_t(line_start_mclk);
+    int64_t edge;
+    if (pos < 0) edge = 0;
+    else if (pos < 2600) edge = 2600;
+    else return INT32_MIN;
+    // The SH-2 clock x reaches the edge when x * 7 / 3 >= line_start + edge,
+    // i.e. x >= ceil(3 * (line_start + edge) / 7); one before that is the
+    // last clock with the value read at `at`.
+    const uint64_t n = 3 * (line_start_mclk + uint64_t(edge));
+    const uint64_t x_last = div_const<7>(n + 6) - 1;
+    const int64_t c_last = int64_t(s.base) + int64_t(s.budget) - int64_t(x_last);
+    return c_last < int64_t(INT32_MIN) ? INT32_MIN : int32_t(c_last);
 }
 
 void Machine::vdp32x_write(uint32_t off, uint32_t v, int size) {

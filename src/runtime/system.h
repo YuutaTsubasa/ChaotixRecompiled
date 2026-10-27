@@ -329,6 +329,12 @@ public:
     uint64_t m68k_now_mclk() const;
     uint64_t sh2_now_mclk(int cpu) const;
     int hpos_mclk() const;  // position in current line for 68K observers
+    // For the polling-loop fast-forward (recomp_api.h, issue #62): the lowest
+    // remaining cycle count (sh2[cpu].cycles) down to which a `size`-byte read
+    // of `a` returns, without side effects, what it returns when made at
+    // remaining count `at`, in this CPU's current slice. INT32_MIN when that
+    // holds for the whole slice; `at` itself when it cannot tell.
+    int32_t sh2_read_stable_to(int cpu, uint32_t a, int size, int32_t at) const;
 
 private:
     void run_slice(uint64_t end_mclk);

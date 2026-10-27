@@ -133,6 +133,7 @@ int main(int argc, char** argv) {
                   pm.stats.branch_tables, pm.stats.offset_tables, pm.stats.code_pointers);
     man += buf;
     man += "sh2_fast_forward_loops " + std::to_string(rs.fast_loops) + std::string(1, 10);
+    man += "m68k_fast_forward_loops " + std::to_string(rm.fast_loops) + std::string(1, 10);
     write_file(out_dir + "/manifest.txt", man);
     std::printf("%s", man.c_str());
     for (const auto& w : ps.warnings) std::printf("warning (sh2): %s\n", w.c_str());

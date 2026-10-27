@@ -139,9 +139,14 @@ void emit_simple(FnCtx& x, const sh2::Insn& in, const char* indent) {
 // ---------------------------------------------------------------------------
 struct SelfLoop {
     enum Kind { NONE, DELAY, POLL } kind = NONE;
-    int reg = 0;                     // DELAY: counter register
-    int cost = 0;                    // POLL: cycles per iteration
-    std::vector<std::string> addrs;  // POLL: load address expressions (runtime purity check)
+    int reg = 0;   // DELAY: counter register
+    int cost = 0;  // POLL: cycles per iteration
+    struct Load {
+        std::string addr;  // address expression
+        int size;          // bytes
+        int at;            // cycles from the iteration's start to the read, inclusive
+    };
+    std::vector<Load> loads;  // POLL: the reads, checked at run time (recomp_api.h)
 };
 
 constexpr uint32_t kRegT = 1u << 16, kRegGbr = 1u << 17;
@@ -187,6 +192,16 @@ bool poll_op(const Program& p, const sh2::Insn& in, uint32_t& rd, uint32_t& wr, 
     }
 }
 
+// The size of a polling loop's read (one poll_op gave an address).
+int load_size(const sh2::Insn& in) {
+    using sh2::Op;
+    switch (in.op) {
+    case Op::MOVB_L: case Op::MOVB_L4: case Op::MOVB_L0: case Op::MOVB_LG: case Op::TST_B: return 1;
+    case Op::MOVW_L: case Op::MOVW_L4: case Op::MOVW_L0: case Op::MOVW_LG: case Op::MOVW_PC: return 2;
+    default: return 4;
+    }
+}
+
 SelfLoop analyze_self_loop(const Program& p, const Block& b) {
     SelfLoop L;
     if (b.insns.size() < 2) return L;
@@ -203,17 +218,19 @@ SelfLoop analyze_self_loop(const Program& p, const Block& b) {
     std::vector<sh2::Insn> body(b.insns.size() - 1);
     uint32_t all_wr = 0;
     std::vector<uint32_t> rds, wrs, ars;
-    std::vector<std::string> exprs;
-    int cost = int(last.cycles);
+    std::vector<SelfLoop::Load> loads;
+    int at = 0;
     for (size_t i = 0; i + 1 < b.insns.size(); ++i) {
         p.decode_sh2(b.insns[i], body[i]);
         uint32_t rd, wr, ar;
         std::string ex;
         if (!poll_op(p, body[i], rd, wr, ar, ex)) return L;
-        rds.push_back(rd); wrs.push_back(wr); ars.push_back(ar); exprs.push_back(ex);
+        rds.push_back(rd); wrs.push_back(wr); ars.push_back(ar);
         all_wr |= wr;
-        cost += body[i].cycles;
+        at += body[i].cycles;  // the read is made after its instruction's cycles are charged
+        if (!ex.empty()) loads.push_back({ex, load_size(body[i]), at});
     }
+    const int cost = at + int(last.cycles);
     uint32_t written = 0;
     for (size_t i = 0; i < body.size(); ++i) {
         if (rds[i] & ~written & all_wr) return L;          // loop-carried value
@@ -225,7 +242,7 @@ SelfLoop analyze_self_loop(const Program& p, const Block& b) {
     if (!(written & kRegT)) return L;                      // the branch must test a fresh T
     L.kind = SelfLoop::POLL;
     L.cost = cost;
-    for (auto& e : exprs) if (!e.empty()) L.addrs.push_back(e);
+    L.loads = std::move(loads);
     return L;
 }
 
@@ -258,12 +275,20 @@ void emit_branch(FnCtx& x, const sh2::Insn& in, const SelfLoop* loop = nullptr) 
         uint32_t fall = in.pc + ((in.flags & sh2::IF_DELAYED) ? 4 : 2);
         o.f("    if (t_ == 0x%08Xu) {\n", in.addr);
         if (loop && loop->kind == SelfLoop::POLL) {
-            // Idempotent polling loop: the remaining iterations of this slice
-            // would all read the same values; charge their cycles at once.
-            std::string cond = "true";
-            for (const auto& a : loop->addrs) cond += " && ::recomp::sh2_pure_load(" + a + ")";
-            o.f("      if (%s) { int32_t n_ = (c->cycles + %d) / %d; c->cycles -= n_ * %d; return 0; }\n", cond.c_str(),
-                loop->cost - 1, loop->cost, loop->cost);
+            // Polling loop without loop-carried state: an iteration that reads
+            // what this one read takes the branch again and leaves the same
+            // registers, so it only costs its cycles. Charge at once the
+            // iterations up to the slice end (n_), or up to the first read that
+            // may differ (recomp_api.h, sh2_poll_repeats): that one runs.
+            o.f("      if (::recomp::g_idle_skip) {\n");
+            o.f("        const int32_t n_ = (c->cycles + %d) / %d;\n", loop->cost - 1, loop->cost);
+            o.f("        int32_t k_ = n_;\n");
+            for (const auto& l : loop->loads)
+                o.f("        { const int32_t r_ = ::recomp::sh2_poll_repeats(c, %s, %d, c->cycles + %d, %d); if (r_ < k_) k_ = r_; }\n",
+                    l.addr.c_str(), l.size, loop->cost - l.at, loop->cost);
+            o.f("        c->cycles -= k_ * %d; ::recomp::g_idle_skipped[1 + c->id] += uint64_t(k_) * %du;\n", loop->cost, loop->cost);
+            o.f("        if (k_ == n_) return 0;\n");
+            o.f("      }\n");
             ++x.fast_loops;
         }
         jump(x, in.addr);
@@ -352,9 +377,10 @@ void emit_sh2(const Program& p, const EmitOptions& opt, EmitResult& out) {
                     // iteration): skip whole iterations in closed form, stopping
                     // exactly where the interpreter's slice would end.
                     x.o.f("  { uint32_t r_ = c->r[%d];\n", loop.reg);
-                    x.o.f("    if (r_ > 1 && c->cycles > 0 && !(c->irq_level > ((c->sr >> 4) & 15))) {\n");
+                    x.o.f("    if (::recomp::g_idle_skip && r_ > 1 && c->cycles > 0 && !(c->irq_level > ((c->sr >> 4) & 15))) {\n");
                     x.o.f("      uint32_t can_ = (uint32_t(c->cycles) + 3u) / 4u, k_ = r_ - 1 < can_ ? r_ - 1 : can_;\n");
                     x.o.f("      c->r[%d] = r_ - k_; c->cycles -= int32_t(4u * k_); c->sr &= ~sh2::SR_T;\n", loop.reg);
+                    x.o.f("      ::recomp::g_idle_skipped[1 + c->id] += 4u * k_;\n");
                     x.o.f("      if (k_ == can_) { c->pc = 0x%08Xu; return 0; }\n    } }\n", b.start);
                     ++x.fast_loops;
                 }

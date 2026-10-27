@@ -27,6 +27,10 @@ Machine* bind_recompiled_code(Machine& m);
 
 void print_recomp_stats(const Machine& m);
 
+// Whether generated code fast-forwards wait loops (on by default; the result
+// is the same either way, recomp_api.h). For comparisons and tests.
+void set_idle_skip(bool on);
+
 struct DispatchSnapshot {
     bool recompiled = false;
     double m68k_native_pct = 0;

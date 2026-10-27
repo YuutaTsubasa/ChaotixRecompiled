@@ -4,6 +4,8 @@
 //   chaotix_headless --rom <file> --frames N [--shot F1,F2,...] [--out dir]
 //                    [--press FRAME:BUTTON[+BUTTON]:DURATION ...] [--state-every N]
 //                    [--interp]   (force interpreter even if generated code exists)
+//                    [--no-idle-skip]   (run wait loops iteration by iteration, issue #62)
+//                    [--hot-blocks N]   (where the emulated cycles go, per block)
 //                    [--save-state FRAME:FILE] [--load-state FILE] [--state-hash-every N]
 //                    [--rewind INTERVAL[:BUDGET_MB]]   (issue #40, runtime/save_state.h)
 //                    [--lobby-partner ID|none] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
@@ -344,6 +346,56 @@ void dump_state(const Machine& m) {
                 m.mars.comm[3], m.mars.comm[4], m.mars.comm[5], m.mars.comm[6], m.mars.comm[7]);
 }
 
+// --hot-blocks N: emulated cycles spent per block (with --interp: one entry
+// per guest basic block; with recompiled code, per dispatch), to find the
+// wait loops (issue #62). Keys: cpu (0 = 68K, 1/2 = SH-2) << 32 | pc.
+std::map<uint64_t, uint64_t> g_hot;
+void (*g_hot_m68k)(m68k::State*) = nullptr;
+void (*g_hot_sh2)(sh2::State*) = nullptr;
+void hot_m68k(m68k::State* c) {
+    const uint32_t pc = c->pc;
+    const int32_t before = c->cycles;
+    g_hot_m68k(c);
+    g_hot[pc] += uint64_t(int64_t(before) - c->cycles);
+}
+void hot_sh2(sh2::State* c) {
+    const uint32_t pc = c->pc;
+    const int32_t before = c->cycles;
+    g_hot_sh2(c);
+    g_hot[(uint64_t(1 + c->id) << 32) | pc] += uint64_t(int64_t(before) - c->cycles);
+}
+void print_hot_blocks(Machine& m, size_t n) {
+    const uint64_t total[3] = {m.stats.m68k_cycles, m.stats.msh2_cycles, m.stats.ssh2_cycles};
+    static const char* names[3] = {"68K", "MSH2", "SSH2"};
+    for (int cpu = 0; cpu < 3; ++cpu) {
+        std::vector<std::pair<uint64_t, uint32_t>> v;
+        for (const auto& [k, cyc] : g_hot)
+            if (int(k >> 32) == cpu) v.push_back({cyc, uint32_t(k)});
+        std::sort(v.rbegin(), v.rend());
+        std::printf("hot blocks %s (%llu cycles):\n", names[cpu], (unsigned long long)total[cpu]);
+        for (size_t i = 0; i < v.size() && i < n; ++i) {
+            std::printf("  %08X %6.2f%%", v[i].second, total[cpu] ? 100.0 * double(v[i].first) / double(total[cpu]) : 0.0);
+            if (!cpu) {
+                for (uint32_t pc = v[i].second, k = 0; k < 8; ++k) {
+                    m68k::Insn in;
+                    m68k::decode(pc, m68k::fetch_bus, &m.m68k, in);
+                    std::printf(" | %s", m68k::disassemble(in).c_str());
+                    if (m68k::ends_block(in)) break;
+                    pc += in.len;
+                }
+            } else {
+                sh2::State& s = m.sh2[cpu - 1];
+                for (uint32_t pc = v[i].second, k = 0; k < 8; ++k, pc += 2) {
+                    const sh2::Insn in = sh2::decode(pc, uint16_t(sh2::rd16(&s, pc)));
+                    std::printf(" | %s", sh2::disassemble(in).c_str());
+                    if (sh2::ends_block(in) || (in.flags & sh2::IF_BRANCH)) break;
+                }
+            }
+            std::printf("\n");
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -360,6 +412,7 @@ int main(int argc, char** argv) {
     bool force_interp = false;
     bool lockstep = false;
     bool profile = false;
+    size_t hot_blocks = 0;
     int wide = 0, wide_bottom = 0;
     // --wide-at FRAME:E[:EB]: widen the margins part way through, the way
     // resizing the window does. The ring shift is latched when a level loads,
@@ -590,6 +643,8 @@ int main(int argc, char** argv) {
         }
         else if (a == "--lockstep") lockstep = true;
         else if (a == "--profile") profile = true;
+        else if (a == "--hot-blocks") hot_blocks = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--no-idle-skip") set_idle_skip(false);
         else if (a == "--wide") wide = std::atoi(next().c_str());
         else if (a == "--wide-bottom") wide_bottom = std::atoi(next().c_str());
         else if (a == "--trace-wide") trace_wide = true;
@@ -970,6 +1025,12 @@ int main(int argc, char** argv) {
     std::vector<int16_t> wav;
     RecompStatus rs = install_recompiled_code(*m, !force_interp);
     std::printf("execution: %s\n", rs.description.c_str());
+    if (hot_blocks) {
+        g_hot_m68k = m->exec.m68k_block;
+        g_hot_sh2 = m->exec.sh2_block;
+        m->exec.m68k_block = hot_m68k;
+        m->exec.sh2_block = hot_sh2;
+    }
     // Lockstep validation: an interpreter-only reference machine runs next to
     // the recompiled one and full state is compared after every frame.
     std::unique_ptr<Machine> ref;
@@ -1673,6 +1734,7 @@ int main(int argc, char** argv) {
     std::printf("save RAM changed on %llu frames", (unsigned long long)sram_frames);
     if (sram_frames) std::printf(", the last at frame %llu", (unsigned long long)sram_last);
     std::printf("\n");
+    if (hot_blocks) print_hot_blocks(*m, hot_blocks);
     if (profile) {
 
         static const char* names[PROF_COUNT] = {"68K", "Z80", "MSH2", "SSH2", "video", "audio/pwm"};
