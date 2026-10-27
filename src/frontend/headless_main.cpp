@@ -15,6 +15,7 @@
 //                    (issue #41, frontend/ghost.h)
 //                    [--netplay-loopback MS:MS:PCT | --netplay-host PORT | --netplay-join ADDR ...]
 //                                 (issue #46, frontend/netplay_headless.cpp)
+//                    [--frame-skip N] [--game-hash-every N]   (issue #62, frontend/frame_skip.h)
 #include "audio/music_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
@@ -126,8 +127,9 @@ void trace_m68k_block(m68k::State* c) {
     }
 }
 
-// Compares two machines; returns an empty string if identical.
-std::string compare_machines(const Machine& a, const Machine& b) {
+// Compares two machines; returns an empty string if identical. Without
+// `pictures` the output image is left out (a frame one of them skipped).
+std::string compare_machines(const Machine& a, const Machine& b, bool pictures = true) {
     char buf[256];
     auto mem = [&](const char* name, const void* x, const void* y, size_t n) -> std::string {
         const uint8_t* p = static_cast<const uint8_t*>(x);
@@ -171,12 +173,18 @@ std::string compare_machines(const Machine& a, const Machine& b) {
     if (!(r = mem("CRAM", a.vdp.cram, b.vdp.cram, sizeof a.vdp.cram)).empty()) return r;
     if (!(r = mem("VSRAM", a.vdp.vsram, b.vdp.vsram, sizeof a.vdp.vsram)).empty()) return r;
     if (!(r = mem("VDP regs", a.vdp.reg, b.vdp.reg, sizeof a.vdp.reg)).empty()) return r;
+    // What drawing gives back to the game (and frame skip must still set).
+    if (a.vdp.sprite_overflow != b.vdp.sprite_overflow || a.vdp.sprite_collision != b.vdp.sprite_collision) {
+        std::snprintf(buf, sizeof buf, "VDP sprite overflow/collision %d/%d vs %d/%d", a.vdp.sprite_overflow,
+                      a.vdp.sprite_collision, b.vdp.sprite_overflow, b.vdp.sprite_collision);
+        return buf;
+    }
     if (!(r = mem("32X FB0", a.mars.fb[0], b.mars.fb[0], sizeof a.mars.fb[0])).empty()) return r;
     if (!(r = mem("32X FB1", a.mars.fb[1], b.mars.fb[1], sizeof a.mars.fb[1])).empty()) return r;
     if (!(r = mem("32X palette", a.mars.pal, b.mars.pal, sizeof a.mars.pal)).empty()) return r;
     if (!(r = mem("32X comm", a.mars.comm, b.mars.comm, sizeof a.mars.comm)).empty()) return r;
     if (!(r = mem("cartridge SRAM", a.sram, b.sram, sizeof a.sram)).empty()) return r;
-    if (!(r = mem("output image", a.framebuffer, b.framebuffer, sizeof a.framebuffer)).empty()) return r;
+    if (pictures && !(r = mem("output image", a.framebuffer, b.framebuffer, sizeof a.framebuffer)).empty()) return r;
     return "";
 }
 
@@ -482,6 +490,14 @@ int main(int argc, char** argv) {
     std::map<uint64_t, std::vector<std::string>> save_states;
     std::string load_state_path;
     uint64_t state_hash_every = 0;
+    // Frame skip (issue #62, frontend/frame_skip.h): --frame-skip N draws one
+    // frame in every N + 1 (and every frame a shot, a golden or a --hash-every
+    // hash is taken of); with --lockstep only the recompiled machine skips,
+    // so the reference, which draws every frame, checks that the game is the
+    // same and that each picture drawn is. --game-hash-every N prints a
+    // fingerprint of the machine without its picture.
+    int frame_skip = -1;
+    uint64_t game_hash_every = 0;
     // --rewind INTERVAL[:BUDGET_MB]: a snapshot every INTERVAL frames into a
     // rewind buffer (runtime/rewind.h), timed; at the end every snapshot is
     // stepped back to and checked against the state it was taken from.
@@ -583,6 +599,8 @@ int main(int argc, char** argv) {
         }
         else if (a == "--load-state") load_state_path = next();
         else if (a == "--state-hash-every") state_hash_every = std::strtoull(next().c_str(), nullptr, 10);
+        else if (a == "--frame-skip") frame_skip = std::max(0, std::atoi(next().c_str()));
+        else if (a == "--game-hash-every") game_hash_every = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--rewind") {
             const auto parts = split(next(), ':');
             rewind_interval = std::max(1, std::atoi(parts[0].c_str()));
@@ -1139,6 +1157,8 @@ int main(int argc, char** argv) {
     uint64_t centre_ok_frames = 0;
     int centre_worst = 0;  // most pixels a compared frame differed by (special stage only)
     uint64_t lockstep_ok_frames = 0;
+    int skip_run = 0;  // --frame-skip: pictures left out since the last drawn
+    uint64_t frames_drawn = 0, frames_skipped = 0;
     CoverageRecorder cov;
     if (!coverage_path.empty()) cov.attach(*m);
     // Block-level history ring for --break (per CPU).
@@ -1321,6 +1341,16 @@ int main(int argc, char** argv) {
         if (jukebox_mid_run && f == jukebox_at && !play_jukebox(nullptr)) return 4;
         ghost_recorder.before_frame(*m);
         const size_t first_sample = m->audio_out.size();
+        if (frame_skip >= 0) {
+            // Every frame something looks at the picture of is drawn.
+            const uint64_t fc = m->frame_count + 1;
+            const bool wanted = shots.count(fc) || expect_hash.count(fc) || (hash_every && fc % hash_every == 0) ||
+                                centre_compare || ghost_player.active() || !dump_tiles_dir.empty();
+            m->skip_picture = !wanted && skip_run < frame_skip;
+            skip_run = m->skip_picture ? skip_run + 1 : 0;
+            ++(m->skip_picture ? frames_skipped : frames_drawn);
+        }
+        const bool skipped_picture = m->skip_picture;
         const auto frame_t0 = std::chrono::steady_clock::now();
         m->run_frame();
         ghost_recorder.after_frame(*m);
@@ -1502,7 +1532,7 @@ int main(int argc, char** argv) {
         if (m->audio_enabled) { wav.insert(wav.end(), m->audio_out.begin(), m->audio_out.end()); m->audio_out.clear(); }
         if (ref) {
             ref->run_frame();
-            std::string diff = compare_machines(*ref, *m);
+            std::string diff = compare_machines(*ref, *m, !skipped_picture);
             if (!diff.empty()) {
                 std::printf("LOCKSTEP DIVERGENCE at frame %llu (reference vs recompiled): %s\n", (unsigned long long)m->frame_count, diff.c_str());
                 dump_state(*ref);
@@ -1634,6 +1664,9 @@ int main(int argc, char** argv) {
         if (state_hash_every && m->frame_count % state_hash_every == 0)
             std::printf("statehash %llu %016llx\n", (unsigned long long)m->frame_count,
                         (unsigned long long)savestate::state_hash(*m));
+        if (game_hash_every && m->frame_count % game_hash_every == 0)
+            std::printf("gamehash %llu %016llx\n", (unsigned long long)m->frame_count,
+                        (unsigned long long)savestate::state_hash(*m, 0));
         if (auto it = save_states.find(m->frame_count); it != save_states.end()) {
             const std::vector<uint8_t> file = savestate::save(*m);
             for (const std::string& path : it->second) {
@@ -1664,6 +1697,9 @@ int main(int argc, char** argv) {
     }
     double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("ran %llu frames in %.2fs (%.1f fps)\n", (unsigned long long)frames, secs, frames / secs);
+    if (frame_skip >= 0)
+        std::printf("frame skip: %llu frames drawn, %llu skipped\n", (unsigned long long)frames_drawn,
+                    (unsigned long long)frames_skipped);
     if (m->wide_enabled)
         std::printf("widescreen: margins live for %llu frames in %d stretches\n",
                     (unsigned long long)wide_live_frames, wide_stretches);

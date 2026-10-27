@@ -12,17 +12,24 @@ counter in the top right corner of the window:
 ```
 FPS  59.9  EMU  60.0
 MS    4.2  MAX   9.8
+SKIPPED    0.0
 INTERPRETER
 ```
 
 * **FPS**: frames presented per second (the display's refresh rate with
   V-SYNC on, when the phone keeps up).
 * **EMU**: game frames emulated per second. **60.0 means full speed.** Below
-  that the game runs slow (it does not skip frames to keep up).
+  that the game runs slow. Frames whose picture FRAME SKIP left out (below)
+  count: the game ran them, so EMU can be 60 while FPS is lower.
 * **MS**: the average time it took to emulate one game frame over the last
   second, in milliseconds; **MAX** is the worst. At 60 frames a second there
   are 16.7 ms per frame for everything, so an average over about 12 ms leaves
   too little for the picture and sound and the game slows down.
+  With FRAME SKIP the frames without a picture are cheaper, so MS falls
+  when it skips.
+* **SKIPPED** (only while FRAME SKIP is not OFF): pictures left out per
+  second. 0 when the phone keeps up; with AUTO each of them is a picture
+  that would never have been shown anyway.
 * **INTERPRETER** appears only if the game runs on the reference
   interpreters instead of the recompiled code (much slower). A release APK
   always has the recompiled code; it would only show with a ROM other than
@@ -125,6 +132,7 @@ division helper calls were counted in its objects before and after.
 ## What changed
 
 * **SHOW FPS** (above).
+* **FRAME SKIP** (below).
 * **Dispatch without division** (`src/game/recomp_dispatch.cpp`): the 68000
   and SH-2 entry tables are now open-addressed power-of-two tables with a
   multiplicative hash; a lookup finds exactly what the map found. No
@@ -140,18 +148,100 @@ division helper calls were counted in its objects before and after.
 Emulation is unchanged: the lockstep sweep (33 configurations, recompiled
 against the interpreter) stays bit-identical, as do the golden frame hashes.
 
+## FRAME SKIP (issue #62)
+
+OPTIONS > VIDEO > FRAME SKIP, `[Video] FrameSkip` in `chaotix.ini`:
+
+| Setting | What it does |
+|---|---|
+| OFF | Every frame's picture is drawn (as before). Default on desktop. |
+| AUTO | Only the pictures that would never be shown are left out. Default on Android and iOS. |
+| 1 / 2 | At most one picture in every two / three frames, all the time. |
+
+**What a skipped frame leaves out.** The game runs every frame, skipped or
+not: all four processors, the sound, the 32X frame buffers the SH-2s draw
+into and swap, the interrupts and line counters. Only the host's picture of
+the frame (`Machine::framebuffer`) is not made: the Mega Drive VDP lines, the
+32X lines read out of the displayed frame buffer, their merge, the
+widescreen margins and black bars, and the output-only work riding on them
+(replaced tiles and text, the sprite pack's composition, character colours).
+The window then shows the last picture drawn, and its texture is not
+uploaded again.
+
+One thing drawing does feed back into the game: the VDP's sprite overflow
+and collision flags, which the 68000 can read in the status register. A
+skipped line still works them out (`Vdp::sprite_status_line`): the same
+sprite list walk with the same per-line and pixel limits and the original
+pixels of the native columns, but no drawing. So does the VDP's host-side
+state that save states carry (`Machine::set_vdp_output`). Everything else
+on the drawing path only reads the machine.
+
+**AUTO.** The main loop runs one game frame per elapsed frame period, up to
+three in a pass when it has fallen behind, and presents the last one
+(`plan_pass`, `src/frontend/fast_forward.h`). The pictures of the earlier
+frames in such a pass were drawn and never shown. AUTO leaves out exactly
+those (`FrameSkipper`, `src/frontend/frame_skip.h`), so what is on the screen
+is the same as with OFF; the time saved is what lets the pass catch up. At
+most two pictures in a row are left out (three frames a pass), so the picture
+never stops; with headroom every pass runs one frame and every picture is
+drawn. Fast-forward passes (2X, 4X, MAX) also draw only their last picture.
+OFF on desktop, where a frame takes a fraction of its 16.7 ms and AUTO would
+have nothing to skip; AUTO on phones and tablets, where it costs nothing to
+look at and only ever helps. FRAME SKIP is OFF while DUMP GRAPHICS is on
+(the tiles are collected as they are drawn) and has no effect in netplay or
+while rewinding.
+
+**What it saves.** `chaotix_headless --profile`, BOTANIC BASE 1
+(`--stage 300:0:1:0:2:7:0`), 3,000 frames, recompiled code, desktop build,
+three runs each (the machine was shared, so totals vary; the shares are
+steady):
+
+| | video, drawn frame | video, skipped frame | share of a drawn frame |
+|---|---|---|---|
+| 4:3 | 0.45-0.60 ms | 0.045-0.050 ms | 31% |
+| 16:9 (`--wide 53 --wide-bottom 16`) | 0.60-0.90 ms | 0.06 ms | 37% |
+
+A skipped frame does about 90% less video work: it costs about 70% (4:3)
+or 65% (widescreen) of a drawn one. On a phone that needs, say, 20 ms a
+frame with drawing, AUTO's three-frame passes take about 14 + 14 + 20 = 48
+ms for 50 ms of game time, so EMU reaches 60 where it was 50. A phone that
+needs more than about 14 ms without drawing still runs slow; that is the
+SH-2 work issue #62's next part goes after.
+
+**How it is checked.** `chaotix_headless --frame-skip N` draws one frame in
+every N + 1 (and every frame a shot, a golden or a `--hash-every` hash is
+taken of); `--game-hash-every N` prints a fingerprint of the machine without
+its picture. Tests (`tests/CMakeLists.txt`):
+
+* `lockstep_frame_skip_*`: the recompiled machine skips, the interpreter
+  reference draws every frame; the machines stay bit-identical every frame
+  (the sprite flags included, which the lockstep comparison now checks) and
+  each picture drawn equals the reference's. A level from the title screen,
+  a widescreen level with rows below, the special stage and the bonus stage.
+* `frame_skip_leaves_the_game_alone`: the recompiled machine with and
+  without `--frame-skip 2`, the same game fingerprint every frame and the
+  same pictures where both draw.
+* `golden_frames_with_frame_skip`: the golden frames, drawn after frames
+  that were not.
+* Unit tests (`test_frame_skip.cpp`): which pictures each setting draws, and
+  `sprite_status_line` against `render_line` on random sprite tables at
+  every widescreen width.
+
 ## What the player can try
 
 1. **The 64-bit APK** (`ChaotixRecompiled-…-android.apk`) if the phone's
    processor is 64-bit, even with a 32-bit Android: most phones from the last
    eight years are. It installs only if the system is 64-bit too.
 2. **SHOW FPS** on, and note EMU and MS in a level.
-3. Keep REWIND (EXTRAS) and the GHOST (TIME ATTACK) off; they are off by
+3. **FRAME SKIP**: AUTO (the default on phones) changes nothing on the
+   screen; if EMU is still under 60, 1 or 2 draw fewer pictures all the
+   time, so more of every frame is left for the game.
+4. Keep REWIND (EXTRAS) and the GHOST (TIME ATTACK) off; they are off by
    default on phones.
-4. WIDESCREEN off draws fewer columns (a smaller picture to compose).
-5. MENU BACKGROUND: PLAIN if the menus themselves lag (no zone pictures made
+5. WIDESCREEN off draws fewer columns (a smaller picture to compose).
+6. MENU BACKGROUND: PLAIN if the menus themselves lag (no zone pictures made
    in the background).
-6. V-SYNC on (the default) paces frames to the display; off can help on a
+7. V-SYNC on (the default) paces frames to the display; off can help on a
    display that is not 60 Hz.
 
 ## Building the armv7 runner yourself

@@ -22,6 +22,7 @@
 #include "frontend/speedrun.h"
 #include "frontend/debug_overlay.h"
 #include "frontend/fps_counter.h"
+#include "frontend/frame_skip.h"
 #include "frontend/setup.h"
 #include "platform/sdl_setup.h"
 #include "platform/backdrops.h"
@@ -2638,10 +2639,11 @@ int main(int argc, char** argv) {
     const double frame_ticks = double(freq) / kNtscFrameRate;
     uint64_t last = SDL_GetPerformanceCounter();
     double accumulator = 0;
-    uint64_t fps_t0 = last, fps_frames = 0, fps_sims = 0;
+    uint64_t fps_t0 = last, fps_frames = 0, fps_sims = 0, fps_skipped = 0;
     uint64_t pass_start = last;
     double worst_pass = 0, worst_emu = 0, worst_present = 0;
     double emu_sum_ms = 0, emu_worst_frame_ms = 0;  // SHOW FPS, over the current second
+    FrameSkipper skipper;  // FRAME SKIP (issue #62)
 
     if (app.cli_net_host > 0) {
         app.cfg.netplay_port = app.cli_net_host;
@@ -2840,6 +2842,16 @@ int main(int argc, char** argv) {
         // so a "hold for N frames" means N frames rather than N batches of up
         // to 64 - the difference between a tap and holding the button down.
         const int autotest_batch = app.host_script.empty() ? 64 : 1;
+        // FRAME SKIP (issue #62, frontend/frame_skip.h): the frames this pass
+        // runs, of which only the last one's picture is shown. Not while
+        // DUMP GRAPHICS is on: the tiles are collected as they are drawn.
+        const FrameSkip skip_mode = app.cfg.dump_graphics ? FrameSkip::Off : app.cfg.frame_skip;
+        int pass_frames = autotest ? autotest_batch : plan.frames;
+        if (autotest) {
+            const uint64_t at = app.m->frame_count + app.held_frames;
+            pass_frames = int(std::min<uint64_t>(uint64_t(pass_frames), app.autotest_frames > at ? app.autotest_frames - at : 1));
+        }
+        int game_frames = 0, pictures_skipped = 0;
         if (app.net.on) {
             // Netplay: the network every pass; while the session owns the
             // game, its ticks run the frames (the local pad is this player's,
@@ -2913,6 +2925,9 @@ int main(int argc, char** argv) {
             app.ghost_rec.before_frame(*app.m);
             // The ghost's frame runs on its own thread while this one runs.
             if (app.ghost.active()) app.ghost.advance();
+            app.m->skip_picture = !skipper.draw(skip_mode, steps, pass_frames);
+            ++game_frames;
+            if (app.m->skip_picture) ++pictures_skipped;
             app.m->run_frame();
             app.ghost_rec.after_frame(*app.m);
             app.ghost_live_camera.push(patches::camera_x(*app.m), patches::camera_y(*app.m));
@@ -2974,6 +2989,7 @@ int main(int argc, char** argv) {
             emu_worst_frame_ms = std::max(emu_worst_frame_ms, app.timing.emu_ms);
         }
         fps_sims += uint64_t(steps);
+        fps_skipped += uint64_t(pictures_skipped);
 
         // Audio: hand over what the machine produced; keep ~50 ms queued with a
         // gentle rate adjustment instead of dropping or stretching audio.
@@ -3017,7 +3033,10 @@ int main(int argc, char** argv) {
         SDL_GetRenderOutputSize(app.renderer, &ow, &oh);
         SDL_SetRenderDrawColor(app.renderer, 0, 0, 0, 255);
         SDL_RenderClear(app.renderer);
-        SDL_UpdateTexture(app.texture, nullptr, ghost_picture(app), kScreenWidth * 4);
+        // A pass whose frames all left their picture out (FRAME SKIP 1 or 2)
+        // shows the one already there.
+        if (!game_frames || pictures_skipped < game_frames)
+            SDL_UpdateTexture(app.texture, nullptr, ghost_picture(app), kScreenWidth * 4);
         app.cfg.viewport.image_aspect = image_aspect_for_size(app.m->fb_width, app.m->fb_width - 2 * app.m->fb_extra,
                                                               app.m->fb_height, app.m->fb_height - app.m->fb_extra_bottom);
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
@@ -3168,6 +3187,8 @@ int main(int argc, char** argv) {
             app.fps_stats.emulated_fps = app.timing.sim_fps;
             app.fps_stats.emu_avg_ms = fps_sims ? emu_sum_ms / double(fps_sims) : 0.0;
             app.fps_stats.emu_worst_ms = emu_worst_frame_ms;
+            app.fps_stats.skipped_fps = double(fps_skipped) / s;
+            app.fps_stats.frame_skip = app.cfg.frame_skip != FrameSkip::Off;
             app.fps_stats.interpreter = !dispatch_snapshot().recompiled;
             emu_sum_ms = emu_worst_frame_ms = 0;
             if (app.log_timing)
@@ -3179,7 +3200,7 @@ int main(int argc, char** argv) {
                                               .c_str()
                                         : "");
             worst_pass = worst_emu = worst_present = 0;
-            fps_frames = fps_sims = 0;
+            fps_frames = fps_sims = fps_skipped = 0;
             fps_t0 = now;
         }
     }

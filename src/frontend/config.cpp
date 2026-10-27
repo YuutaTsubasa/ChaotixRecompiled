@@ -137,6 +137,7 @@ bool Config::load(const std::string& path) {
             } else if (k == "WindowScale") window_scale = std::max(1, std::atoi(v.c_str()));
             else if (k == "VSync") vsync = parse_bool(v, vsync);
             else if (k == "ShowFps") show_fps = parse_bool(v, show_fps);
+            else if (k == "FrameSkip") frame_skip = parse_frame_skip(v);
             else if (k == "Widescreen") widescreen = parse_bool(v, widescreen);
             else if (k == "WidescreenEverywhere") wide_everywhere = parse_bool(v, wide_everywhere);
             else if (k == "WidescreenHud") wide_hud = parse_bool(v, wide_hud);
@@ -298,7 +299,11 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "WindowScale = %d\nVSync = %s\n", window_scale, vsync ? "true" : "false");
     std::fprintf(f, "# A small counter in the top right corner: frames shown and emulated per second,\n");
     std::fprintf(f, "# and the emulation time per frame in ms (average and worst over the last second)\n");
-    std::fprintf(f, "ShowFps = %s\n\n", show_fps ? "true" : "false");
+    std::fprintf(f, "ShowFps = %s\n", show_fps ? "true" : "false");
+    std::fprintf(f, "# Pictures left out to keep the game at full speed (the game itself runs every frame):\n");
+    std::fprintf(f, "# Off | Auto (only those that would never be shown, when the device falls behind;\n");
+    std::fprintf(f, "# the default on phones and tablets) | 1 | 2 (at most one picture in every 2 or 3 frames)\n");
+    std::fprintf(f, "FrameSkip = %s\n\n", frame_skip_name(frame_skip));
     std::fprintf(f, "[Audio]\nEnabled = %s\nVolume = %d\n", audio ? "true" : "false", volume);
     std::fprintf(f, "# Music from files in Mods/Music (e.g. 05.wav), in percent of Volume\n");
     std::fprintf(f, "ModMusicVolume = %d\n", mod_music_volume);

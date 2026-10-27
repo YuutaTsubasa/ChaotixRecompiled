@@ -852,6 +852,15 @@ void Menu::build_video() {
                       [c] { return on_off(c->show_fps); },
                       [c](int s) { if (s) c->show_fps = !c->show_fps; },
                       "frame rate and emulation time in a corner"});
+    // Issue #62: pictures left out so a slow device keeps the game at full
+    // speed; the game itself runs every frame.
+    items_.push_back({"FRAME SKIP",
+                      [c] {
+                          static const char* names[] = {"OFF", "AUTO", "1", "2"};
+                          return std::string(names[std::clamp(int(c->frame_skip), 0, kFrameSkipModes - 1)]);
+                      },
+                      [c](int s) { if (s) cycle(c->frame_skip, kFrameSkipModes, s); },
+                      "fewer pictures, full speed, on a slow device"});
     // Issue #49: this menu's rows, letters and touch targets. AUTO is LARGE
     // on a phone or tablet and says so. It changes as soon as it is stepped,
     // so the row being stepped grows under the finger.

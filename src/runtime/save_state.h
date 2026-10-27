@@ -91,8 +91,10 @@ bool write_file(const std::string& path, const std::vector<uint8_t>& bytes);
 bool read_file(const std::string& path, std::vector<uint8_t>& bytes);
 
 // FNV-1a over the raw state with the picture: a whole-machine fingerprint
-// for tests (chaotix_headless --state-hash-every).
-uint64_t state_hash(const Machine& m);
+// for tests (chaotix_headless --state-hash-every). Without kPicture in
+// `flags`, the game alone: what frame skip (issue #62) must leave alone
+// (--game-hash-every).
+uint64_t state_hash(const Machine& m, unsigned flags = kPicture);
 
 // Where the raw state (of these flags) holds fields that only shape the
 // sound on its way out, after the host's volume levels (the output DC

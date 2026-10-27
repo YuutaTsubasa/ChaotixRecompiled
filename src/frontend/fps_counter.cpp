@@ -27,6 +27,8 @@ std::vector<std::string> lines(const Stats& s) {
     // "FPS  60.0  EMU  60.0" and "MS   4.2  MAX   9.8": 20 characters each.
     out.push_back("FPS " + number(s.presented_fps, 5) + "  EMU " + number(s.emulated_fps, 5));
     out.push_back("MS  " + number(s.emu_avg_ms, 5) + "  MAX " + number(s.emu_worst_ms, 5));
+    // "SKIPPED  20.0": pictures not drawn per second; EMU counts their frames.
+    if (s.frame_skip) out.push_back("SKIPPED  " + number(s.skipped_fps, 5));
     if (s.interpreter) out.push_back("INTERPRETER");
     return out;
 }

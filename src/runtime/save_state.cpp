@@ -341,9 +341,9 @@ std::vector<std::pair<size_t, size_t>> output_only_ranges(unsigned flags) {
     return l.found;
 }
 
-uint64_t state_hash(const Machine& m) {
+uint64_t state_hash(const Machine& m, unsigned flags) {
     std::vector<uint8_t> raw;
-    serialize(m, raw, kPicture);
+    serialize(m, raw, flags);
     uint64_t h = 1469598103934665603ull;
     for (uint8_t b : raw) h = (h ^ b) * 1099511628211ull;
     return h;

@@ -171,6 +171,13 @@ public:
     // its 4:3 place (issue #28; runtime/patches.h, kHudBaseX).
     bool wide_hud_edges = false;
     int debug_layer = 0;  // output only: 1 = the Mega Drive layer alone, 2 = the 32X layer alone
+    // Frame skip (issue #62, frontend/frame_skip.h): the next run_frame does
+    // not draw its picture, so `framebuffer` keeps the last one drawn. The
+    // game runs exactly as it would have: the only thing drawing gives back
+    // to it, the VDP's sprite overflow and collision flags, is still worked
+    // out line by line (Vdp::sprite_status_line). run_frame clears it, so a
+    // frame is only ever skipped when asked for that frame.
+    bool skip_picture = false;
     int plane_shift = 0;               // W latched by the plane streaming patch
     uint64_t level_seen_frame = ~0ull; // last frame the level engine ran (patches.cpp)
     uint64_t full_redraw_frame = ~0ull; // last frame a scene redrew both planes
@@ -340,6 +347,7 @@ private:
     // mode; see patches.h), otherwise they are transparent.
     void render_line32x(int ln, uint32_t* out, int extra, bool wide_src);
     void render_output_line(int src_line, int dst_row);
+    bool set_vdp_output(int extra);  // true in the widened special stage itself
 
     // 32X register helpers
     uint32_t mars_read(int who, uint32_t off, int size);    // who: -1 = 68K, 0/1 = SH-2

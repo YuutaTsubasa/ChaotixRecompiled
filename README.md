@@ -30,7 +30,7 @@ unmodified game, which is checked by a test. Scenes outside levels stay 4:3.
 | Windows | built and played (MSYS2 GCC, and MSVC) |
 | Linux | build configuration present, not yet run by the author |
 | macOS | [builds and runs](docs/BUILDING_APPLE.md) on Apple Silicon (an M1; every test passes, lockstep bit-identical) |
-| Android | [builds and runs](platforms/android/README.md) (verified on an API 36 emulator); OPTIONS > VIDEO > SHOW FPS shows how fast it runs ([performance notes](docs/PERFORMANCE_ANDROID.md)) |
+| Android | [builds and runs](platforms/android/README.md) (verified on an API 36 emulator); OPTIONS > VIDEO > SHOW FPS shows how fast it runs, FRAME SKIP (AUTO) keeps a slow phone at full speed ([performance notes](docs/PERFORMANCE_ANDROID.md)) |
 | iOS / iPadOS | [builds and runs in the iOS Simulator](docs/BUILDING_APPLE.md); an `.ipa` for sideloading, not yet tried on a device |
 
 [docs/MILESTONES.md](docs/MILESTONES.md) tracks the detail;

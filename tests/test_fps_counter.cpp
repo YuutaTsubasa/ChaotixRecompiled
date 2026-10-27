@@ -33,6 +33,18 @@ TEST(fps_counter, lines_keep_their_width_whatever_the_numbers) {
     CHECK_EQ(l.size(), size_t(3));
     CHECK_STR(l[2], "INTERPRETER");
     for (const std::string& line : l) CHECK(int(line.size()) <= fps_counter::kColumns);
+    // FRAME SKIP (issue #62): the pictures it left out, while it is on.
+    s.interpreter = false;
+    s.frame_skip = true;
+    s.skipped_fps = 19.96;
+    l = fps_counter::lines(s);
+    CHECK_EQ(l.size(), size_t(3));
+    CHECK_STR(l[2], "SKIPPED   20.0");
+    s.interpreter = true;
+    l = fps_counter::lines(s);
+    CHECK_EQ(l.size(), size_t(4));
+    CHECK_STR(l[3], "INTERPRETER");
+    for (const std::string& line : l) CHECK(int(line.size()) <= fps_counter::kColumns);
 }
 
 TEST(fps_counter, grows_with_the_window_and_the_menu_size_and_fits) {

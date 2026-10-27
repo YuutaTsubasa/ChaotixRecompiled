@@ -363,14 +363,9 @@ void Machine::start_line() {
     update_sh2_irq(1);
 }
 
-// Renders one scanline of the emulated display into output row dst_row.
-// src_line may be outside the active area: widescreen adds rows above and
-// below, which the VDP renderer produces from the same plane data.
-void Machine::render_output_line(int src_line, int dst_row) {
-    const int extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
-    const int n = vdp.width() + 2 * extra;
-    uint32_t md[Vdp::kMaxWidth];
-    uint8_t bg[Vdp::kMaxWidth];
+// The VDP's host-side settings for drawing this frame's lines. They are in
+// save states, so a skipped frame (skip_picture) sets them all the same.
+bool Machine::set_vdp_output(int extra) {
     // The bonus stage and the results screen use the whole screen.
     const patches::PolyScene scene = patches::PolyScene(poly_scene);
     const bool stage = wide_special && scene != patches::PolyScene::Bonus && scene != patches::PolyScene::Results;
@@ -382,6 +377,18 @@ void Machine::render_output_line(int src_line, int dst_row) {
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;
+    return stage;
+}
+
+// Renders one scanline of the emulated display into output row dst_row.
+// src_line may be outside the active area: widescreen adds rows above and
+// below, which the VDP renderer produces from the same plane data.
+void Machine::render_output_line(int src_line, int dst_row) {
+    const int extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    const int n = vdp.width() + 2 * extra;
+    uint32_t md[Vdp::kMaxWidth];
+    uint8_t bg[Vdp::kMaxWidth];
+    const bool stage = set_vdp_output(extra);
     vdp.render_line(src_line, md, bg, extra);
     uint32_t* row = framebuffer + dst_row * kScreenWidth;
     render_line32x(src_line, row, extra, wide_active);
@@ -414,12 +421,22 @@ void Machine::render_output_line(int src_line, int dst_row) {
 void Machine::end_line() {
     ProfScope ps(profile, &stats.prof_ns[PROF_VIDEO]);
     if (line >= kActiveLines) return;
+    const int extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    const int eb = std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom);
+    if (skip_picture) {
+        // The lines render_output_line would draw, the rows below included,
+        // with the same width: only their effect on the VDP's status.
+        set_vdp_output(extra);
+        vdp.sprite_status_line(line, extra);
+        if (line == kActiveLines - 1 && wide_active && !wide_special)
+            for (int k = 0; k < eb; ++k) vdp.sprite_status_line(kActiveLines + k, extra);
+        return;
+    }
     render_output_line(line, line);
     if (line != kActiveLines - 1) return;
     // Widescreen rows below the active area, rendered with the state at the
     // bottom of the frame.
-    const int eb = std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom);
-    const int n = vdp.width() + 2 * std::clamp(wide_extra, 0, patches::kMaxWideExtra);
+    const int n = vdp.width() + 2 * extra;
     for (int k = 0; k < eb; ++k) {
         if (wide_active && !wide_special) { render_output_line(kActiveLines + k, kActiveLines + k); continue; }
         uint32_t* row = framebuffer + (kActiveLines + k) * kScreenWidth;
@@ -456,6 +473,7 @@ void Machine::run_frame() {
         end_line();
     }
     line = 0;
+    skip_picture = false;
     fb_extra = std::clamp(wide_extra, 0, patches::kMaxWideExtra);
     fb_extra_bottom = std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom);
     fb_width = vdp.width() + 2 * fb_extra;

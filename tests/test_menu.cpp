@@ -987,9 +987,9 @@ TEST(menu, options_is_split_into_pages_that_fit) {
         int rows = 0;
         const std::string first = m.selected_label();
         do { ++rows; m.on_key(SDLK_DOWN); } while (m.selected_label() != first && rows < 64);
-        // Ten rows and BACK at most: VIDEO has that many since SHOW FPS
-        // (issue #54); a page longer than the screen scrolls (issue #49).
-        CHECK(rows <= 11);
+        // Eleven rows and BACK at most: VIDEO has that many since FRAME SKIP
+        // (issue #62); a page longer than the screen scrolls (issue #49).
+        CHECK(rows <= 12);
         CHECK(m.on_key(SDLK_ESCAPE));
         CHECK_STR(m.page_name(), "options");
     }
@@ -1668,6 +1668,45 @@ TEST(show_fps, is_a_video_setting_off_by_default_and_kept) {
     Config old;
     CHECK(old.load(path));
     CHECK(old.show_fps);
+    std::filesystem::remove(path);
+}
+
+TEST(frame_skip, is_a_video_setting_and_kept) {
+    // Issue #62: OPTIONS > VIDEO > FRAME SKIP, OFF / AUTO / 1 / 2, in
+    // [Video] FrameSkip; AUTO on phones, OFF here.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK(cfg.frame_skip == frame_skip_default());
+    cfg.frame_skip = FrameSkip::Off;
+    Menu m;
+    m.bind(cfg);
+    open_category(m, "VIDEO");
+    CHECK(select_row(m, "FRAME SKIP"));
+    CHECK_STR(m.selected_value(), "OFF");
+    for (const char* v : {"AUTO", "1", "2", "OFF"}) {
+        CHECK(m.on_key(SDLK_RIGHT));
+        CHECK_STR(m.selected_value(), v);
+    }
+    CHECK(m.on_key(SDLK_LEFT));
+    CHECK(cfg.frame_skip == FrameSkip::Two);
+
+    const std::string path = (std::filesystem::temp_directory_path() / "chaotix_frame_skip_test.ini").string();
+    for (int k = 0; k < kFrameSkipModes; ++k) {
+        cfg.frame_skip = FrameSkip(k);
+        CHECK(cfg.save(path));
+        Config back;
+        back.set_defaults();
+        CHECK(back.load(path));
+        CHECK(back.frame_skip == FrameSkip(k));
+    }
+    std::FILE* f = std::fopen(path.c_str(), "w");
+    CHECK(f != nullptr);
+    if (!f) return;
+    std::fprintf(f, "[Video]\nFrameSkip = auto\n");
+    std::fclose(f);
+    Config old;
+    CHECK(old.load(path));
+    CHECK(old.frame_skip == FrameSkip::Auto);
     std::filesystem::remove(path);
 }
 

@@ -92,6 +92,11 @@ public:
     // (used for 32X priority). Status flags set while rendering (sprite
     // overflow/collision) follow native-width rules regardless of `extra`.
     void render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra = 0);
+    // Frame skip (issue #62): what render_line(line, ..., extra) does to the
+    // state the game can read, without drawing: the sprite overflow and
+    // collision flags, exactly as it would set them. Nothing host-side
+    // (replaced tiles, text, dumps) is touched.
+    void sprite_status_line(int line, int extra = 0);
 
     static uint32_t cram_to_rgb(uint16_t c);
 

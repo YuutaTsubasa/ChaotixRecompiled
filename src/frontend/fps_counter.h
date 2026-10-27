@@ -18,6 +18,10 @@ struct Stats {
     double emulated_fps = 0;   // machine frames run per second (60 at full speed)
     double emu_avg_ms = 0;     // average emulation time per frame over the last second
     double emu_worst_ms = 0;   // worst pass's emulation time per frame over the last second
+    // FRAME SKIP (issue #62): on (not OFF), and the pictures it left out per
+    // second; shown on a line of their own while it is on.
+    bool frame_skip = false;
+    double skipped_fps = 0;
     bool interpreter = false;  // the reference interpreters, not the recompiled code
 };
 
@@ -27,7 +31,8 @@ inline constexpr int kLineHeight = 10;  // a line, in units
 inline constexpr int kPad = 3;          // around the text, in units
 
 // The lines shown: always the same width (numbers padded), so the box does
-// not jitter as they change. A third line marks the interpreter.
+// not jitter as they change. With FRAME SKIP on, a line with the pictures it
+// left out per second; a last line marks the interpreter.
 std::vector<std::string> lines(const Stats& s);
 
 // Screen pixels per unit in a window_w x window_h window at MENU SIZE

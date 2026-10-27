@@ -2,6 +2,7 @@
 // [Sections]; unknown keys are preserved on save.
 #pragma once
 #include "frontend/fast_forward.h"
+#include "frontend/frame_skip.h"
 #include "renderer/viewport.h"
 #include "runtime/mod_packs.h"
 #include <map>
@@ -47,6 +48,9 @@ struct Config {
     // SHOW FPS (issue #54): a small counter in a corner with the frame rates and
     // the emulation time per frame (frontend/fps_counter.h). Off by default.
     bool show_fps = false;
+    // FRAME SKIP (issue #62, frontend/frame_skip.h): which frames' pictures
+    // are left out. AUTO on phones and tablets, OFF elsewhere.
+    FrameSkip frame_skip = frame_skip_default();
     bool widescreen = true;  // true widescreen in levels (margins follow AspectRatio)
     // Widescreen in the scenes kept 4:3 because they show glitches there: the
     // lobby and the INTRODUCTION Eggman scene.

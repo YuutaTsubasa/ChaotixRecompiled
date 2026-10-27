@@ -598,4 +598,64 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     }
 }
 
+// The sprite walk of render_line with only what reaches the status flags:
+// the same list, the same per-line and pixel budgets (they grow with the
+// rendered width there too) and the original pixels of the native columns.
+// tests/test_vdp_widescreen.cpp compares the two on random sprite tables.
+void Vdp::sprite_status_line(int line, int extra) {
+    if (!display_enabled()) return;
+    // Both are only ever set here; reading the status clears them.
+    if (sprite_overflow && sprite_collision) return;
+    const int width = this->width();
+    const int xe = width + extra, n = width + 2 * extra;
+    const bool h40 = (reg[12] & 1) != 0;
+    const uint32_t sat = h40 ? (uint32_t(reg[5] & 0x7E) << 9) : (uint32_t(reg[5] & 0x7F) << 9);
+    const int max_sprites = h40 ? 80 : 64;
+    const int max_per_line = h40 ? 20 : 16;
+    const int native_pixels = h40 ? 320 : 256;
+    const int max_pixels = native_pixels * n / width;
+    const int max_per_line_draw = max_per_line * n / width;
+    int link = 0, count = 0, on_line = 0, pixels = 0;
+    bool nonzero_x_seen = false, masked = false;
+    uint8_t solid[kMaxWidth] = {};  // native columns only
+    while (count < max_sprites) {
+        uint32_t e = sat + uint32_t(link) * 8;
+        auto rw = [&](uint32_t o) { return uint16_t((vram[(e + o) & 0xFFFF] << 8) | vram[(e + o + 1) & 0xFFFF]); };
+        int sy = (rw(0) & 0x3FF) - 128;
+        uint16_t sz = rw(2);
+        int hs = ((sz >> 10) & 3) + 1, vsz = ((sz >> 8) & 3) + 1;
+        if (line >= sy && line < sy + vsz * 8) {
+            uint16_t pat = rw(4);
+            const uint16_t raw_x = rw(6);
+            int sxr = raw_x & 0x1FF;
+            if (h40 && reg[16] == patches::kLevelPlaneSize && extra > 64 &&
+                raw_x >= 512 && int(raw_x) < xe + 128)
+                sxr = raw_x;
+            int sx = sxr - 128;
+            if (++on_line > max_per_line) sprite_overflow = true;
+            if (on_line > max_per_line_draw) break;
+            if (sxr == 0) { if (nonzero_x_seen) masked = true; }
+            else nonzero_x_seen = true;
+            int row = line - sy;
+            if (pat & 0x1000) row = vsz * 8 - 1 - row;
+            for (int cx = 0; cx < hs * 8; ++cx) {
+                if (pixels >= native_pixels) sprite_overflow = true;
+                if (pixels >= max_pixels) break;
+                ++pixels;
+                if (masked || sprite_collision) continue;
+                int x = sx + cx;
+                if (x < 0 || x >= width) continue;
+                int col = (pat & 0x0800) ? (hs * 8 - 1 - cx) : cx;
+                uint32_t tile = (pat & 0x7FF) + uint32_t((col >> 3) * vsz + (row >> 3));
+                if (!tile_pixel(vram, tile, col & 7, row & 7)) continue;
+                if (solid[x]) sprite_collision = true;
+                solid[x] = 1;
+            }
+        }
+        link = sz & 0x7F;
+        ++count;
+        if (link == 0 || link >= max_sprites) break;
+    }
+}
+
 } // namespace chaotix

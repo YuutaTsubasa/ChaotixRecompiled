@@ -35,6 +35,7 @@ add_executable(chaotix_tests
     test_speedrun.cpp
     test_fps_counter.cpp
     test_divide.cpp
+    test_frame_skip.cpp
     test_netplay.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
@@ -545,6 +546,41 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 ${_script}
                 --expect-hash 2800:${CHAOTIX_GOLDEN_169_A} --expect-hash 3200:${CHAOTIX_GOLDEN_169_B})
     set_tests_properties(lockstep_boot_to_level golden_frames lockstep_widescreen golden_frames_widescreen golden_frames_16_9 widescreen_centre_matches_4_3 PROPERTIES TIMEOUT 900)
+
+    # FRAME SKIP (issue #62): a skipped frame leaves out only its picture.
+    # The recompiled machine skips, the interpreter reference draws every
+    # frame: the game (the sprite flags drawing sets included) must stay
+    # bit-identical, and each picture that is drawn must be the reference's.
+    # In a level with widescreen rows below, the special stage and the bonus
+    # stage (their own host-side pictures).
+    add_test(NAME lockstep_frame_skip_boot_to_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --lockstep --frame-skip 2 ${_script})
+    add_test(NAME lockstep_frame_skip_widescreen_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2000 --wide 53 --wide-bottom 16 --lockstep
+                --frame-skip 1 --stage 300:4:2:2:2:7:0 --fuzz 36:700:2000)
+    add_test(NAME lockstep_frame_skip_special_stage
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1600 --wide 53 --lockstep --frame-skip 2
+                --stage 300:10:0:0:2:7:0 --press 1100:left:120)
+    add_test(NAME lockstep_frame_skip_bonus_stage
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep --frame-skip 2
+                --stage 300:9:0:0:2:7:0 --fuzz 3:700:2400)
+    set_tests_properties(lockstep_frame_skip_boot_to_level lockstep_frame_skip_widescreen_level
+                         lockstep_frame_skip_special_stage lockstep_frame_skip_bonus_stage PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "frame skip: [1-9][0-9]* frames drawn, [1-9][0-9]* skipped.*frames bit-identical")
+    # The recompiled machine with and without skipping: the same game every
+    # frame, the same pictures where they are drawn; and the golden frames,
+    # drawn after frames that were not.
+    add_test(NAME frame_skip_leaves_the_game_alone
+        COMMAND ${CMAKE_COMMAND} -DHEADLESS=$<TARGET_FILE:chaotix_headless> "-DROM=${CHAOTIX_ROM}" -DSKIP=2
+                "-DARGS=--frames|2400|--wide|53|--wide-bottom|16|--stage|300:0:1:0:2:7:0|--fuzz|62:700:2400"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/frame_skip_hashes.cmake)
+    set_tests_properties(frame_skip_leaves_the_game_alone PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "frame skip: [0-9]+ hashes identical; frame skip: [1-9][0-9]* frames drawn, [1-9][0-9]* skipped")
+    add_test(NAME golden_frames_with_frame_skip
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2600 --frame-skip 2 ${_script}
+                --expect-hash 1700:${CHAOTIX_GOLDEN_TITLE} --expect-hash 2600:${CHAOTIX_GOLDEN_LEVEL})
+    set_tests_properties(golden_frames_with_frame_skip PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "frame 1700 image hash [0-9a-f]+ matches golden.*frame 2600 image hash [0-9a-f]+ matches golden")
 
     # The shipped achievement definitions must still unlock while the attract
     # demos play (a definition that never fires is silent otherwise).
