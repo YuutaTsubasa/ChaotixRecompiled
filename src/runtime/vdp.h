@@ -100,6 +100,14 @@ public:
     // (used for 32X priority). Status flags set while rendering (sprite
     // overflow/collision) follow native-width rules regardless of `extra`.
     void render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra = 0);
+    // The same line, as CRAM indices where every pixel is a CRAM colour as it
+    // is (no shadow/highlight, no alt_cram): then top[x] is the index, with
+    // bit 6 set where it is the backdrop, the colours are palette_rgb(), and
+    // it returns true. Otherwise it renders out_rgb/out_bg as render_line and
+    // returns false.
+    bool render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t* out_bg, int extra = 0);
+    // CRAM as XRGB8888 (alpha 0xFF), as of the last line rendered.
+    const uint32_t* palette_rgb() const { return palrgb_; }
 
     static uint32_t cram_to_rgb(uint16_t c);
 

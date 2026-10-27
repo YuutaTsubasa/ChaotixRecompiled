@@ -428,13 +428,28 @@ void render_window(const Vdp& v, int line, LinePix* out, int xs, int x0, int x1)
 } // namespace
 
 void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
+    uint8_t top[kMaxWidth];
+    if (!render_line_indexed(line, top, out_rgb, out_bg, extra)) return;
+    const int n = width() + 2 * extra;
+    for (int x = 0; x < n; ++x) {
+        out_rgb[x] = palrgb_[top[x] & 0x3F] | 0xFF000000u;
+        out_bg[x] = uint8_t(top[x] >> 6);
+    }
+}
+
+bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     const int width = this->width();
     const int xs = -extra, xe = width + extra, n = xe - xs;
     const uint8_t bgidx = reg[7] & 0x3F;
-    const uint32_t bg = cram_to_rgb(cram[bgidx]);
+    // CRAM as colours, converted again only when it changed.
+    if (std::memcmp(palrgb_cram_, cram, sizeof cram) != 0 || !palrgb_valid_) {
+        for (int i = 0; i < 64; ++i) palrgb_[i] = cram_to_rgb(cram[i]);
+        std::memcpy(palrgb_cram_, cram, sizeof cram);
+        palrgb_valid_ = true;
+    }
     if (!display_enabled()) {
-        for (int x = 0; x < n; ++x) { out_rgb[x] = bg; out_bg[x] = 1; }
-        return;
+        std::memset(top, bgidx | 0x40, size_t(n));
+        return true;
     }
 
     if (tiles && tiles->active() && line == 0) {
@@ -672,18 +687,11 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     }
 
     const bool shi = (reg[12] & 0x08) != 0;
-    // CRAM as colours, converted again only when it changed.
-    if (std::memcmp(palrgb_cram_, cram, sizeof cram) != 0 || !palrgb_valid_) {
-        for (int i = 0; i < 64; ++i) palrgb_[i] = cram_to_rgb(cram[i]);
-        std::memcpy(palrgb_cram_, cram, sizeof cram);
-        palrgb_valid_ = true;
-    }
     const uint32_t* palrgb = palrgb_;
     if (!shi && !alt_cram) {
         // The priorities below as selections from the lowest up, the last
         // that applies winning, which the compiler can do for many pixels at
         // once; bit 6 marks the backdrop.
-        uint8_t top[kMaxWidth];
         const uint8_t back = uint8_t(bgidx | 0x40);
         for (int x = 0; x < n; ++x) {
             const uint8_t sp = s[x], ap = a[x], bp = b[x];
@@ -695,13 +703,9 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
             t = bo && (bp & kPixPrio) ? bp : t;
             t = ao && (ap & kPixPrio) ? ap : t;
             t = so && (sp & kPixPrio) ? sp : t;
-            top[x] = t;
+            top[x] = uint8_t(t & ~kPixPrio);
         }
-        for (int x = 0; x < n; ++x) {
-            out_rgb[x] = palrgb[top[x] & kPixColor] | 0xFF000000u;
-            out_bg[x] = uint8_t((top[x] >> 6) & 1);
-        }
-        return;
+        return true;
     }
     for (int x = 0; x < n; ++x) {
         const uint8_t sc = s[x] & kPixColor, ac = a[x] & kPixColor, bc = b[x] & kPixColor;
@@ -746,6 +750,7 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
         out_rgb[x] = rgb | 0xFF000000u;
         out_bg[x] = isbg ? 1 : 0;
     }
+    return false;
 }
 
 } // namespace chaotix

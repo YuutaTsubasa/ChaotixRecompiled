@@ -387,18 +387,31 @@ void Machine::render_output_line(int src_line, int dst_row) {
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;
-    vdp.render_line(src_line, md, bg, extra);
+    uint8_t top[Vdp::kMaxWidth];
+    const bool indexed = vdp.render_line_indexed(src_line, top, md, bg, extra);
+    const uint32_t* cram_rgb = vdp.palette_rgb();
     uint32_t* row = framebuffer + dst_row * kScreenWidth;
     render_line32x(src_line, row, extra, wide_active);
     // Merge: render_line32x marks 32X pixels that should be shown with
     // alpha 0xFE; 0xFD means "only where the MD pixel is the backdrop".
-    if (debug_layer == 0) {
+    if (indexed && debug_layer == 0) {
+        // The Mega Drive pixels as CRAM indices, bit 6 for the backdrop.
+        for (int x = 0; x < n; ++x) {
+            const uint32_t p = row[x], a = p >> 24, t = top[x];
+            const bool show32x = a == 0xFE || (a == 0xFD && (t & 0x40));
+            row[x] = show32x ? (p | 0xFF000000u) : cram_rgb[t & 0x3F];
+        }
+    } else if (debug_layer == 0) {
         for (int x = 0; x < n; ++x) {
             const uint32_t p = row[x], a = p >> 24;
             const bool show32x = a == 0xFE || (a == 0xFD && bg[x] != 0);
             row[x] = show32x ? (p | 0xFF000000u) : md[x];
         }
     } else for (int x = 0; x < n; ++x) {
+        if (indexed) {
+            md[x] = cram_rgb[top[x] & 0x3F];
+            bg[x] = uint8_t(top[x] >> 6);
+        }
         uint32_t p = row[x];
         bool show32x = (p >> 24) == 0xFE;
         bool mdbg = bg[x] != 0;
