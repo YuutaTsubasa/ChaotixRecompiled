@@ -231,34 +231,85 @@ inline LinePix line_pix(unsigned color, unsigned prio) {
 
 // A byte of a pattern row as its two pixels, for each horizontal flip and
 // name table attribute (bits 13-15: palette line, priority):
-// kRowPairs.t[flip][attr][byte]. A flipped row also takes its bytes from the
-// last one.
-struct PixPair {
-    uint8_t p[2];
-};
+// kRowPairs.t[flip][attr][byte], the two LinePix in memory order. A flipped
+// row also takes its bytes from the last one.
 struct RowPairs {
-    PixPair t[2][8][256];
+    uint16_t t[2][8][256];
     RowPairs() {
         for (int f = 0; f < 2; ++f)
             for (unsigned a = 0; a < 8; ++a)
                 for (unsigned b = 0; b < 256; ++b) {
                     const unsigned pal = (a & 3) << 4, c0 = b >> 4, c1 = b & 15;
                     const LinePix p0 = line_pix(c0 ? pal | c0 : 0, a >> 2), p1 = line_pix(c1 ? pal | c1 : 0, a >> 2);
-                    t[f][a][b] = f ? PixPair{{p1, p0}} : PixPair{{p0, p1}};
+                    const LinePix pair[2] = {f ? p1 : p0, f ? p0 : p1};
+                    std::memcpy(&t[f][a][b], pair, 2);
                 }
     }
 };
 const RowPairs kRowPairs;
 
+// Two pairs of pixels in memory order, to be stored as one word.
+inline uint32_t join_pairs(uint16_t first, uint16_t second) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return uint32_t(first) << 16 | second;
+#else
+    return uint32_t(second) << 16 | first;
+#endif
+}
+
 // The 8 pixels of row `ty` (already flipped vertically) of pattern `tile`,
 // in the palette line and priority of name table or sprite entry `e` and
-// flipped horizontally as it says.
-inline void pattern_row(const uint8_t* vram, uint32_t tile, int ty, uint16_t e, LinePix out[8]) {
+// flipped horizontally as it says, made in registers and stored as two words.
+inline void pattern_row(const uint8_t* vram, uint32_t tile, int ty, uint16_t e, LinePix* out) {
     // At most 0xFFE0 + 7 * 4 + 3: never wraps.
     const uint8_t* row = vram + ((tile & 0x7FF) << 5) + uint32_t(ty) * 4;
-    const PixPair* pp = kRowPairs.t[(e >> 11) & 1][(e >> 13) & 7];
+    const uint16_t* pp = kRowPairs.t[(e >> 11) & 1][(e >> 13) & 7];
     const int f = (e & 0x0800) ? 3 : 0;
-    for (int k = 0; k < 4; ++k) std::memcpy(out + k * 2, pp[row[k ^ f]].p, 2);
+    const uint32_t lo = join_pairs(pp[row[f]], pp[row[1 ^ f]]), hi = join_pairs(pp[row[2 ^ f]], pp[row[3 ^ f]]);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    const uint64_t all = uint64_t(lo) << 32 | hi;
+#else
+    const uint64_t all = uint64_t(hi) << 32 | lo;
+#endif
+    std::memcpy(out, &all, 8);
+}
+
+// Plane columns [x0, x1) without replacement graphics (render_plane): out[x -
+// xs], from stretches of one V-scroll value (the whole span, or a 16-pixel
+// column), each from the name table row of one line. Everything comes by
+// value: stores to the line (bytes) could otherwise alias it.
+void plane_span(const uint8_t* vram, const uint16_t* vsram, LinePix* out, int xs, int x0, int x1, int line,
+                int lane, bool col_vs, int hscroll, uint32_t nt, int pw, int xmask, int ymask) {
+    for (int x = x0; x < x1;) {
+        int vs = vsram[lane];
+        int lim = x1;
+        if (col_vs) {
+            const int col = x < 0 ? 0 : (x >> 4) > 19 ? 19 : (x >> 4);
+            vs = vsram[col * 2 + lane];
+            if (((x | 15) + 1) < lim) lim = (x | 15) + 1;
+        }
+        const int py = (line + vs) & ymask, ty0 = py & 7;
+        // nt is 1 KiB aligned, so every entry address is even.
+        const uint32_t ntrow = nt + uint32_t((py >> 3) * pw) * 2;
+        int px = (x - hscroll) & xmask;
+        while (x < lim) {
+            const uint32_t ea = (ntrow + uint32_t(px >> 3) * 2) & 0xFFFF;
+            const uint16_t e = uint16_t((vram[ea] << 8) | vram[ea + 1]);
+            const int ty = (e & 0x1000) ? 7 - ty0 : ty0;
+            LinePix* o = out + (x - xs);
+            int run = 8 - (px & 7);
+            if (run > lim - x) run = lim - x;
+            if (run == 8) {
+                pattern_row(vram, e, ty, e, o);
+            } else {
+                LinePix pix[8];
+                pattern_row(vram, e, ty, e, pix);
+                for (int i = 0; i < run; ++i) o[i] = pix[(px & 7) + i];
+            }
+            x += run;
+            px = (px + run) & xmask;
+        }
+    }
 }
 
 inline uint8_t tile_pixel(const uint8_t* vram, uint32_t tile, int px, int py) {
@@ -296,38 +347,9 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
     if (!text && (!v.tiles || (!v.tiles->size() && !v.tiles->dumping))) {
         // Nothing replaced and nothing recorded (the usual case): the same
         // runs, each tile row read from VRAM as one 8-pixel row.
-        const int xmask = pw * 8 - 1, ymask = ph * 8 - 1;
-        const int vs_lane = planeA ? 0 : 1;
-        // Columns [x0, x1): stretches of one V-scroll value (the whole span,
-        // or a 16-pixel column), and in each the name table row of one line.
         auto span = [&](int x0, int x1) {
-            for (int x = x0; x < x1;) {
-                int vs = v.vsram[vs_lane];
-                int lim = x1;
-                if (col_vs) {
-                    const int col = x < 0 ? 0 : (x >> 4) > 19 ? 19 : (x >> 4);
-                    vs = v.vsram[col * 2 + vs_lane];
-                    if (((x | 15) + 1) < lim) lim = (x | 15) + 1;
-                }
-                const int py = (line + vs) & ymask, ty0 = py & 7;
-                // nt is 1 KiB aligned, so every entry address is even.
-                const uint32_t ntrow = nt + uint32_t((py >> 3) * pw) * 2;
-                int px = (x - hscroll) & xmask;
-                while (x < lim) {
-                    const uint32_t ea = (ntrow + uint32_t(px >> 3) * 2) & 0xFFFF;
-                    const uint16_t e = uint16_t((v.vram[ea] << 8) | v.vram[ea + 1]);
-                    const int ty = (e & 0x1000) ? 7 - ty0 : ty0;
-                    LinePix pix[8];
-                    pattern_row(v.vram, e, ty, e, pix);
-                    LinePix* o = out + (x - xs);
-                    int run = 8 - (px & 7);
-                    if (run > lim - x) run = lim - x;
-                    if (run == 8) std::memcpy(o, pix, sizeof pix);
-                    else for (int i = 0; i < run; ++i) o[i] = pix[(px & 7) + i];
-                    x += run;
-                    px = (px + run) & xmask;
-                }
-            }
+            plane_span(v.vram, v.vsram, out, xs, x0, x1, line, planeA ? 0 : 1, col_vs, hscroll, nt, pw, pw * 8 - 1,
+                       ph * 8 - 1);
         };
         // Plane A leaves the window's columns to render_window.
         if (planeA && win_x1 > win_x0) {
