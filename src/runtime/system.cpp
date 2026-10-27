@@ -392,7 +392,13 @@ void Machine::render_output_line(int src_line, int dst_row) {
     render_line32x(src_line, row, extra, wide_active);
     // Merge: render_line32x marks 32X pixels that should be shown with
     // alpha 0xFE; 0xFD means "only where the MD pixel is the backdrop".
-    for (int x = 0; x < n; ++x) {
+    if (debug_layer == 0) {
+        for (int x = 0; x < n; ++x) {
+            const uint32_t p = row[x], a = p >> 24;
+            const bool show32x = a == 0xFE || (a == 0xFD && bg[x] != 0);
+            row[x] = show32x ? (p | 0xFF000000u) : md[x];
+        }
+    } else for (int x = 0; x < n; ++x) {
         uint32_t p = row[x];
         bool show32x = (p >> 24) == 0xFE;
         bool mdbg = bg[x] != 0;

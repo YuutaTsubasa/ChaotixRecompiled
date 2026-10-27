@@ -13,6 +13,8 @@
 #include "runtime/patches.h"
 #include "runtime/sprite_record.h"
 
+#include <cstring>
+
 namespace chaotix {
 
 namespace {
@@ -24,10 +26,6 @@ inline uint32_t rgb555(uint16_t c) {
 inline uint32_t encode(uint16_t c, bool pri) {
     bool through = (c & 0x8000) != 0;
     return ((through != pri) ? 0xFE000000u : 0xFD000000u) | rgb555(c);
-}
-// Packed pixel / run length: every index uses its palette priority bit.
-inline uint32_t encode_idx(uint8_t idx, const uint16_t* pal, bool pri) {
-    return encode(pal[idx], pri);
 }
 } // namespace
 
@@ -48,6 +46,13 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src) {
     // Character mods' colours (runtime/character_mods.h): a copy of the
     // palette with their entries substituted, likewise only for the picture.
     const uint16_t* pal = characters ? characters->display(mars.pal, sdram + CharacterPalettes::kOffsetBytes) : mars.pal;
+    // The palette's 256 entries encoded once, again only when it changed.
+    if (enc32x_pri != int(pri) || std::memcmp(enc32x_pal, pal, sizeof enc32x_pal) != 0) {
+        for (int i = 0; i < 256; ++i) enc32x[i] = encode(pal[i], pri);
+        std::memcpy(enc32x_pal, pal, sizeof enc32x_pal);
+        enc32x_pri = int(pri);
+    }
+    const uint32_t* enc = enc32x;
     // Widescreen rows above/below the active area are not in the line table;
     // the level frame buffer is a uniform grid, so extrapolate from the edge.
     const int lt = ln < 0 ? 0 : (ln >= kActiveLines ? kActiveLines - 1 : ln);
@@ -60,12 +65,17 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src) {
         if (wide_src) {
             // Margins come from the host-side shadow (see Machine::fb_margin).
             const uint8_t* sh = shadow;
-            for (int x = -extra; x < 0; ++x) all[x + extra] = encode_idx(sh[(p + uint32_t(x)) & 0x1FFFF], pal, pri);
-            for (int x = kNativeWidth; x < kNativeWidth + extra; ++x) all[x + extra] = encode_idx(sh[(p + uint32_t(x)) & 0x1FFFF], pal, pri);
+            for (int x = -extra; x < 0; ++x) all[x + extra] = enc[sh[(p + uint32_t(x)) & 0x1FFFF]];
+            for (int x = kNativeWidth; x < kNativeWidth + extra; ++x) all[x + extra] = enc[sh[(p + uint32_t(x)) & 0x1FFFF]];
         }
         // Extended rows are entirely redirected to the shadow by the blitter.
         const uint8_t* center = wide_src && (ln < 0 || ln >= kActiveLines) ? shadow : fb;
-        for (int x = 0; x < kNativeWidth; ++x) out[x] = encode_idx(center[(p + uint32_t(x)) & 0x1FFFF], pal, pri);
+        if (p + kNativeWidth <= 0x20000) {
+            const uint8_t* src = center + p;  // the line does not wrap
+            for (int x = 0; x < kNativeWidth; ++x) out[x] = enc[src[x]];
+        } else {
+            for (int x = 0; x < kNativeWidth; ++x) out[x] = enc[center[(p + uint32_t(x)) & 0x1FFFF]];
+        }
         break;
     }
     case 2: {  // direct colour, 15 bpp
@@ -83,7 +93,7 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src) {
             uint32_t len = fb[o & 0x1FFFF] + 1u;
             uint8_t idx = fb[(o + 1) & 0x1FFFF];
             o += 2;
-            uint32_t px = encode_idx(idx, pal, pri);
+            uint32_t px = enc[idx];
             for (uint32_t i = 0; i < len && x < kNativeWidth; ++i) out[x++] = px;
         }
         break;

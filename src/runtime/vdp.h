@@ -104,6 +104,11 @@ public:
     static uint32_t cram_to_rgb(uint16_t c);
 
 private:
+    // Output only: CRAM as render_line last converted it, and the colours.
+    uint16_t palrgb_cram_[64] = {};
+    uint32_t palrgb_[64] = {};
+    bool palrgb_valid_ = false;
+
     void do_dma_68k(uint32_t len);
     void do_dma_copy(uint32_t len);
     void do_dma_fill(uint16_t data, uint32_t len);

@@ -266,6 +266,11 @@ public:
     // render_line32x shows, with modded characters' entries substituted.
     // Output only: CRAM itself is never changed. Copies of a machine share it.
     std::shared_ptr<CharacterPalettes> characters;
+    // Output only: the palette render_line32x last encoded, for the priority
+    // bit in enc32x_pri (-1: none yet), and its encoded entries.
+    uint16_t enc32x_pal[256] = {};
+    uint32_t enc32x[256] = {};
+    int enc32x_pri = -1;
 
     // Components
     Rom rom;

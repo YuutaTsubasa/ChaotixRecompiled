@@ -254,6 +254,49 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
     const TextReplacer::Plane* text = v.tiles ? v.tiles->text.plane(planeA ? 0 : 1, pw, ph) : nullptr;
     // Process runs of pixels that share one tile row: a run ends at a tile
     // edge, the window edge, or a 16-pixel column (per-column V-scroll).
+    if (!text && (!v.tiles || (!v.tiles->size() && !v.tiles->dumping))) {
+        // Nothing replaced and nothing recorded (the usual case): the same
+        // runs, each tile row read from VRAM as one 8-pixel row.
+        const int xmask = pw * 8 - 1, ymask = ph * 8 - 1;
+        const int vs0 = v.vsram[planeA ? 0 : 1];
+        int x = xs;
+        while (x < xe) {
+            if (planeA && x >= win_x0 && x < win_x1) { x = win_x1; continue; }
+            int vs = vs0;
+            int lim = xe;
+            if (planeA && x < win_x0 && win_x0 < lim) lim = win_x0;
+            if (col_vs) {
+                const int col = x < 0 ? 0 : (x >> 4) > 19 ? 19 : (x >> 4);
+                vs = v.vsram[col * 2 + (planeA ? 0 : 1)];
+                if (((x | 15) + 1) < lim) lim = (x | 15) + 1;
+            }
+            const int py = (line + vs) & ymask;
+            const int px = (x - hscroll) & xmask;
+            int run = 8 - (px & 7);
+            if (run > lim - x) run = lim - x;
+            // The name table entry: nt is 1 KiB aligned, so ea is even.
+            const uint32_t ea = (nt + uint32_t(((py >> 3) * pw + (px >> 3)) * 2)) & 0xFFFF;
+            const uint16_t e = uint16_t((v.vram[ea] << 8) | v.vram[ea + 1]);
+            int ty = py & 7;
+            if (e & 0x1000) ty = 7 - ty;
+            // At most 0xFFE0 + 7 * 4 + 3: never wraps.
+            const uint8_t* row = v.vram + ((uint32_t(e) & 0x7FF) << 5) + uint32_t(ty) * 4;
+            const uint8_t pal = uint8_t((e >> 9) & 0x30), prio = uint8_t((e >> 15) & 1);
+            LinePix pix[8];
+            const int flip = (e & 0x0800) ? 7 : 0;
+            for (int k = 0; k < 4; ++k) {
+                const uint8_t c0 = row[k] >> 4, c1 = row[k] & 15;
+                pix[(k * 2) ^ flip] = LinePix{c0 ? uint8_t(pal | c0) : uint8_t(0), prio};
+                pix[(k * 2 + 1) ^ flip] = LinePix{c1 ? uint8_t(pal | c1) : uint8_t(0), prio};
+            }
+            LinePix* o = out + (x - xs);
+            const LinePix* src = pix + (px & 7);
+            if (run == 8) std::memcpy(o, pix, sizeof pix);
+            else for (int i = 0; i < run; ++i) o[i] = src[i];
+            x += run;
+        }
+        return;
+    }
     int x = xs;
     while (x < xe) {
         if (planeA && x >= win_x0 && x < win_x1) { x = win_x1; continue; }
@@ -556,8 +599,27 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     }
 
     const bool shi = (reg[12] & 0x08) != 0;
-    uint32_t palrgb[64];
-    for (int i = 0; i < 64; ++i) palrgb[i] = cram_to_rgb(cram[i]);
+    // CRAM as colours, converted again only when it changed.
+    if (std::memcmp(palrgb_cram_, cram, sizeof cram) != 0 || !palrgb_valid_) {
+        for (int i = 0; i < 64; ++i) palrgb_[i] = cram_to_rgb(cram[i]);
+        std::memcpy(palrgb_cram_, cram, sizeof cram);
+        palrgb_valid_ = true;
+    }
+    const uint32_t* palrgb = palrgb_;
+    if (!shi && !alt_cram) {
+        // The same priorities as below as one number per layer: the highest
+        // wins, 0 is the backdrop.
+        for (int x = 0; x < n; ++x) {
+            const uint32_t ks = s[x].color ? (uint32_t(s[x].prio ? 6 : 3) << 8) | s[x].color : 0;
+            const uint32_t ka = a[x].color ? (uint32_t(a[x].prio ? 5 : 2) << 8) | a[x].color : 0;
+            const uint32_t kb = b[x].color ? (uint32_t(b[x].prio ? 4 : 1) << 8) | b[x].color : 0;
+            uint32_t k = ks > ka ? ks : ka;
+            if (kb > k) k = kb;
+            out_rgb[x] = palrgb[k ? (k & 0xFF) : bgidx] | 0xFF000000u;
+            out_bg[x] = k ? 0 : 1;
+        }
+        return;
+    }
     for (int x = 0; x < n; ++x) {
         uint8_t c = 0;
         bool isbg = false, sprite = false;
