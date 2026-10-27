@@ -298,31 +298,63 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(widescreen_lets_go_when_a_level_hands_over PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "WIDE f=464[0-9] active=0 .*zone=7 level=0")
 
-    # WORLD ENTRANCE stays 4:3 (issue #13: its narrow rooms showed the outdoor
-    # entrance beside them, and the catapult outran the shifted ring). This
-    # walk crosses the lobby, takes the catapult and lands in SPEED SLIDER at
-    # frame 1989; the margins must first go live there, once it has loaded.
-    add_test(NAME widescreen_leaves_the_lobby_4_3
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --trace-wide
+    # WORLD ENTRANCE is widescreen (issue #61; it was kept 4:3 for issues #13
+    # and #56). This walk crosses the lobby, takes the catapult and lands in
+    # SPEED SLIDER at frame 1989: the margins are live from the lobby's first
+    # frame, and the centre is the 4:3 picture on every one of them. Before,
+    # with the camera clamped and plane B shifted, the catapult landed four
+    # frames early and blocks of the sky were missing inside the 4:3 view.
+    add_test(NAME widescreen_lobby_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --compare-native --min-centre-frames 1600)
+    set_tests_properties(widescreen_lobby_centre_matches_4_3 PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "margins live from frame 5[0-9][0-9].*centre check: 16[0-9][0-9] widescreen frames")
+    # The same walk at frame 858: the right margin shows the pillar before the
+    # COMBI CATCHER in its own area's colours (orange), a frame before the
+    # game loads them; it showed blue-grey (patches::lobby_margins).
+    add_test(NAME widescreen_lobby_margins_in_the_next_area_colours
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 860 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 858:5d17e048ee2e9f47)
+    # The Combi Catcher scrolls down into a room narrower than the view: black
+    # margins, the 4:3 centre throughout. Its TIME UP, scaled up past the
+    # screen, used to flip a frame late when the SH-2 drew it into margins
+    # that show nothing there.
+    add_test(NAME widescreen_lobby_combi_catcher_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3300 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10
+                --compare-native --min-centre-frames 2700)
+    set_tests_properties(widescreen_lobby_margins_in_the_next_area_colours
+        widescreen_lobby_combi_catcher_centre_matches_4_3 PROPERTIES TIMEOUT 600
+        FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    add_test(NAME lockstep_lobby_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600)
-    set_tests_properties(widescreen_leaves_the_lobby_4_3 PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "margins live from frame 21[0-9][0-9]")
+    set_tests_properties(lockstep_lobby_widescreen PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
 
-    # ...unless the player asks for it anyway (WidescreenEverywhere, issue #21).
-    add_test(NAME widescreen_lobby_when_asked
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1000 --wide 53 --trace-wide
-                --wide-everywhere --stage 300:7:0:0:2:7:0 --press 600:right:2600)
-    set_tests_properties(widescreen_lobby_when_asked PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "margins live from frame 5[0-9][0-9]")
-
-    # ...but not the final boss, WORLD ENTRANCE level 2 (issue #56): its 32X
-    # arena covers only the 4:3 view, so widened, the margins showed stretched
-    # bars of its floor. It stays 4:3 with WIDE LOBBY on: no margins at all.
-    add_test(NAME widescreen_final_boss_stays_4_3_with_wide_lobby
+    # The final boss, WORLD ENTRANCE level 2 (issues #56, #61): its arena is
+    # drawn by the special stage's polygon code, widened as the stage is, so
+    # its floor and pillars reach the margins (they stopped at the 4:3 edges,
+    # which showed them as stretched bars). Margins live from its first frame.
+    add_test(NAME widescreen_final_boss
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2000 --wide 53 --trace-wide
-                --wide-everywhere --level-select --stage 300:7:2:0:4:7:0)
-    set_tests_properties(widescreen_final_boss_stays_4_3_with_wide_lobby PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0002"
+                --level-select --stage 300:7:2:0:4:7:0)
+    set_tests_properties(widescreen_final_boss PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0002.*margins live from frame 48[0-9]")
+    add_test(NAME lockstep_final_boss_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep
+                --level-select --stage 300:7:2:0:4:7:0
+                --press 1600:right:300 --press 1700:c:10 --press 2000:left:200 --press 2300:c:10)
+    set_tests_properties(lockstep_final_boss_widescreen PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
+    # ...but not the ending's scenes (levels 3-6): their sprites are staged
+    # for the 4:3 screen, and widened their left margin was black (left of the
+    # layout) beside a white picture. No margins at all.
+    add_test(NAME widescreen_ending_stays_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1200 --wide 53 --trace-wide
+                --level-select --stage 300:7:3:0:4:7:0)
+    set_tests_properties(widescreen_ending_stays_4_3 PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0003"
         FAIL_REGULAR_EXPRESSION "margins live from")
 
     # MARINA MADNESS's clouds and sea are four screen-fixed 32X objects, each

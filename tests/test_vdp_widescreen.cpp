@@ -156,3 +156,25 @@ TEST(vdp_widescreen, bonus_stage_rings_hide_plane_b_in_the_margins) {
     CHECK_EQ(rgb[53 - 4], red);               // left margin (column 63)
     CHECK_EQ(rgb[53 + 200], black);           // native: plane A as drawn
 }
+
+TEST(vdp_widescreen, lobby_margins_take_the_next_area_colours) {
+    // Issue #61: WORLD ENTRANCE loads palette lines 0 and 1 by area, once the
+    // 4:3 view reaches it; a margin showing the next area draws its planes in
+    // that area's colours (Vdp::alt_cram). Sprites keep the game's colours.
+    auto v = scene();
+    for (int col = 0; col < 64; ++col) word(v, 0xA000 + 2 * uint32_t((line / 8) * 64 + col), 1);
+    sprite(v, 0, 330 + 128);  // in the right margin
+    uint16_t next[32] = {};
+    next[1] = 0x0E00;  // blue
+    v.alt_cram = next;
+    v.alt_x0 = 53 + 320;
+    v.alt_x1 = 53 + 320 + 53;
+    auto rgb = render(v, 53);
+    CHECK_EQ(rgb[53 + 100], red);              // the 4:3 picture: the game's colours
+    CHECK_EQ(rgb[53 - 4], red);                // the other margin too
+    CHECK_EQ(rgb[53 + 320 + 2], 0xFF0000FFu);  // the right margin: the next area's
+    CHECK_EQ(rgb[53 + 330 + 2], red);          // a sprite there: the game's
+    v.alt_cram = nullptr;
+    rgb = render(v, 53);
+    CHECK_EQ(rgb[53 + 320 + 2], red);
+}
