@@ -108,6 +108,18 @@ private:
     uint16_t palrgb_cram_[64] = {};
     uint32_t palrgb_[64] = {};
     bool palrgb_valid_ = false;
+    // Output only: the sprite list as render_line last walked it, in link
+    // order, from a copy of the attribute table it was walked in. Walked
+    // again whenever the table differs from the copy.
+    struct SatEntry {
+        uint16_t y, size, pattern, x;
+        uint8_t index;  // place in the table
+    };
+    uint8_t sat_bytes_[80 * 8] = {};
+    uint32_t sat_addr_ = 0;
+    int sat_max_ = 0;  // 0: not walked yet
+    int sat_len_ = 0;
+    SatEntry sat_list_[80] = {};
 
     void do_dma_68k(uint32_t len);
     void do_dma_copy(uint32_t len);

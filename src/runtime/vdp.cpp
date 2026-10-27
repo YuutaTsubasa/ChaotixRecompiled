@@ -2,6 +2,7 @@
 #include "tile_replace.h"
 #include "patches.h"
 #include "log.h"
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -521,14 +522,33 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
             std::memset(place, 0xFF, sizeof place);
         }
         const bool replacing = tiles && (tiles->size() || st);
-        while (count < max_sprites) {
-            uint32_t e = sat + uint32_t(link) * 8;
-            auto rw = [&](uint32_t o) { return uint16_t((vram[(e + o) & 0xFFFF] << 8) | vram[(e + o + 1) & 0xFFFF]); };
-            int sy = (rw(0) & 0x3FF) - 128;
-            uint16_t sz = rw(2);
+        // Nothing replaced and nothing recorded (the usual case): each 8-pixel
+        // column of a sprite drawn from one pattern row.
+        const bool plain = !st && !(tiles && (tiles->size() || tiles->dumping));
+        // The list follows the links from entry 0. The table ends at most at
+        // 0xFC00 + 80 * 8 (H40) or 0xFE00 + 64 * 8 (H32): never wraps.
+        const size_t sat_size = size_t(max_sprites) * 8;
+        if (sat != sat_addr_ || max_sprites != sat_max_ || std::memcmp(sat_bytes_, vram + sat, sat_size) != 0) {
+            std::memcpy(sat_bytes_, vram + sat, sat_size);
+            sat_addr_ = sat;
+            sat_max_ = max_sprites;
+            sat_len_ = 0;
+            while (sat_len_ < max_sprites) {
+                const uint8_t* p = sat_bytes_ + link * 8;
+                sat_list_[sat_len_++] = SatEntry{uint16_t(p[0] << 8 | p[1]), uint16_t(p[2] << 8 | p[3]),
+                                                 uint16_t(p[4] << 8 | p[5]), uint16_t(p[6] << 8 | p[7]), uint8_t(link)};
+                link = p[3] & 0x7F;
+                if (link == 0 || link >= max_sprites) break;
+            }
+        }
+        for (; count < sat_len_; ++count) {
+            const SatEntry& se = sat_list_[count];
+            link = se.index;
+            int sy = (se.y & 0x3FF) - 128;
+            uint16_t sz = se.size;
             int hs = ((sz >> 10) & 3) + 1, vsz = ((sz >> 8) & 3) + 1;
-            uint16_t pat = rw(4);
-            const uint16_t raw_x = rw(6);
+            uint16_t pat = se.pattern;
+            const uint16_t raw_x = se.x;
             int sxr = raw_x & 0x1FF;
             // The widened ring hook retains screen X + 128 in the SAT word.
             // Only the added right edge of a level needs coordinates beyond
@@ -549,6 +569,42 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
                 const bool st_member = st_hit >= 0 && st_live[st_hit];
                 int row = line - sy;
                 if (pat & 0x1000) row = vsz * 8 - 1 - row;
+                if (plain) {
+                    // The pixel budget as the loop below spends it: `cnt`
+                    // pixels drawn, the overflow flag set if one checked
+                    // (up to the one that stops it) is past the native budget.
+                    const int w = hs * 8, left = max_pixels - pixels;
+                    const int cnt = left <= 0 ? 0 : left < w ? left : w;
+                    const int last = left <= 0 ? 0 : left < w - 1 ? left : w - 1;
+                    if (pixels + last >= native_pixels) sprite_overflow = true;
+                    pixels += cnt;
+                    if (masked) continue;
+                    for (int c0 = 0; c0 < cnt; c0 += 8) {
+                        // Sprite columns [a0, a1) of this 8-pixel column that are on the line.
+                        const int a0 = std::max(c0, xs - sx), a1 = std::min(std::min(c0 + 8, cnt), xe - sx);
+                        if (a0 >= a1) continue;
+                        const int cell = (pat & 0x0800) ? hs - 1 - (c0 >> 3) : (c0 >> 3);
+                        LinePix pix[8];
+                        pattern_row(vram, (pat & 0x7FFu) + uint32_t(cell * vsz + (row >> 3)), row & 7, pat, pix);
+                        for (int cx = a0; cx < a1; ++cx) {
+                            const LinePix p = pix[cx - c0];
+                            if (!(p & kPixColor)) continue;
+                            const int x = sx + cx, i = x - xs;
+                            if (filled[i]) {
+                                if (x >= 0 && x < width) sprite_collision = true;
+                                // A hidden sprite still collides, but does not cover what is behind it.
+                                if (!hidden_only[i] || hidden) continue;
+                                hidden_only[i] = 0;
+                                s[i] = p;
+                                continue;
+                            }
+                            filled[i] = 1;
+                            if (hidden) { hidden_only[i] = 1; continue; }
+                            s[i] = p;
+                        }
+                    }
+                    continue;
+                }
                 for (int cx = 0; cx < hs * 8; ++cx) {
                     if (pixels >= native_pixels) sprite_overflow = true;
                     if (pixels >= max_pixels) break;
@@ -585,9 +641,6 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
                     if (st) place[i] = uint8_t(count);
                 }
             }
-            link = sz & 0x7F;
-            ++count;
-            if (link == 0 || link >= max_sprites) break;
         }
         if (st) {
             // The images, over the sprites after their first present member
