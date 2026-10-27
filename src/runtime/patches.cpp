@@ -67,7 +67,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         // setting rather than from the current margin: the margins follow the
         // window, and a window resized during a level would otherwise leave
         // that level in 4:3 until the next load.
-        // WORLD ENTRANCE is left native (see wide_zone).
+        // The ending's scenes in WORLD ENTRANCE are left native (wide_zone).
         m->plane_shift = plane_shift_for(m->wide_enabled && wide_zone(*m) ? kMaxWideExtra : 0);
         // Also how a scene change is told apart from a level that has merely
         // stopped (see wide_scene_active): a new scene redraws the planes.
@@ -148,6 +148,8 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
     if (pc == kCamClampMax || pc == kCamClampMin) {
         const int e = std::clamp(m->wide_extra, 0, kMaxWideExtra);
+        // WORLD ENTRANCE's events follow the camera: it is left alone there
+        // (see wide_zone), and the margins show what lies beside the view.
         if (!e || !wide_zone(*m) || wram16(*m, kSceneZone) == kWorldEntrance) return;
         const int right = int16_t(m68k::rd16(c, c->a[1] + 8));
         const int left = int16_t(m68k::rd16(c, c->a[1] + 0xA));
@@ -165,6 +167,8 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
         return;
     }
+    // The lobby's plane B is a set of 512 px pictures scrolled within the
+    // ring, which must keep its native wrap-around (see wide_zone).
     const int w = (c->a[1] & 0xFFFF) != kPlaneAStruct && in_lobby(*m) ? 0 : m->plane_shift;
     if (!w || m->vdp.reg[16] != kLevelPlaneSize) return;
     switch (pc) {
