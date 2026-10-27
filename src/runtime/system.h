@@ -363,8 +363,11 @@ private:
     void boot_hle_start_sh2();
     // Renders a 32X line of vdp.width() + 2 * extra pixels. With wide_src the
     // margins come from the frame buffer bytes around the line (packed pixel
-    // mode; see patches.h), otherwise they are transparent.
-    void render_line32x(int ln, uint32_t* out, int extra, bool wide_src);
+    // mode; see patches.h), otherwise they are transparent. With md_top (the
+    // Mega Drive line as Vdp::render_line_indexed gives it, as wide) and its
+    // colours md_rgb, the pixels are written merged with it instead.
+    void render_line32x(int ln, uint32_t* out, int extra, bool wide_src, const uint8_t* md_top = nullptr,
+                        const uint32_t* md_rgb = nullptr);
     void render_output_line(int src_line, int dst_row);
 
     // 32X register helpers
