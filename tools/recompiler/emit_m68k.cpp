@@ -191,7 +191,7 @@ WaitLoop analyze_wait_loop(const Program& p, const Block& b, int bank) {
     if (b.insns.size() < 2) return L;
     m68k::Insn last;
     p.decode_m68k(b.insns.back(), bank, last);
-    if (last.op != m68k::Op::BCC || last.target != b.start) return L;
+    if (last.op != m68k::Op::BCC || last.target != b.start || patches::is_m68k_hook(last.pc)) return L;
     int cost = int(last.cycles);
     for (size_t i = 0; i + 1 < b.insns.size(); ++i) {
         m68k::Insn in;

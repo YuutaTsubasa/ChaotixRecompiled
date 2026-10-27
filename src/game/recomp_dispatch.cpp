@@ -335,6 +335,7 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
         if (area <= 1 && ((r.addr & 0x1FFFFFFF) >> 24) == 0x06) m.sdram_code_ranges.push_back({r.addr & 0x3FFFF, (r.addr & 0x3FFFF) + r.len});
         else if (area == 6) m.cache_code_ranges.push_back({r.addr & 0xFFF, (r.addr & 0xFFF) + r.len});
     }
+    m.code_ranges_changed();
     m.remap_sh2();
     // A ROM patch over code that runs straight from ROM (or literals folded
     // from it) would be ignored by the generated code: that CPU interprets.

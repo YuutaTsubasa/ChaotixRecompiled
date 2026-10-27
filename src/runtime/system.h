@@ -297,6 +297,10 @@ public:
     // Self-modification tracking for RAM-resident recompiled SH-2 code.
     // Ranges are byte offsets into SDRAM / the cache data array.
     std::vector<std::pair<uint32_t, uint32_t>> sdram_code_ranges, cache_code_ranges;
+    // The same as one bit per byte, made by code_ranges_changed(): a write
+    // checks the bytes it covers instead of every range (issue #62).
+    std::vector<uint8_t> sdram_code_bits, cache_code_bits;
+    void code_ranges_changed();
     uint32_t sdram_code_epoch = 1;
     uint32_t cache_code_epoch[2] = {1, 1};
 
@@ -335,6 +339,7 @@ public:
     // remaining count `at`, in this CPU's current slice. INT32_MIN when that
     // holds for the whole slice; `at` itself when it cannot tell.
     int32_t sh2_read_stable_to(int cpu, uint32_t a, int size, int32_t at) const;
+    SliceInfo& sh2_slice_for_tests(int cpu) { return sh2_slice_[cpu]; }
 
 private:
     void run_slice(uint64_t end_mclk);

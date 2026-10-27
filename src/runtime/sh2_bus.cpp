@@ -30,7 +30,28 @@ inline void be_write(uint8_t* p, uint32_t v, int size) {
     p[0] = uint8_t(v >> 24); p[1] = uint8_t(v >> 16); p[2] = uint8_t(v >> 8); p[3] = uint8_t(v);
 }
 
+// Code ranges [first, second) as one bit per byte of an area of `bytes`.
+std::vector<uint8_t> code_bits(const std::vector<std::pair<uint32_t, uint32_t>>& ranges, uint32_t bytes) {
+    std::vector<uint8_t> bits(bytes / 8, 0);
+    for (const auto& r : ranges)
+        for (uint32_t o = r.first; o < r.second && o < bytes; ++o) bits[o >> 3] |= uint8_t(1u << (o & 7));
+    return bits;
+}
+
+// Whether a write of `size` bytes at `off` touches a code byte: what a write
+// overlapping one of the ranges was.
+inline bool code_hit(const std::vector<uint8_t>& bits, uint32_t off, int size) {
+    for (uint32_t o = off; o < off + uint32_t(size); ++o)
+        if ((o >> 3) < bits.size() && (bits[o >> 3] >> (o & 7) & 1)) return true;
+    return false;
+}
+
 } // namespace
+
+void Machine::code_ranges_changed() {
+    sdram_code_bits = code_bits(sdram_code_ranges, 0x40000);
+    cache_code_bits = code_bits(cache_code_ranges, 0x1000);
+}
 
 void Machine::remap_sh2() {
     for (int cpu = 0; cpu < 2; ++cpu) {
@@ -571,8 +592,7 @@ void Machine::sh2_write(int cpu, uint32_t a, uint32_t v, int size) {
         if (p >= 0x06000000 && p < 0x08000000) {
             uint32_t off = p & 0x3FFFF;
             be_write(sdram + off, v, size);
-            for (const auto& r : sdram_code_ranges)
-                if (off < r.second && off + uint32_t(size) > r.first) { ++sdram_code_epoch; break; }
+            if (code_hit(sdram_code_bits, off, size)) ++sdram_code_epoch;
             return;
         }
         CHAOTIX_LOG_LIMITED(LogLevel::Debug, "sh2", 32, "SH2%c unmapped write%d %08X=%X", cpu ? 'S' : 'M', size * 8, a, v);
@@ -583,8 +603,7 @@ void Machine::sh2_write(int cpu, uint32_t a, uint32_t v, int size) {
     if (area == 6) {
         uint32_t off = a & 0xFFF;
         be_write(onchip[cpu].cache_data + off, v, size);
-        for (const auto& r : cache_code_ranges)
-            if (off < r.second && off + uint32_t(size) > r.first) { ++cache_code_epoch[cpu]; break; }
+        if (code_hit(cache_code_bits, off, size)) ++cache_code_epoch[cpu];
         return;
     }
     if (a >= 0xFFFFFE00) { onchip_write(cpu, a, v, size); return; }
