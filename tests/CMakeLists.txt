@@ -315,6 +315,16 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(widescreen_lobby_when_asked PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "margins live from frame 5[0-9][0-9]")
 
+    # ...but not the final boss, WORLD ENTRANCE level 2 (issue #56): its 32X
+    # arena covers only the 4:3 view, so widened, the margins showed stretched
+    # bars of its floor. It stays 4:3 with WIDE LOBBY on: no margins at all.
+    add_test(NAME widescreen_final_boss_stays_4_3_with_wide_lobby
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2000 --wide 53 --trace-wide
+                --wide-everywhere --level-select --stage 300:7:2:0:4:7:0)
+    set_tests_properties(widescreen_final_boss_stays_4_3_with_wide_lobby PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0002"
+        FAIL_REGULAR_EXPRESSION "margins live from")
+
     # MARINA MADNESS's clouds and sea are four screen-fixed 32X objects, each
     # two copies of one picture that cover only the 4:3 screen (issue #36:
     # the band stopped at the 4:3 edges). Widened, more copies at the game's
