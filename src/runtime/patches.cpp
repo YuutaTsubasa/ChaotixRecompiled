@@ -5,6 +5,8 @@
 #include "runtime/tether.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iterator>
 
@@ -58,6 +60,13 @@ void extend_backdrop(Machine& m, m68k::State* c) {
 
 void m68k_hook(m68k::State* c, uint32_t pc) {
     Machine* m = static_cast<Machine*>(c->hook_user);
+    static const char* dbgp = std::getenv("DBG_PLANE");  // TEMP
+    if (dbgp && m->frame_count >= std::strtoull(dbgp, nullptr, 10) && m->frame_count < std::strtoull(dbgp, nullptr, 10) + 6 &&
+        pc >= kFullRedrawA && pc <= kRowDownB_X)
+        std::printf("PL f=%llu pc=%06X a1=%06X d0=%04X d1=%04X ret=%06X x=%04X px=%04X y=%04X py=%04X\n",
+                    (unsigned long long)m->frame_count, pc, c->a[1] & 0xFFFFFF, c->d[0] & 0xFFFF, c->d[1] & 0xFFFF,
+                    m68k::rd32(c, c->a[7]) & 0xFFFFFF, m68k::rd16(c, c->a[1]), m68k::rd16(c, c->a[1] + 2),
+                    m68k::rd16(c, c->a[1] + 0x10), m68k::rd16(c, c->a[1] + 0x12));
     switch (pc) {
     case kFullRedrawA:
     case kFullRedrawB:
@@ -145,7 +154,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
     if (pc == kCamClampMax || pc == kCamClampMin) {
         const int e = std::clamp(m->wide_extra, 0, kMaxWideExtra);
-        if (!e || !wide_zone(*m)) return;
+        if (!e || !wide_zone(*m) || lobby(*m)) return;
         const int right = int16_t(m68k::rd16(c, c->a[1] + 8));
         const int left = int16_t(m68k::rd16(c, c->a[1] + 0xA));
         int lo = left + e, hi = right - e;
@@ -162,7 +171,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
         return;
     }
-    const int w = m->plane_shift;
+    const int w = (c->a[1] & 0xFFFF) != kPlaneAStruct && lobby(*m) ? 0 : m->plane_shift;
     if (!w || m->vdp.reg[16] != kLevelPlaneSize) return;
     switch (pc) {
     case kFillSplitX: {
@@ -483,9 +492,13 @@ uint64_t scene_key(const Machine& m) {
            wram16(m, kSceneLevel);
 }
 
+bool lobby(const Machine& m) {
+    return wram16(m, kSceneZone) == kWorldEntrance && wram16(m, kSceneLevel) <= kLastLobbyLevel;
+}
+
 bool wide_zone(const Machine& m) {
     if (wram16(m, kSceneZone) != kWorldEntrance) return true;
-    return m.wide_everywhere && wram16(m, kSceneLevel) <= kLastLobbyLevel;
+    return wram16(m, kSceneLevel) <= kLastLobbyLevel;
 }
 
 bool wide_scene_active(const Machine& m) {
@@ -527,6 +540,12 @@ MarginCut margin_cut(const Machine& m, int extra) {
     // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
     c.left = std::clamp(extra - camera_x(m), 0, extra);
+    if (lobby(m)) {
+        const CameraRange r = camera_range(m);
+        const int cam = camera_x(m);
+        c.left = std::max(c.left, std::clamp(extra - (cam - r.left), 0, extra));
+        c.right = std::clamp(cam + extra - r.right, 0, extra);
+    }
     return c;
 }
 

@@ -399,6 +399,7 @@ bool wide_scene_active(const Machine& m);
 constexpr uint16_t kWorldEntrance = 7;
 constexpr uint16_t kLastLobbyLevel = 1;
 bool wide_zone(const Machine& m);
+bool lobby(const Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
 // mean the same scene; Machine::level_scene holds the key the level engine
