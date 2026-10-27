@@ -371,7 +371,7 @@ int main(int argc, char** argv) {
     // count at the end. The count is what tells a level that stayed wide from
     // one that flickered back to 4:3 part way through.
     bool trace_wide = false;
-    bool wide_everywhere = false;  // also widen the scenes kept 4:3
+    bool wide_everywhere = false;  // the former WIDE LOBBY: no effect since issue #61
     bool hud_edges = false;        // the HUD at the widened picture's edge
     int debug_layer = 0;
     // Mod folders, lowest priority first: the packs of --mods-dir, then

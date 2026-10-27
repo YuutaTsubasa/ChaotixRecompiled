@@ -302,7 +302,15 @@ constexpr CentreAdd kSpecialCentreAdds[] = {
 // margins carry the rings on (Vdp::radial_lut), measured from the picture
 // itself, so they cycle with it. A picture that is not rings centred on the
 // screen is not widened.
-enum class PolyScene : uint8_t { None, Stage, Results, Bonus };
+//
+// The final boss (WORLD ENTRANCE level 2, issue #61) is a level, and its
+// arena, floor and pillars, is projected by the stage's code onto the
+// screen's rectangle; widened like the stage, the arena reaches the margins
+// (it was cut at the 4:3 edges, which showed its floor as stretched bars).
+// Its line clear is the bonus stage's, and its fight begins with a white
+// flash: one polygon with the screen's corners, clipped to exactly the
+// native line, which is drawn over the whole widened line (is_widened_clear).
+enum class PolyScene : uint8_t { None, Stage, Results, Bonus, Boss };
 constexpr int16_t kFullRect[4] = {0, 319, 0, 223};
 constexpr uint32_t kSdramImageRom = 0x77800;
 constexpr uint32_t kResultsCodeSdram = 0x7640;
@@ -381,25 +389,40 @@ bool bonus_tunnel(const Machine& m, uint8_t* lut);
 // C21C bit2 is set: its actors wait just outside the original viewport.
 bool wide_scene_active(const Machine& m);
 
-// WORLD ENTRANCE (the lobby, zone 7) stays 4:3 (issue #13): its rooms are
-// narrower than a widened view, so the margins showed the neighbouring part of
-// the layout -- the outdoor entrance beside the indoor rooms, drawn with the
-// indoor tiles and palette -- or blocks the engine never streams; the
-// palette changes where the camera reaches a point, which the margins pass
-// first; and the catapult moves the camera faster than the shifted ring's
-// 96 - E px of slack (natively 192) can keep up with, so chunks went missing
-// even in the 4:3 centre. There the ring is not shifted, the camera clamp is
-// left alone and the margins are black, exactly as a 4:3 window shows it.
-// Machine::wide_everywhere (WIDE LOBBY) lifts this for the lobby itself,
-// levels 0 and 1, and the INTRODUCTION mask below. Levels 2-6 of the zone are
-// the final boss and the ending's scenes (issue #56): the boss's arena is
-// drawn by the 32X across the 4:3 view only, so widened, the margins showed
-// stretched bars of its floor and the boss cut off at the old edge. They stay
-// 4:3 with WIDE LOBBY on as well.
+// WORLD ENTRANCE, zone 7: the lobby (levels 0 and 1), the final boss (2) and
+// the ending's scenes (3-6). It was kept 4:3 (issues #13, #56); it is
+// widened since issue #61, all but the ending's scenes, which stay 4:3. What
+// went wrong, and how each is handled:
+// - The camera is left alone there: the widescreen camera clamp moved it,
+//   and the lobby's events (rooms, palettes, the catapult) and the boss
+//   follow the camera, so the run itself changed (the catapult landed four
+//   frames early). Unclamped, the picture's centre is the 4:3 one and the
+//   margins show what lies beside it.
+// - The lobby's plane B is not a scrolling layer but a set of 512 px
+//   pictures side by side, one per part of the lobby, that the game selects
+//   by moving plane B's X ($889144) and scrolls by line within the 512 px
+//   ring (the sky beside the catapult). Shifted like plane A, the ring held
+//   96 px of the next picture instead of its own wrap-around: the blocks
+//   missing from the sky during the catapult, inside the 4:3 view too. Plane
+//   B keeps the native ring in the lobby; plane A, which scrolls with the
+//   camera, is shifted as in a level.
+// - Rooms narrower than the view (the stage select room, the Combi
+//   Catcher) are black outside the range the camera is held to, and the
+//   palette areas are drawn in their own colours (lobby_margins, below).
+// - The final boss's arena is drawn by the special stage's polygon code with
+//   the screen's rectangle; it is widened as the stage is (PolyScene::Boss).
+// The scripted Eggman encounter in INTRODUCTION level 0 stays 4:3 on purpose
+// (the user's decision: Eggman walks out to the left, and widened that looks
+// wrong); nothing lifts that mask any more. Machine::wide_everywhere (the
+// former WIDE LOBBY option) has no effect.
 constexpr uint16_t kWorldEntrance = 7;
 constexpr uint16_t kLastLobbyLevel = 1;
+constexpr uint16_t kFinalBossLevel = 2;
 bool wide_zone(const Machine& m);
 bool in_lobby(const Machine& m);
+// The final boss's arena is on screen, drawn by the special stage's code
+// (its projection loaded) with the screen's rectangle, or our widened one.
+bool final_boss_active(const Machine& m);
 
 // The lobby's palette areas (issue #61). Every frame ($8891C6) the lobby
 // picks palette lines 0 and 1 by where plane A is: area k while its X is at

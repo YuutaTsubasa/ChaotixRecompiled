@@ -279,8 +279,6 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# true: levels render extra columns (or rows, for frames taller than 4:3) to fill\n");
     std::fprintf(f, "# the aspect ratio, from 1.24:1 (320x240) to 2:1 (480x224); false: original 4:3\n");
     std::fprintf(f, "Widescreen = %s\n", widescreen ? "true" : "false");
-    std::fprintf(f, "# true: also widen the lobby and the INTRODUCTION Eggman scene, which glitch\n");
-    std::fprintf(f, "WidescreenEverywhere = %s\n", wide_everywhere ? "true" : "false");
     std::fprintf(f, "# true: in widescreen levels, the HUD keeps to the left edge of the picture\n");
     std::fprintf(f, "WidescreenHud = %s\n", wide_hud ? "true" : "false");
     std::fprintf(f, "# The menu's font: Game (read from your ROM) | Pixel (the bundled pixel face)\n");

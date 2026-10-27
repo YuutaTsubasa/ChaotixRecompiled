@@ -822,11 +822,8 @@ void Menu::build_video() {
     items_.push_back({"WIDESCREEN",
                       [c] { return on_off(c->widescreen); },
                       [c](int s) { if (s) c->widescreen = !c->widescreen; }});
-    // The lobby and the INTRODUCTION Eggman scene stay 4:3 because they glitch
-    // when widened (issues #13, #5); some players want them wide regardless.
-    items_.push_back({"WIDE LOBBY",
-                      [c] { return on_off(c->wide_everywhere); },
-                      [c](int s) { if (s) c->wide_everywhere = !c->wide_everywhere; }});
+    // No WIDE LOBBY any more: WORLD ENTRANCE is widescreen as it is (issue
+    // #61), and the INTRODUCTION Eggman scene stays 4:3 on purpose.
     items_.push_back({"WIDE HUD",
                       [c] { return on_off(c->wide_hud); },
                       [c](int s) { if (s) c->wide_hud = !c->wide_hud; },

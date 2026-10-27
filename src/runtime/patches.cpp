@@ -5,8 +5,6 @@
 #include "runtime/tether.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <iterator>
 
@@ -60,13 +58,6 @@ void extend_backdrop(Machine& m, m68k::State* c) {
 
 void m68k_hook(m68k::State* c, uint32_t pc) {
     Machine* m = static_cast<Machine*>(c->hook_user);
-    static const char* dbgp = std::getenv("DBG_PLANE");  // TEMP
-    if (dbgp && m->frame_count >= std::strtoull(dbgp, nullptr, 10) && m->frame_count < std::strtoull(dbgp, nullptr, 10) + 6 &&
-        pc >= kFullRedrawA && pc <= kRowDownB_X)
-        std::printf("PL f=%llu pc=%06X a1=%06X d0=%04X d1=%04X ret=%06X x=%04X px=%04X y=%04X py=%04X\n",
-                    (unsigned long long)m->frame_count, pc, c->a[1] & 0xFFFFFF, c->d[0] & 0xFFFF, c->d[1] & 0xFFFF,
-                    m68k::rd32(c, c->a[7]) & 0xFFFFFF, m68k::rd16(c, c->a[1]), m68k::rd16(c, c->a[1] + 2),
-                    m68k::rd16(c, c->a[1] + 0x10), m68k::rd16(c, c->a[1] + 0x12));
     switch (pc) {
     case kFullRedrawA:
     case kFullRedrawB:
@@ -142,7 +133,10 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     case kRingCullHi:
     case kRingCullDone:
     case kRingCullExit: {
-        const int e = m->wide_active && !m->wide_special ? std::clamp(m->wide_extra, 0, kMaxWideExtra) : 0;
+        // The final boss's arena is a level too (rings scatter when the
+        // player is hit).
+        const bool level = m->wide_active && (!m->wide_special || PolyScene(m->poly_scene) == PolyScene::Boss);
+        const int e = level ? std::clamp(m->wide_extra, 0, kMaxWideExtra) : 0;
         int want = 0;
         if (pc == kRingCullLo) want = e;
         else if (pc == kRingCullHi) want = -e;
@@ -154,7 +148,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
     if (pc == kCamClampMax || pc == kCamClampMin) {
         const int e = std::clamp(m->wide_extra, 0, kMaxWideExtra);
-        if (!e || !wide_zone(*m) || in_lobby(*m)) return;
+        if (!e || !wide_zone(*m) || wram16(*m, kSceneZone) == kWorldEntrance) return;
         const int right = int16_t(m68k::rd16(c, c->a[1] + 8));
         const int left = int16_t(m68k::rd16(c, c->a[1] + 0xA));
         int lo = left + e, hi = right - e;
@@ -478,11 +472,17 @@ void sh2_hook(Machine& m, sh2::State& c, uint32_t pc) {
 }
 
 bool is_widened_clear(const Machine& m, uint32_t word_addr, uint32_t words, uint16_t data) {
-    if (!m.wide_special || data != 0) return false;
+    if (!m.wide_special) return false;
     switch (PolyScene(m.poly_scene)) {
     case PolyScene::None:  // set by hand (tests): the stage, as it always was
-    case PolyScene::Stage: return (word_addr & 0xFF) == kSpecialClearStart && words == kSpecialClearLen + 1u;
-    case PolyScene::Bonus: return (word_addr & 0xFF) == 0 && words == kBonusClearLen + 1u;
+    case PolyScene::Stage: return data == 0 && (word_addr & 0xFF) == kSpecialClearStart && words == kSpecialClearLen + 1u;
+    case PolyScene::Bonus: return data == 0 && (word_addr & 0xFF) == 0 && words == kBonusClearLen + 1u;
+    // The final boss's: the same clear, and the polygon its fight starts
+    // with, a white flash over the whole screen, which the rectangle clips
+    // to one span of exactly the native line ($0600472A). Its corners are
+    // the screen's, not projected, so moved back it would leave a C px band
+    // of the arena; it is the whole widened line instead.
+    case PolyScene::Boss: return (word_addr & 0xFF) == 0 && (words == kBonusClearLen + 1u || words == kBonusClearLen);
     default: return false;
     }
 }
@@ -490,6 +490,11 @@ bool is_widened_clear(const Machine& m, uint32_t word_addr, uint32_t words, uint
 uint64_t scene_key(const Machine& m) {
     return (uint64_t(wram16(m, kGameMode)) << 32) | (uint64_t(wram16(m, kSceneZone)) << 16) |
            wram16(m, kSceneLevel);
+}
+
+bool final_boss_active(const Machine& m) {
+    if (wram16(m, kSceneZone) != kWorldEntrance || wram16(m, kSceneLevel) != kFinalBossLevel) return false;
+    return special_projection_loaded(m) && (special_rect_is_ours(m, PolyScene::Boss) || rect_is(m, kFullRect));
 }
 
 bool in_lobby(const Machine& m) {
@@ -582,7 +587,7 @@ void lobby_margins(Machine& m, int e) {
 
 bool wide_zone(const Machine& m) {
     if (wram16(m, kSceneZone) != kWorldEntrance) return true;
-    return wram16(m, kSceneLevel) <= kLastLobbyLevel;
+    return wram16(m, kSceneLevel) <= kFinalBossLevel;
 }
 
 bool wide_scene_active(const Machine& m) {
@@ -591,7 +596,7 @@ bool wide_scene_active(const Machine& m) {
     // script continues, and stages Metal Sonic outside the native view too.
     // $8A6CB8 sets C21C bit2 when that sequence starts; level initialization
     // clears it. Other levels reuse these camera flags, so keep this scoped.
-    if (!m.wide_everywhere && wram16(m, kSceneZone) == 6 && wram16(m, kSceneLevel) == 0 && (m.wram[0xC21C] & 0x04))
+    if (wram16(m, kSceneZone) == 6 && wram16(m, kSceneLevel) == 0 && (m.wram[0xC21C] & 0x04))
         return false;
     if (m.level_seen_frame == ~0ull) return false;
     if (m.level_seen_frame + 8 >= m.frame_count) return true;  // the level is running
@@ -654,9 +659,11 @@ void begin_frame(Machine& m) {
                        m.vdp.reg[16] == kLevelPlaneSize && wide_scene_active(m);
     // The scenes drawn by the special stage's polygon code (PolyScene): the
     // stage itself (only side margins: its rectangle ends at 219), the
-    // results screen after it, and the bonus stage.
+    // results screen after it, the bonus stage, and the final boss's arena,
+    // which is also a level.
     PolyScene want = PolyScene::None;
     if (bonus) want = PolyScene::Bonus;
+    else if (level && e > 0 && final_boss_active(m)) want = PolyScene::Boss;
     else if (!level && m.wide_enabled && e > 0) {
         if (special_stage_active(m)) want = PolyScene::Stage;
         else if (results_screen_active(m)) want = PolyScene::Results;
@@ -689,9 +696,10 @@ void begin_frame(Machine& m) {
     if (m.wide_special) {
         m.poly_scene = uint8_t(want);
         write_special_rect(m, 0, int16_t(319 + 2 * ce));
-        // Where each scene's polygons get their X: the stage's projections,
-        // the bonus stage's centre, the results screen's list.
-        if (want == PolyScene::Stage) set_special_projection(m, ce);
+        // Where each scene's polygons get their X: the stage's projections
+        // (the final boss's arena is projected by the same code), the bonus
+        // stage's centre, the results screen's list.
+        if (want == PolyScene::Stage || want == PolyScene::Boss) set_special_projection(m, ce);
         if (want == PolyScene::Bonus) set_bonus_centre(m, ce);
         m.special_shift = ce;
         m.special_rect_overridden = true;

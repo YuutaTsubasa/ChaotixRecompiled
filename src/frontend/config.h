@@ -48,8 +48,10 @@ struct Config {
     // the emulation time per frame (frontend/fps_counter.h). Off by default.
     bool show_fps = false;
     bool widescreen = true;  // true widescreen in levels (margins follow AspectRatio)
-    // Widescreen in the scenes kept 4:3 because they show glitches there: the
-    // lobby and the INTRODUCTION Eggman scene.
+    // The former WIDE LOBBY option (WidescreenEverywhere). WORLD ENTRANCE is
+    // widescreen without it since issue #61, and the INTRODUCTION Eggman
+    // scene stays 4:3 on purpose, so it no longer does anything; still read
+    // from old files, no longer written or shown.
     bool wide_everywhere = false;
     // In widened levels, the HUD at the picture's left edge (issue #28).
     bool wide_hud = true;
