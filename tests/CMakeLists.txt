@@ -35,6 +35,7 @@ add_executable(chaotix_tests
     test_speedrun.cpp
     test_fps_counter.cpp
     test_divide.cpp
+    test_idle_skip.cpp
     test_netplay.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
@@ -109,6 +110,12 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_rom_patches.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}" "${CHAOTIX_GENERATED_DIR}/recomp_tables.cpp")
         set_tests_properties(rom_patches PROPERTIES TIMEOUT 900)
+        # Issue #62: wait loops fast-forwarded change nothing (state hashes
+        # with it on and off) and take most of the SH-2s' cycles.
+        add_test(NAME idle_skip_changes_nothing
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_idle_skip.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
+        set_tests_properties(idle_skip_changes_nothing PROPERTIES TIMEOUT 900)
         # Mega Drive tile replacement: the level's own tiles as a pack change nothing.
         add_test(NAME tile_pack
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_tile_pack.py"
@@ -426,6 +433,18 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1300 --lockstep
                 --stage 300:10:3:0:4:3:0 --fuzz 7:700:2400)
     set_tests_properties(lockstep_special_stage_variables PROPERTIES TIMEOUT 900)
+    # Issue #62: the wait loops the recompiled code fast-forwards -- the
+    # master SH-2 polling the 32X VDP status for V-blank, whose H-blank bits
+    # change during a slice, the slave's delay loop, the 68000 waiting on work
+    # RAM and COMM -- against the interpreter running every iteration, in a
+    # level and the lobby with input.
+    add_test(NAME lockstep_idle_skip_level
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2000 --lockstep
+                --stage 300:0:1:0:2:7:0 --fuzz 62:200:2000)
+    add_test(NAME lockstep_idle_skip_lobby
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1500 --lockstep
+                --stage 300:7:0:0:2:7:0 --fuzz 63:200:1500)
+    set_tests_properties(lockstep_idle_skip_level lockstep_idle_skip_lobby PROPERTIES TIMEOUT 900)
 
     # Issue #38: the bonus stage stayed 4:3. Its tunnel is a Mega Drive
     # picture of rings, carried on into the margins; its items and polygons

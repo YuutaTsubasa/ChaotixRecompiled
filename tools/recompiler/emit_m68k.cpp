@@ -2,6 +2,7 @@
 #include "emit.h"
 #include "runtime/patches.h"
 #include <cstdarg>
+#include <map>
 #include <set>
 
 namespace chaotix::recompiler {
@@ -147,7 +148,80 @@ struct FnCtx {
     std::set<uint64_t> blockset;
     int bank;
     Out o;
+    size_t fast_loops = 0;
 };
+
+// ---------------------------------------------------------------------------
+// Wait loops (idle-time fast-forward, issue #62)
+//
+// A block that branches back to itself and otherwise only tests memory or
+// registers (TST, CMP, CMPI, BTST: they write nothing but condition codes,
+// from operands the loop leaves alone) leaves the machine in the same state
+// after every iteration. If what it reads cannot change during this 68000
+// time slice (work RAM and the COMM ports: the Z80 and the SH-2s run after
+// the 68000 in a slice, interrupts are taken between blocks and only change
+// between slices), the remaining iterations of the slice only cost their
+// cycles, which are charged at once. The interpreter still runs every
+// iteration; lockstep validation proves the two equal.
+// ---------------------------------------------------------------------------
+struct WaitLoop {
+    bool ok = false;
+    int cost = 0;                    // cycles per iteration (checked at run time)
+    std::vector<std::string> addrs;  // read address expressions (checked at run time)
+};
+
+// The address expression of a memory operand the loop may read, "" for a
+// register or an immediate; false for modes it does not handle.
+bool wait_operand(const m68k::Ea& e, std::string& addr) {
+    char b[64];
+    addr.clear();
+    switch (e.mode) {
+    case m68k::EA_DREG: case m68k::EA_IMM: return true;
+    case m68k::EA_IND: std::snprintf(b, sizeof b, "c->a[%u]", e.reg); break;
+    case m68k::EA_DISP: std::snprintf(b, sizeof b, "c->a[%u] + %du", e.reg, e.disp); break;
+    case m68k::EA_ABSW: case m68k::EA_ABSL: std::snprintf(b, sizeof b, "0x%08Xu", e.value); break;
+    default: return false;
+    }
+    addr = b;
+    return true;
+}
+
+WaitLoop analyze_wait_loop(const Program& p, const Block& b, int bank) {
+    WaitLoop L;
+    if (b.insns.size() < 2) return L;
+    m68k::Insn last;
+    p.decode_m68k(b.insns.back(), bank, last);
+    if (last.op != m68k::Op::BCC || last.target != b.start || patches::is_m68k_hook(last.pc)) return L;
+    int cost = int(last.cycles);
+    for (size_t i = 0; i + 1 < b.insns.size(); ++i) {
+        m68k::Insn in;
+        p.decode_m68k(b.insns[i], bank, in);
+        if (patches::is_m68k_hook(in.pc)) return L;
+        std::string a;
+        using m68k::Op;
+        switch (in.op) {
+        case Op::TST:
+            if (!wait_operand(in.dst, a)) return L;
+            break;
+        case Op::CMP: case Op::CMPI:
+            // CMP <ea>,Dn and CMPI #imm,<ea>: one operand is a register or an immediate.
+            if (in.src.mode != m68k::EA_DREG && in.src.mode != m68k::EA_IMM && in.dst.mode != m68k::EA_DREG) return L;
+            if (!wait_operand(in.src.mode == m68k::EA_DREG || in.src.mode == m68k::EA_IMM ? in.dst : in.src, a)) return L;
+            break;
+        case Op::BTST:
+            if (in.src.mode != m68k::EA_IMM && in.src.mode != m68k::EA_DREG) return L;
+            if (!wait_operand(in.dst, a)) return L;
+            break;
+        default:
+            return L;
+        }
+        if (!a.empty()) L.addrs.push_back(a);
+        cost += int(in.cycles);
+    }
+    L.ok = true;
+    L.cost = cost;
+    return L;
+}
 
 void jump(FnCtx& x, uint32_t t) {
     int tb = x.p.space_of(t, x.bank) >= 0 ? x.bank : -1;
@@ -176,7 +250,7 @@ void call(FnCtx& x, uint32_t t, uint32_t ret, bool static_target) {
     jump(x, ret);
 }
 
-void emit_insn(FnCtx& x, const m68k::Insn& in, bool last_in_block, uint32_t block_end) {
+void emit_insn(FnCtx& x, const m68k::Insn& in, bool last_in_block, uint32_t block_end, const WaitLoop* loop) {
     Out& o = x.o;
     const uint32_t next = in.pc + in.len;
     o.f("  // %06X: %s\n", in.pc, m68k::disassemble(in).c_str());
@@ -192,6 +266,16 @@ void emit_insn(FnCtx& x, const m68k::Insn& in, bool last_in_block, uint32_t bloc
         return;
     case Op::BCC:
         o.f("    if (m68k::op_bcc(c, I)) { M68K_BOUNDARY();\n");
+        if (loop && loop->ok) {
+            // A wait loop (see above). lc_ is the cycle count at its start:
+            // the iteration must have cost what it was compiled for.
+            std::string cond = "::recomp::g_idle_skip && lc_ - c->cycles == " + std::to_string(loop->cost);
+            for (const auto& a : loop->addrs) cond += " && ::recomp::m68k_pure_load(" + a + ")";
+            o.f("      if (%s) {\n", cond.c_str());
+            o.f("        const int32_t n_ = (c->cycles + %d) / %d; c->cycles -= n_ * %d;\n", loop->cost - 1, loop->cost, loop->cost);
+            o.f("        ::recomp::g_idle_skipped[0] += uint64_t(n_) * %du; return 0;\n      }\n", loop->cost);
+            ++x.fast_loops;
+        }
         jump(x, in.target);
         o.f("    }\n    c->pc = 0x%Xu; M68K_BOUNDARY();\n", next);
         jump(x, next);
@@ -267,6 +351,12 @@ void emit_m68k(const Program& p, const EmitOptions& opt, EmitResult& out) {
             const Function& f = p.functions.at(fkeys[i]);
             FnCtx x{p, f, std::set<uint64_t>(f.blocks.begin(), f.blocks.end()), key_bank(f.entry), {}};
             x.o.f("int %s(m68k::State* c) {\n", fn_name(Cpu::M68K, f.entry).c_str());
+            std::map<uint64_t, WaitLoop> loops;
+            for (uint64_t bk : f.blocks) {
+                WaitLoop L = analyze_wait_loop(p, p.blocks.at(bk), x.bank);
+                if (L.ok) loops[bk] = L;
+            }
+            if (!loops.empty()) x.o.f("  int32_t lc_ = 0;\n");
             x.o.f("  switch (c->pc) {\n");
             for (uint64_t b : f.blocks) x.o.f("  case 0x%Xu: goto %s;\n", key_addr(b), label(key_addr(b)).c_str());
             x.o.f("  default: return 1;\n  }\n");
@@ -276,16 +366,20 @@ void emit_m68k(const Program& p, const EmitOptions& opt, EmitResult& out) {
                 if (sp >= 0 && !p.spaces[size_t(sp)].ram && b.end > b.start)
                     out.rom_code.push_back({p.spaces[size_t(sp)].to_rom(b.start), b.end - b.start});
                 x.o.f("%s:\n", label(b.start).c_str());
+                const auto loop = loops.find(bk);
+                if (loop != loops.end()) x.o.f("  lc_ = c->cycles;\n");
                 for (size_t n = 0; n < b.insns.size(); ++n) {
                     m68k::Insn in;
                     p.decode_m68k(b.insns[n], x.bank, in);
-                    emit_insn(x, in, n + 1 == b.insns.size(), b.end);
+                    const bool last = n + 1 == b.insns.size();
+                    emit_insn(x, in, last, b.end, last && loop != loops.end() ? &loop->second : nullptr);
                     ++out.instructions;
                 }
                 if (b.insns.empty()) x.o.f("  return 1;\n");
             }
             x.o.f("}\n\n");
             body += x.o.s;
+            out.fast_loops += x.fast_loops;
             ++out.functions;
         }
         body += "} // namespace recomp\n";

@@ -13,6 +13,7 @@
 #include "cpu/m68k/m68k_ops.h"
 #include "cpu/sh2/sh2_interp.h"
 #include "cpu/sh2/sh2_ops.h"
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 
@@ -49,6 +50,13 @@ struct Sh2Entry {
 extern int g_depth;
 constexpr int kMaxDepth = 64;
 
+// Wait loops are fast-forwarded in closed form (the default). Off, generated
+// code runs every iteration, as the interpreter does: the same result, more
+// slowly (chaotix_headless --no-idle-skip, for comparison; issue #62).
+extern bool g_idle_skip;
+// Cycles charged that way, per CPU (0 = 68K, 1/2 = master/slave SH-2).
+extern uint64_t g_idle_skipped[3];
+
 inline bool m68k_ok(const m68k::State* c) {
     return c->cycles > 0 && !c->stopped && !(c->irq_level && (c->irq_level > c->imask || c->irq_level == 7));
 }
@@ -67,6 +75,29 @@ inline bool sh2_pure_load(uint32_t a) {
     const uint32_t p = a & 0x1FFFFFFF;
     if (p >= 0x02000000 && p < 0x08000000) return true;
     return p >= 0x4020 && p < 0x4030;
+}
+
+// The 68000's counterpart (issue #62): work RAM, which only the 68000 (and,
+// after it in a slice, the Z80) writes, and the COMM ports, which the SH-2s
+// write after it in a slice. Neither read has side effects.
+inline bool m68k_pure_load(uint32_t a) {
+    a &= 0xFFFFFF;
+    return a >= 0xE00000 || (a >= 0xA15120 && a < 0xA15130);
+}
+
+// Polling loops whose reads change with time (issue #62): how many further
+// iterations of `cost` cycles each are certain to read from `a` (`size`
+// bytes) what this iteration read, made when c->cycles was `at`. 0 when it
+// cannot tell (e.g. a read with side effects).
+// (Inlined, `cost` a constant: the division is a multiply, also on
+// armeabi-v7a, which has no divide instruction.)
+int32_t sh2_read_stable_to(const sh2::State* c, uint32_t a, int size, int32_t at);
+inline int32_t sh2_poll_repeats(const sh2::State* c, uint32_t a, int size, int32_t at, int32_t cost) {
+    if (sh2_pure_load(a)) return INT32_MAX;
+    const int32_t last = sh2_read_stable_to(c, a, size, at);
+    if (last == INT32_MIN) return INT32_MAX;
+    const int64_t span = int64_t(at) - last;
+    return span > INT32_MAX ? INT32_MAX : int32_t(span) / cost;
 }
 
 // Look up generated code for c->pc and call it as a subroutine. Returns the

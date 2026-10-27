@@ -96,7 +96,7 @@ MCLK = 53.693175 MHz；1 條掃描線 = 3420 MCLK；1 幀 = 262 線；幀率 59.
 |---|---|---|
 | 間接跳躍 / jump table | SH-2 指令迴圈 `jmp @r2`；68K `jsr tbl(pc,d0.w)` 物件分派（bra table）、物件 handler 指標 | recursive descent + 靜態 jump table / offset table / code pointer 恢復 + **trace-guided**（coverage 檔提供動態入口）；仍未知者由直譯器 fallback，永不出錯只會變慢 |
 | 執行期產生的跳板 | `0xFFFFE1A4: jmp ($8F5380).l`（每關改寫目標） | dispatcher 以直譯器相同語意執行 `JMP abs.l` 後接回原生碼 |
-| 等待迴圈（效能） | Slave `dt r0; bf` 延遲、Master 輪詢 COMM0 | 產生碼中對無狀態自迴圈做精確 fast-forward（同一時間片內外部狀態不變）；lockstep 證明等價 |
+| 等待迴圈（效能） | Slave `dt r0; bf` 延遲、Master 輪詢 COMM0 與 32X VDP 狀態（等 V-blank）、68K 等 V-int 旗標 | 產生碼中對無狀態自迴圈做精確 fast-forward（同一時間片內外部狀態不變；隨時間改變的 VDP 狀態算到改變前一刻）；lockstep 證明等價（docs/IDLE_SKIP.md） |
 | 在 RAM 執行的程式 | SH-2 image 在 SDRAM；Slave 在 cache RAM；68K 在 `0xFF0200`、`0xFFFFC0xx` 跳板 | 以「code space」描述 runtime 位址 ↔ ROM bytes；RAM code 產生**驗證範圍**，runtime 比對 RAM 與 ROM，被改寫就改用直譯器 |
 | Self-modifying / 覆寫 | 可能載入 overlay | 寫入含程式碼的 SDRAM page / cache 範圍會遞增 **code epoch**，下次進入時重新驗證 |
 | Bank switching | `0x900000` 視窗 | 以 `(pc, bank)` 當 key 產生程式碼；dispatcher 依目前 bank 查表 |
@@ -196,7 +196,7 @@ ROM bytes ──decoder──▶ m68k::Insn / sh2::Insn        （每條指令�
 4. comm port、FIFO、FS/FEN/PEN 狀態讀取使用「讀取者自己的當下時間」（`m68k_now_mclk` / `sh2_now_mclk`）計算 HBLANK/VBLANK。
 5. 整個模型是**確定性的**：相同輸入 → 相同結果，不依賴主機速度或執行緒排程。
 
-*計畫中（最佳化）*：偵測 busy-wait 迴圈（comm 輪詢）並快轉 cycles，必須保持 lockstep 一致。
+等待迴圈快轉（issue #62，見 [docs/IDLE_SKIP.md](docs/IDLE_SKIP.md)）：產生碼辨識「只讀不寫、沒有跨迭代狀態」的自迴圈（SH-2 輪詢、`dt rN; bf` 延遲、68K 等 RAM/COMM），把本時間片內結果不變的迭代一次扣掉 cycles；讀取值會隨時間改變的 32X VDP 狀態（HBLK/PEN）則精確算出會變的那一刻，只跳到那之前。直譯器仍逐次執行，lockstep 證明結果完全相同；`chaotix_headless --no-idle-skip` 可關閉比較。
 
 ---
 
