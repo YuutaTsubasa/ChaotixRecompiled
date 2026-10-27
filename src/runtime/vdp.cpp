@@ -547,8 +547,11 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
         // rules so the game observes exactly the same values in widescreen;
         // only the drawing budget grows with the rendered width.
         const int native_pixels = h40 ? 320 : 256;
-        const int max_pixels = native_pixels * n / width;
-        const int max_per_line_draw = max_per_line * n / width;
+        // width is 320 or 256 with h40: constant divisors, so no division
+        // call on 32-bit ARM.
+        auto per_width = [h40](int v) { return h40 ? v / 320 : v / 256; };
+        const int max_pixels = per_width(native_pixels * n);
+        const int max_per_line_draw = per_width(max_per_line * n);
         int link = 0, count = 0, on_line = 0, pixels = 0;
         bool nonzero_x_seen = false, masked = false;
         uint8_t filled[kMaxWidth] = {};
