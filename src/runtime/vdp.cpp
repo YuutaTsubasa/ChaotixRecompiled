@@ -217,10 +217,48 @@ void Vdp::on_line_start(int line, int active_lines) {
 // ---------------------------------------------------------------------------
 namespace {
 
-struct LinePix {
-    uint8_t color;  // palette index 0-63 (0 in low nibble = transparent)
-    uint8_t prio;
+// One layer's pixel on a line, in a byte: the palette index in bits 0-5 (0
+// where the pattern pixel is transparent) and the priority bit in bit 7, kept
+// for transparent pixels too (shadow/highlight looks at it). Bit 6 is never
+// set; the composition marks the backdrop with it.
+using LinePix = uint8_t;
+constexpr uint8_t kPixColor = 0x3F;
+constexpr uint8_t kPixPrio = 0x80;
+inline LinePix line_pix(unsigned color, unsigned prio) {
+    return uint8_t((color & kPixColor) | (prio ? kPixPrio : 0));
+}
+
+// A byte of a pattern row as its two pixels, for each horizontal flip and
+// name table attribute (bits 13-15: palette line, priority):
+// kRowPairs.t[flip][attr][byte]. A flipped row also takes its bytes from the
+// last one.
+struct PixPair {
+    uint8_t p[2];
 };
+struct RowPairs {
+    PixPair t[2][8][256];
+    RowPairs() {
+        for (int f = 0; f < 2; ++f)
+            for (unsigned a = 0; a < 8; ++a)
+                for (unsigned b = 0; b < 256; ++b) {
+                    const unsigned pal = (a & 3) << 4, c0 = b >> 4, c1 = b & 15;
+                    const LinePix p0 = line_pix(c0 ? pal | c0 : 0, a >> 2), p1 = line_pix(c1 ? pal | c1 : 0, a >> 2);
+                    t[f][a][b] = f ? PixPair{{p1, p0}} : PixPair{{p0, p1}};
+                }
+    }
+};
+const RowPairs kRowPairs;
+
+// The 8 pixels of row `ty` (already flipped vertically) of pattern `tile`,
+// in the palette line and priority of name table or sprite entry `e` and
+// flipped horizontally as it says.
+inline void pattern_row(const uint8_t* vram, uint32_t tile, int ty, uint16_t e, LinePix out[8]) {
+    // At most 0xFFE0 + 7 * 4 + 3: never wraps.
+    const uint8_t* row = vram + ((tile & 0x7FF) << 5) + uint32_t(ty) * 4;
+    const PixPair* pp = kRowPairs.t[(e >> 11) & 1][(e >> 13) & 7];
+    const int f = (e & 0x0800) ? 3 : 0;
+    for (int k = 0; k < 4; ++k) std::memcpy(out + k * 2, pp[row[k ^ f]].p, 2);
+}
 
 inline uint8_t tile_pixel(const uint8_t* vram, uint32_t tile, int px, int py) {
     uint32_t a = ((tile & 0x7FF) << 5) + uint32_t(py) * 4 + uint32_t(px >> 1);
@@ -279,20 +317,11 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
             const uint16_t e = uint16_t((v.vram[ea] << 8) | v.vram[ea + 1]);
             int ty = py & 7;
             if (e & 0x1000) ty = 7 - ty;
-            // At most 0xFFE0 + 7 * 4 + 3: never wraps.
-            const uint8_t* row = v.vram + ((uint32_t(e) & 0x7FF) << 5) + uint32_t(ty) * 4;
-            const uint8_t pal = uint8_t((e >> 9) & 0x30), prio = uint8_t((e >> 15) & 1);
             LinePix pix[8];
-            const int flip = (e & 0x0800) ? 7 : 0;
-            for (int k = 0; k < 4; ++k) {
-                const uint8_t c0 = row[k] >> 4, c1 = row[k] & 15;
-                pix[(k * 2) ^ flip] = LinePix{c0 ? uint8_t(pal | c0) : uint8_t(0), prio};
-                pix[(k * 2 + 1) ^ flip] = LinePix{c1 ? uint8_t(pal | c1) : uint8_t(0), prio};
-            }
+            pattern_row(v.vram, e, ty, e, pix);
             LinePix* o = out + (x - xs);
-            const LinePix* src = pix + (px & 7);
             if (run == 8) std::memcpy(o, pix, sizeof pix);
-            else for (int i = 0; i < run; ++i) o[i] = src[i];
+            else for (int i = 0; i < run; ++i) o[i] = pix[(px & 7) + i];
             x += run;
         }
         return;
@@ -343,8 +372,7 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
         for (int i = 0; i < run; ++i) {
             int tx = (px & 7) + i;
             uint8_t c = pix[hflip ? 7 - tx : tx];
-            out[x - xs + i].color = c ? uint8_t(pal | c) : 0;
-            out[x - xs + i].prio = prio;
+            out[x - xs + i] = line_pix(c ? pal | c : 0, prio);
         }
         if (over) {
             // An image reaching past its run covers this tile where it is not 0.
@@ -353,10 +381,7 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
             uint8_t opal, oprio;
             TextReplacer::colours(*over, v.vram, opal, oprio);
             for (int i = 0; i < run; ++i)
-                if (const uint8_t c = ov[(px & 7) + i]) {
-                    out[x - xs + i].color = uint8_t(opal | c);
-                    out[x - xs + i].prio = oprio;
-                }
+                if (const uint8_t c = ov[(px & 7) + i]) out[x - xs + i] = line_pix(opal | c, oprio);
         }
         x += run;
     }
@@ -384,8 +409,7 @@ void render_window(const Vdp& v, int line, LinePix* out, int xs, int x0, int x1)
                     if (v.tiles) v.tiles->used(e, (e >> 13) & 3);
                     uint8_t pal, prio;
                     TextReplacer::colours(*h, v.vram, pal, prio);
-                    out[x - xs].color = c ? uint8_t(pal | c) : 0;
-                    out[x - xs].prio = prio;
+                    out[x - xs] = line_pix(c ? pal | c : 0, prio);
                     continue;
                 }
             }
@@ -396,8 +420,7 @@ void render_window(const Vdp& v, int line, LinePix* out, int xs, int x0, int x1)
         const uint8_t* rp = v.tiles ? v.tiles->slot(e) : nullptr;
         uint8_t c = rp ? rp[yy * 8 + tx] : tile_pixel(v.vram, e, tx, yy);
         if (v.tiles) v.tiles->used(e, (e >> 13) & 3);
-        out[x - xs].color = c ? uint8_t(((e >> 9) & 0x30) | c) : 0;
-        out[x - xs].prio = (e >> 15) & 1;
+        out[x - xs] = line_pix(c ? ((e >> 9) & 0x30) | c : 0, (e >> 15) & 1);
     }
 }
 
@@ -460,8 +483,8 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
             if (x == 0) x = width;
             const double dx = double(2 * x + 1 - radial_cx2);
             const int r4 = int(2.0 * std::sqrt(dx * dx + dy * dy));
-            a[x - xs] = LinePix{radial_lut[r4 < radial_len ? r4 : radial_len - 1], 0};
-            b[x - xs] = LinePix{0, 0};
+            a[x - xs] = line_pix(radial_lut[r4 < radial_len ? r4 : radial_len - 1], 0);
+            b[x - xs] = 0;
         }
     }
 
@@ -552,15 +575,13 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
                         // A hidden sprite still collides, but does not cover what is behind it.
                         if (!hidden_only[i] || hidden) continue;
                         hidden_only[i] = 0;
-                        s[i].color = uint8_t(((pat >> 9) & 0x30) | c);
-                        s[i].prio = (pat >> 15) & 1;
+                        s[i] = line_pix(((pat >> 9) & 0x30) | c, (pat >> 15) & 1);
                         if (st) place[i] = uint8_t(count);
                         continue;
                     }
                     filled[i] = 1;
                     if (hidden) { hidden_only[i] = 1; continue; }
-                    s[i].color = uint8_t(((pat >> 9) & 0x30) | c);
-                    s[i].prio = (pat >> 15) & 1;
+                    s[i] = line_pix(((pat >> 9) & 0x30) | c, (pat >> 15) & 1);
                     if (st) place[i] = uint8_t(count);
                 }
             }
@@ -589,9 +610,8 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
                     const int x = x0 + k;
                     if (x < xs || x >= xe || !src[k]) continue;
                     const int i = x - xs;
-                    if (s[i].color && place[i] < hit.place) continue;
-                    s[i].color = uint8_t(pal | src[k]);
-                    s[i].prio = prio;
+                    if ((s[i] & kPixColor) && place[i] < hit.place) continue;
+                    s[i] = line_pix(pal | src[k], prio);
                     place[i] = hit.place;
                 }
             }
@@ -607,53 +627,65 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     }
     const uint32_t* palrgb = palrgb_;
     if (!shi && !alt_cram) {
-        // The same priorities as below as one number per layer: the highest
-        // wins, 0 is the backdrop.
+        // The priorities below as selections from the lowest up, the last
+        // that applies winning, which the compiler can do for many pixels at
+        // once; bit 6 marks the backdrop.
+        uint8_t top[kMaxWidth];
+        const uint8_t back = uint8_t(bgidx | 0x40);
         for (int x = 0; x < n; ++x) {
-            const uint32_t ks = s[x].color ? (uint32_t(s[x].prio ? 6 : 3) << 8) | s[x].color : 0;
-            const uint32_t ka = a[x].color ? (uint32_t(a[x].prio ? 5 : 2) << 8) | a[x].color : 0;
-            const uint32_t kb = b[x].color ? (uint32_t(b[x].prio ? 4 : 1) << 8) | b[x].color : 0;
-            uint32_t k = ks > ka ? ks : ka;
-            if (kb > k) k = kb;
-            out_rgb[x] = palrgb[k ? (k & 0xFF) : bgidx] | 0xFF000000u;
-            out_bg[x] = k ? 0 : 1;
+            const uint8_t sp = s[x], ap = a[x], bp = b[x];
+            const bool so = (sp & kPixColor) != 0, ao = (ap & kPixColor) != 0, bo = (bp & kPixColor) != 0;
+            uint8_t t = back;
+            t = bo ? bp : t;
+            t = ao ? ap : t;
+            t = so ? sp : t;
+            t = bo && (bp & kPixPrio) ? bp : t;
+            t = ao && (ap & kPixPrio) ? ap : t;
+            t = so && (sp & kPixPrio) ? sp : t;
+            top[x] = t;
+        }
+        for (int x = 0; x < n; ++x) {
+            out_rgb[x] = palrgb[top[x] & kPixColor] | 0xFF000000u;
+            out_bg[x] = uint8_t((top[x] >> 6) & 1);
         }
         return;
     }
     for (int x = 0; x < n; ++x) {
+        const uint8_t sc = s[x] & kPixColor, ac = a[x] & kPixColor, bc = b[x] & kPixColor;
+        const bool sh = (s[x] & kPixPrio) != 0, ah = (a[x] & kPixPrio) != 0, bh = (b[x] & kPixPrio) != 0;
         uint8_t c = 0;
         bool isbg = false, sprite = false;
         // priority: sprite hi > A hi > B hi > sprite lo > A lo > B lo > backdrop
-        if (s[x].color && s[x].prio) { c = s[x].color; sprite = true; }
-        else if (a[x].color && a[x].prio) c = a[x].color;
-        else if (b[x].color && b[x].prio) c = b[x].color;
-        else if (s[x].color) { c = s[x].color; sprite = true; }
-        else if (a[x].color) c = a[x].color;
-        else if (b[x].color) c = b[x].color;
+        if (sc && sh) { c = sc; sprite = true; }
+        else if (ac && ah) c = ac;
+        else if (bc && bh) c = bc;
+        else if (sc) { c = sc; sprite = true; }
+        else if (ac) c = ac;
+        else if (bc) c = bc;
         else { c = bgidx; isbg = true; }
         uint32_t rgb = palrgb[c];
         // The lobby's next palette in its margins (see alt_cram); sprites keep
         // the game's colours.
         if (alt_cram && !sprite && c < 32 && x >= alt_x0 && x < alt_x1) rgb = cram_to_rgb(alt_cram[c]);
         if (shi) {
-            bool shadow = !(a[x].prio || b[x].prio);
-            if (s[x].color == 0x3E || s[x].color == 0x3F) {
+            bool shadow = !(ah || bh);
+            if (sc == 0x3E || sc == 0x3F) {
                 // operator sprites: recompute top non-sprite layer
                 uint8_t u = 0;
-                if (a[x].color && a[x].prio) u = a[x].color;
-                else if (b[x].color && b[x].prio) u = b[x].color;
-                else if (a[x].color) u = a[x].color;
-                else if (b[x].color) u = b[x].color;
+                if (ac && ah) u = ac;
+                else if (bc && bh) u = bc;
+                else if (ac) u = ac;
+                else if (bc) u = bc;
                 else { u = bgidx; }
                 rgb = palrgb[u];
-                if (s[x].color == 0x3E) {
+                if (sc == 0x3E) {
                     // highlight operator: shadowed -> normal, normal -> highlighted
                     if (!shadow) rgb = 0xFF000000u | (((rgb & 0xFEFEFE) >> 1) + 0x808080);
                     shadow = false;
                 } else {
                     shadow = true;  // shadow operator
                 }
-            } else if (s[x].color && s[x].prio) {
+            } else if (sc && sh) {
                 shadow = false;
             }
             if (shadow) rgb = 0xFF000000u | ((rgb & 0xFEFEFE) >> 1);
