@@ -32,3 +32,12 @@ exactly as with WIDE LOBBY off.
 
 Before: `widescreen: margins live from frame 482`. After: `margins live for
 0 frames`. Test: `widescreen_final_boss_stays_4_3_with_wide_lobby`.
+
+## Since issue #61
+
+The final boss is widescreen by default now, the arena included: its floor
+and pillars are drawn by the special stage's polygon code, which is widened
+as in the special stage, so they reach the margins instead of ending at the
+4:3 edges. WIDE LOBBY is gone. See ISSUE_61_WORLD_ENTRANCE.md; the test above
+became `widescreen_final_boss` (margins live from frame 482) and
+`widescreen_ending_stays_4_3` (levels 3-6, the ending's scenes, stay 4:3).

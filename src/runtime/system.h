@@ -164,8 +164,10 @@ public:
     // changes while a level runs; the ring shift is latched at a level load
     // and must not, or resizing the window leaves that level in 4:3.
     bool wide_enabled = false;
-    // Also widen the scenes kept 4:3 on purpose (the lobby, the INTRODUCTION
-    // Eggman scene), glitches and all: the player asked for it (issue #21).
+    // The former WIDE LOBBY option (issue #21). It no longer changes anything
+    // (runtime/patches.h, wide_zone: the lobby is widened without it, and the
+    // INTRODUCTION Eggman scene stays 4:3); kept so that recordings, ghosts
+    // and netplay settings that carry it still read.
     bool wide_everywhere = false;
     // Widened levels draw the HUD at the picture's left edge rather than at
     // its 4:3 place (issue #28; runtime/patches.h, kHudBaseX).
@@ -191,6 +193,14 @@ public:
     // The bonus stage's rings by radius (Vdp::radial_lut); render only.
     uint8_t radial_lut[512 * 4] = {};
     int radial_len = 0;
+    // WORLD ENTRANCE's margins (patches::lobby_margins, issue #61), worked
+    // out at the start of every frame for its picture; render only. Columns
+    // [lobby_alt_x0, lobby_alt_x1) of the widened line show the next part of
+    // the lobby in its own colours (Vdp::alt_cram), and lobby_cut is black.
+    uint16_t lobby_cram[32] = {};
+    bool lobby_alt = false;
+    int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
+    int lobby_cut_left = 0, lobby_cut_right = 0;
     int special_shift = 0;             // px its polygons are drawn right of true
     int cull_shift = 0;                // pending d2 offset inside the ring cull patch
     bool plane_fill_clamped = true;    // last plane fill used the unmasked (clamped) form

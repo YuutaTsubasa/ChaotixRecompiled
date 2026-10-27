@@ -67,7 +67,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         // setting rather than from the current margin: the margins follow the
         // window, and a window resized during a level would otherwise leave
         // that level in 4:3 until the next load.
-        // WORLD ENTRANCE is left native (see wide_zone).
+        // The ending's scenes in WORLD ENTRANCE are left native (wide_zone).
         m->plane_shift = plane_shift_for(m->wide_enabled && wide_zone(*m) ? kMaxWideExtra : 0);
         // Also how a scene change is told apart from a level that has merely
         // stopped (see wide_scene_active): a new scene redraws the planes.
@@ -133,7 +133,10 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     case kRingCullHi:
     case kRingCullDone:
     case kRingCullExit: {
-        const int e = m->wide_active && !m->wide_special ? std::clamp(m->wide_extra, 0, kMaxWideExtra) : 0;
+        // The final boss's arena is a level too (rings scatter when the
+        // player is hit).
+        const bool level = m->wide_active && (!m->wide_special || PolyScene(m->poly_scene) == PolyScene::Boss);
+        const int e = level ? std::clamp(m->wide_extra, 0, kMaxWideExtra) : 0;
         int want = 0;
         if (pc == kRingCullLo) want = e;
         else if (pc == kRingCullHi) want = -e;
@@ -145,7 +148,9 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
     if (pc == kCamClampMax || pc == kCamClampMin) {
         const int e = std::clamp(m->wide_extra, 0, kMaxWideExtra);
-        if (!e || !wide_zone(*m)) return;
+        // WORLD ENTRANCE's events follow the camera: it is left alone there
+        // (see wide_zone), and the margins show what lies beside the view.
+        if (!e || !wide_zone(*m) || wram16(*m, kSceneZone) == kWorldEntrance) return;
         const int right = int16_t(m68k::rd16(c, c->a[1] + 8));
         const int left = int16_t(m68k::rd16(c, c->a[1] + 0xA));
         int lo = left + e, hi = right - e;
@@ -162,7 +167,9 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
         return;
     }
-    const int w = m->plane_shift;
+    // The lobby's plane B is a set of 512 px pictures scrolled within the
+    // ring, which must keep its native wrap-around (see wide_zone).
+    const int w = (c->a[1] & 0xFFFF) != kPlaneAStruct && in_lobby(*m) ? 0 : m->plane_shift;
     if (!w || m->vdp.reg[16] != kLevelPlaneSize) return;
     switch (pc) {
     case kFillSplitX: {
@@ -469,11 +476,17 @@ void sh2_hook(Machine& m, sh2::State& c, uint32_t pc) {
 }
 
 bool is_widened_clear(const Machine& m, uint32_t word_addr, uint32_t words, uint16_t data) {
-    if (!m.wide_special || data != 0) return false;
+    if (!m.wide_special) return false;
     switch (PolyScene(m.poly_scene)) {
     case PolyScene::None:  // set by hand (tests): the stage, as it always was
-    case PolyScene::Stage: return (word_addr & 0xFF) == kSpecialClearStart && words == kSpecialClearLen + 1u;
-    case PolyScene::Bonus: return (word_addr & 0xFF) == 0 && words == kBonusClearLen + 1u;
+    case PolyScene::Stage: return data == 0 && (word_addr & 0xFF) == kSpecialClearStart && words == kSpecialClearLen + 1u;
+    case PolyScene::Bonus: return data == 0 && (word_addr & 0xFF) == 0 && words == kBonusClearLen + 1u;
+    // The final boss's: the same clear, and the polygon its fight starts
+    // with, a white flash over the whole screen, which the rectangle clips
+    // to one span of exactly the native line ($0600472A). Its corners are
+    // the screen's, not projected, so moved back it would leave a C px band
+    // of the arena; it is the whole widened line instead.
+    case PolyScene::Boss: return (word_addr & 0xFF) == 0 && (words == kBonusClearLen + 1u || words == kBonusClearLen);
     default: return false;
     }
 }
@@ -483,9 +496,102 @@ uint64_t scene_key(const Machine& m) {
            wram16(m, kSceneLevel);
 }
 
+bool final_boss_active(const Machine& m) {
+    if (wram16(m, kSceneZone) != kWorldEntrance || wram16(m, kSceneLevel) != kFinalBossLevel) return false;
+    return special_projection_loaded(m) && (special_rect_is_ours(m, PolyScene::Boss) || rect_is(m, kFullRect));
+}
+
+bool in_lobby(const Machine& m) {
+    return wram16(m, kSceneZone) == kWorldEntrance && wram16(m, kSceneLevel) <= kLastLobbyLevel;
+}
+
+namespace {
+
+// Area k's 32 colours as the lobby's table has them ($9BA764), or false if
+// the ROM does not hold the table where the lobby reads it.
+bool lobby_palette(const Machine& m, int k, uint16_t* out) {
+    const std::vector<uint8_t>& rom = m.rom.data;
+    auto rd16 = [&](uint32_t off, uint16_t& v) {
+        if (off + 2 > rom.size()) return false;
+        v = uint16_t(rom[off] << 8 | rom[off + 1]);
+        return true;
+    };
+    for (int i = 0; i < kLobbyAreas - 1; ++i) {
+        uint16_t b = 0;
+        if (!rd16(kLobbyAreaBounds + 2 * uint32_t(i), b) || int16_t(b) != kLobbyBounds[i]) return false;
+    }
+    uint16_t end = 0;
+    if (!rd16(kLobbyAreaBounds + 2 * (kLobbyAreas - 1), end) || int16_t(end) >= 0) return false;
+    const uint32_t base = (uint32_t(m.mars.bank & 3) << 20) + (kLobbyPalettes - 0x900000);
+    const uint32_t entry = base + 5 * uint32_t(m.wram[lobby::kTime + 1] & 6) + 2 * uint32_t(k);
+    uint16_t rel = 0;
+    if (!rd16(entry, rel)) return false;
+    const uint32_t colours = entry + uint32_t(int16_t(rel));
+    for (uint32_t i = 0; i < 32; ++i)
+        if (!rd16(colours + 2 * i, out[i])) return false;
+    return true;
+}
+
+} // namespace
+
+void lobby_margins(Machine& m, int e) {
+    m.lobby_alt = false;
+    m.lobby_alt_x0 = m.lobby_alt_x1 = 0;
+    const int x = camera_x(m);
+    // Rooms narrower than the view: black outside the range the camera is
+    // held to, the part of the layout the 4:3 view can show from there. The
+    // stage select room's range is one point (2816..2816): its margins would
+    // show the corridor and the outdoor entrance beside it, and as the room
+    // scrolls down, blocks the engine never draws. A wider range is no room:
+    // its ends move as the player goes on (1552 past the COMBI CATCHER, with
+    // the camera at 1573) and what lies beyond them was just in view.
+    const CameraRange r = camera_range(m);
+    const bool room = r.right - r.left < 2 * e;
+    m.lobby_cut_left = room ? std::clamp(e - (x - r.left), 0, e) : 0;
+    m.lobby_cut_right = room ? std::clamp(x + e - r.right, 0, e) : 0;
+    // Which area's colours the game shows: the one whose table matches lines
+    // 0 and 1 but for the few it cycles. The area by plane A's X first; the
+    // palette follows it a frame later.
+    uint16_t pal[kLobbyAreas][32];
+    for (int k = 0; k < kLobbyAreas; ++k)
+        if (!lobby_palette(m, k, pal[k])) return;
+    auto differ = [&](int k) {
+        int d = 0;
+        for (int i = 0; i < 32; ++i) d += pal[k][i] != m.vdp.cram[i];
+        return d;
+    };
+    int by_x = 0;
+    while (by_x < kLobbyAreas - 1 && x >= kLobbyBounds[by_x]) ++by_x;
+    int k = -1;
+    for (int c : {by_x, by_x - 1, by_x + 1})
+        if (c >= 0 && c < kLobbyAreas && differ(c) <= kLobbyCycled) { k = c; break; }
+    // Area k is seen on world [lo, hi): columns of the widened line, world
+    // x - e + i, left of lo or from hi on belong to the areas beside it.
+    const int lo = k > 0 ? kLobbyBounds[k - 1] : INT32_MIN / 2;
+    const int hi = k >= 0 && k < kLobbyAreas - 1 ? kLobbyBounds[k] + kNativeWidth : INT32_MAX / 2;
+    const int left = std::clamp(lo - (x - e), 0, e);           // columns [0, left)
+    const int right = std::clamp(x + kNativeWidth + e - hi, 0, e);  // the last `right`
+    if (k < 0) {
+        // A fade, or colours of no area: nothing to show them in.
+        const int lk = std::clamp(e - (x - (by_x > 0 ? kLobbyBounds[by_x - 1] : INT32_MIN / 2)), 0, e);
+        const int rk = by_x < kLobbyAreas - 1 ? std::clamp(x + e - kLobbyBounds[by_x], 0, e) : 0;
+        m.lobby_cut_left = std::max(m.lobby_cut_left, lk);
+        m.lobby_cut_right = std::max(m.lobby_cut_right, rk);
+        return;
+    }
+    if (!left && !right) return;
+    // One side at most: the areas are far wider than the margins.
+    const int other = left ? k - 1 : k + 1;
+    for (int i = 0; i < 32; ++i)
+        m.lobby_cram[i] = m.vdp.cram[i] != pal[k][i] ? m.vdp.cram[i] : pal[other][i];
+    m.lobby_alt = true;
+    m.lobby_alt_x0 = left ? 0 : kNativeWidth + 2 * e - right;
+    m.lobby_alt_x1 = left ? left : kNativeWidth + 2 * e;
+}
+
 bool wide_zone(const Machine& m) {
     if (wram16(m, kSceneZone) != kWorldEntrance) return true;
-    return m.wide_everywhere && wram16(m, kSceneLevel) <= kLastLobbyLevel;
+    return wram16(m, kSceneLevel) <= kFinalBossLevel;
 }
 
 bool wide_scene_active(const Machine& m) {
@@ -494,7 +600,7 @@ bool wide_scene_active(const Machine& m) {
     // script continues, and stages Metal Sonic outside the native view too.
     // $8A6CB8 sets C21C bit2 when that sequence starts; level initialization
     // clears it. Other levels reuse these camera flags, so keep this scoped.
-    if (!m.wide_everywhere && wram16(m, kSceneZone) == 6 && wram16(m, kSceneLevel) == 0 && (m.wram[0xC21C] & 0x04))
+    if (wram16(m, kSceneZone) == 6 && wram16(m, kSceneLevel) == 0 && (m.wram[0xC21C] & 0x04))
         return false;
     if (m.level_seen_frame == ~0ull) return false;
     if (m.level_seen_frame + 8 >= m.frame_count) return true;  // the level is running
@@ -527,6 +633,11 @@ MarginCut margin_cut(const Machine& m, int extra) {
     // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
     c.left = std::clamp(extra - camera_x(m), 0, extra);
+    if (in_lobby(m)) {
+        // WORLD ENTRANCE: worked out for this frame by lobby_margins.
+        c.left = std::max(c.left, std::min(m.lobby_cut_left, extra));
+        c.right = std::min(m.lobby_cut_right, extra);
+    }
     return c;
 }
 
@@ -552,9 +663,11 @@ void begin_frame(Machine& m) {
                        m.vdp.reg[16] == kLevelPlaneSize && wide_scene_active(m);
     // The scenes drawn by the special stage's polygon code (PolyScene): the
     // stage itself (only side margins: its rectangle ends at 219), the
-    // results screen after it, and the bonus stage.
+    // results screen after it, the bonus stage, and the final boss's arena,
+    // which is also a level.
     PolyScene want = PolyScene::None;
     if (bonus) want = PolyScene::Bonus;
+    else if (level && e > 0 && final_boss_active(m)) want = PolyScene::Boss;
     else if (!level && m.wide_enabled && e > 0) {
         if (special_stage_active(m)) want = PolyScene::Stage;
         else if (results_screen_active(m)) want = PolyScene::Results;
@@ -587,9 +700,10 @@ void begin_frame(Machine& m) {
     if (m.wide_special) {
         m.poly_scene = uint8_t(want);
         write_special_rect(m, 0, int16_t(319 + 2 * ce));
-        // Where each scene's polygons get their X: the stage's projections,
-        // the bonus stage's centre, the results screen's list.
-        if (want == PolyScene::Stage) set_special_projection(m, ce);
+        // Where each scene's polygons get their X: the stage's projections
+        // (the final boss's arena is projected by the same code), the bonus
+        // stage's centre, the results screen's list.
+        if (want == PolyScene::Stage || want == PolyScene::Boss) set_special_projection(m, ce);
         if (want == PolyScene::Bonus) set_bonus_centre(m, ce);
         m.special_shift = ce;
         m.special_rect_overridden = true;
@@ -607,13 +721,21 @@ void begin_frame(Machine& m) {
             m.bonus_clip_overridden = true;
         }
     }
+    if (level && in_lobby(m)) lobby_margins(m, e);
+    else m.lobby_alt = false;
     if (level) {
         // The blitters write 16-bit words at clip-aligned addresses: an odd
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
         const int ce = (e + 7) & ~7;
+        // A WORLD ENTRANCE room shows nothing in its margins: drawing its
+        // sprites there anyway only costs the SH-2 time, and the Combi
+        // Catcher's TIME UP, scaled up past the screen, then flipped a frame
+        // or more late.
+        const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;
+        const int cr = in_lobby(m) ? (e - m.lobby_cut_right + 7) & ~7 : ce;
         // The SH-2 blitters compare vertical bounds in 24.8 fixed point.
-        write_clip(m, int16_t(-ce), int16_t(320 + ce),
+        write_clip(m, int16_t(-cl), int16_t(320 + cr),
                    uint32_t(kActiveLines - 1 + eb) << 8);
         m.clip_overridden = true;
     } else if (m.clip_overridden) {

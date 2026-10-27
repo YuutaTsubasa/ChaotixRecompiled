@@ -560,16 +560,19 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     for (int i = 0; i < 64; ++i) palrgb[i] = cram_to_rgb(cram[i]);
     for (int x = 0; x < n; ++x) {
         uint8_t c = 0;
-        bool isbg = false;
+        bool isbg = false, sprite = false;
         // priority: sprite hi > A hi > B hi > sprite lo > A lo > B lo > backdrop
-        if (s[x].color && s[x].prio) c = s[x].color;
+        if (s[x].color && s[x].prio) { c = s[x].color; sprite = true; }
         else if (a[x].color && a[x].prio) c = a[x].color;
         else if (b[x].color && b[x].prio) c = b[x].color;
-        else if (s[x].color) c = s[x].color;
+        else if (s[x].color) { c = s[x].color; sprite = true; }
         else if (a[x].color) c = a[x].color;
         else if (b[x].color) c = b[x].color;
         else { c = bgidx; isbg = true; }
         uint32_t rgb = palrgb[c];
+        // The lobby's next palette in its margins (see alt_cram); sprites keep
+        // the game's colours.
+        if (alt_cram && !sprite && c < 32 && x >= alt_x0 && x < alt_x1) rgb = cram_to_rgb(alt_cram[c]);
         if (shi) {
             bool shadow = !(a[x].prio || b[x].prio);
             if (s[x].color == 0x3E || s[x].color == 0x3F) {

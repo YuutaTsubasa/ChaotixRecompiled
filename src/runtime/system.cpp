@@ -371,14 +371,19 @@ void Machine::render_output_line(int src_line, int dst_row) {
     const int n = vdp.width() + 2 * extra;
     uint32_t md[Vdp::kMaxWidth];
     uint8_t bg[Vdp::kMaxWidth];
-    // The bonus stage and the results screen use the whole screen.
+    // The bonus stage, the results screen and the final boss use the whole
+    // screen.
     const patches::PolyScene scene = patches::PolyScene(poly_scene);
-    const bool stage = wide_special && scene != patches::PolyScene::Bonus && scene != patches::PolyScene::Results;
+    const bool stage = wide_special && scene != patches::PolyScene::Bonus && scene != patches::PolyScene::Results &&
+                       scene != patches::PolyScene::Boss;
     vdp.hidden_frame_tile = stage ? patches::kSpecialFrameTile : 0xFFFF;
     vdp.radial_lut = radial_lut;
     vdp.radial_len = radial_len;
     vdp.radial_cx2 = kNativeWidth;
     vdp.radial_cy2 = kActiveLines;
+    vdp.alt_cram = wide_active && lobby_alt ? lobby_cram : nullptr;
+    vdp.alt_x0 = lobby_alt_x0;
+    vdp.alt_x1 = lobby_alt_x1;
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;

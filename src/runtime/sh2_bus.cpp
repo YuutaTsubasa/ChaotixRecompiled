@@ -209,7 +209,7 @@ void Machine::vdp32x_write(uint32_t off, uint32_t v, int size) {
                 const uint32_t line = (addr & 0xFF00) * 2u;
                 for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x) {
                     const uint32_t o = (line + uint32_t(x)) & 0x1FFFF;
-                    (fb_in_margin(o) ? shadow : fb)[o] = 0;
+                    (fb_in_margin(o) ? shadow : fb)[o] = uint8_t((o & 1) ? mars.fill_data : mars.fill_data >> 8);
                 }
                 mars.fill_addr = uint16_t((addr & 0xFF00) | ((addr + mars.fill_len + 1u) & 0xFF));
                 break;
