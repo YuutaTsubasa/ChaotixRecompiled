@@ -171,6 +171,73 @@ slave SH-2 0.148 -> 0.123, 68000 0.092 -> 0.076, video 0.45 -> 0.44 (now 42%
 of a frame, the largest part). Lockstep stays bit-identical (sweep and
 tests); `--no-idle-skip` runs every iteration for comparison.
 
+### Drawing (issue #62)
+
+Every frame is still drawn whole, every line of it, with the same pixels;
+the code that draws it does less work per pixel. Where the time went, per
+line of BOTANIC BASE 1 (cycle counters around each stage, desktop): the two
+planes 33%, the 32X line 22%, the priority merge of planes and sprites 20%,
+sprites 13%, merging the 32X line over the Mega Drive one 11%.
+
+* **Planes**: with nothing replaced (no texture pack text, no tile
+  replacements, not dumping graphics, which is how the game normally runs),
+  each 8-pixel tile row is read from VRAM once and turned into its 8 pixels
+  with an 8 KiB table (by pattern byte, palette line, priority and flip), made
+  in registers and stored as one word. A stretch of the line with one
+  V-scroll value reads one name table row. Planes A and B are no longer
+  cleared first: they are drawn across the whole line.
+* **One byte per layer pixel** (palette index and priority bit, was two),
+  and the sprite/A/B priority order as six selections from the lowest up, which
+  the compiler turns into SIMD (SSE2 on x86-64, NEON on ARM) for 16 pixels at
+  a time.
+* **Sprites**: the sprite list is walked once and kept while the 640 bytes of
+  the attribute table stay the same (compared every line, so a change in the
+  middle of a frame is seen on the next line, as before); a sprite's 8-pixel
+  columns come from the same pattern-row table. The pixel budget and the
+  overflow/collision flags are counted exactly as before.
+* **Palettes**: CRAM's 64 colours and the 32X palette's 256 entries are
+  converted once and again only when they change (compared every line);
+  the 32X line was converting every pixel.
+* **One pass for the merge**: the Mega Drive line is kept as CRAM indices
+  (with a bit for the backdrop), and the 32X line merges each pixel with it as
+  it is made, instead of writing both lines out in colour and merging them in
+  a third pass.
+* No division per line on 32-bit ARM (the sprite budget divides by the line
+  width, now a constant 320 or 256).
+
+The general paths (replacement graphics, the lobby's margin palette,
+shadow/highlight, the debug layer views) are the code as it was. Tests
+(`tests/test_vdp_render.cpp`) draw random VDP states line after line, changing
+sprites, colours, scroll and registers between lines, through the fast and the
+general paths and require the same pixels and status flags, and check the 32X
+merge and the caches' invalidation.
+
+Desktop (i9-14900KF, MinGW GCC 15), `chaotix_headless --frames 3000
+--profile`, best of five, ms per frame (video / whole frame):
+
+| Scene | Video before | Video after | | Frame before | Frame after | |
+|---|---|---|---|---|---|---|
+| BOTANIC BASE 1 | 0.408 | 0.157 | 2.6x | 0.968 | 0.705 | 1.37x |
+| BOTANIC BASE 1, widescreen 53 + 16 rows | 0.547 | 0.205 | 2.7x | 1.129 | 0.769 | 1.47x |
+| Special stage | 0.432 | 0.181 | 2.4x | 1.009 | 0.749 | 1.35x |
+| Lobby | 0.364 | 0.143 | 2.5x | 0.923 | 0.695 | 1.33x |
+| Title / attract | 0.341 | 0.132 | 2.6x | 0.882 | 0.668 | 1.32x |
+
+The app runs the same paths: with an empty texture pack
+loaded, as the app always has one, BOTANIC BASE 1 is 0.158 ms of video.
+Video went from 42% of a BOTANIC BASE 1 frame to 22%; the SH-2s are now the
+largest parts again.
+
+Not measured on an ARM CPU here. The armv7 build now has no division call
+and no stack round trip in the plane loop, and its composition loop is NEON
+(clang vectorises it as on x86-64).
+
+The picture of every frame is the same before and after: per-frame image and
+machine-state hashes over 6,000 frames of 14 scenes (4:3 and widescreen,
+BOTANIC BASE and other zones with random input, special and bonus stages, the
+lobby, title and attract), the golden frame hashes, the full test suite and
+the 33-configuration lockstep sweep.
+
 ## What the player can try
 
 1. **The 64-bit APK** (`ChaotixRecompiled-…-android.apk`) if the phone's
