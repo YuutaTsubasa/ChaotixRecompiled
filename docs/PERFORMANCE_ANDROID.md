@@ -110,7 +110,9 @@ divide unit, which have to divide.
 
 Where a frame goes, on the desktop build (`chaotix_headless --profile`,
 BOTANIC BASE 1, 3,000 frames): master SH-2 37%, VDP/32X video 31%, slave SH-2
-10%, 68000 8%, Z80 5%, audio 2%. A phone CPU core is several times slower
+10%, 68000 8%, Z80 5%, audio 2%. (Since the wait loops are fast-forwarded,
+below: video 42%, master SH-2 16%, slave SH-2 12%, Z80 8%, 68000 7%,
+audio 3%.) A phone CPU core is several times slower
 than a desktop one, and a 32-bit-only phone (Cortex-A7/A9/A53 running a 32-bit
 system) is at the bottom of that range; the emulated 32X runs two SH-2s, a
 68000 and a Z80 together, so such a phone may simply not reach 60.
@@ -139,6 +141,32 @@ division helper calls were counted in its objects before and after.
 
 Emulation is unchanged: the lockstep sweep (33 configurations, recompiled
 against the interpreter) stays bit-identical, as do the golden frame hashes.
+
+### Wait loops fast-forwarded (issue #62)
+
+About four fifths of both SH-2s' cycles go to waiting (the master for
+V-blank, polling the 32X VDP status, and for COMM; the slave in a delay loop
+between sound interrupts), and a third or more of the 68000's (its V-int
+flag). The generated code now charges the iterations of such a loop whose
+outcome is certain in one step instead of running them, exactly: for the VDP
+status, whose H-blank bits change during a slice, up to the cycle where a
+read would first differ. Writes over recompiled code in SDRAM are also found
+with a bitmap instead of a scan of 411 ranges. Design, proof and tests:
+[IDLE_SKIP.md](IDLE_SKIP.md).
+
+Desktop, `chaotix_headless --frames 3000`, best of three (ms per frame):
+
+| Scene | Before | After | |
+|---|---|---|---|
+| BOTANIC BASE 1 | 1.158 | 0.815 | 1.42x |
+| Lobby | 1.150 | 0.763 | 1.51x |
+| Special stage | 0.900 | 0.849 | 1.06x |
+| Title / attract | 0.925 | 0.727 | 1.27x |
+
+`--profile`, BOTANIC BASE 1, before -> after: master SH-2 0.520 -> 0.169 ms,
+slave SH-2 0.148 -> 0.123, 68000 0.092 -> 0.076, video 0.45 -> 0.44 (now 42%
+of a frame, the largest part). Lockstep stays bit-identical (sweep and
+tests); `--no-idle-skip` runs every iteration for comparison.
 
 ## What the player can try
 

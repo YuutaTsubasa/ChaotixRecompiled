@@ -213,7 +213,9 @@ int32_t Machine::sh2_read_stable_to(int cpu, uint32_t a, int size, int32_t at) c
     if ((a >> 29) > 1 || !sh2_slice_[cpu].running) return at;
     const uint32_t p = a & 0x1FFFFFFF;
     if (p < 0x4100 || p + uint32_t(size) > 0x4200) return at;
-    if (((p & 0xE) != 0xA) && !(size == 4 && (p & 0xE) == 0x8)) return INT32_MIN;
+    // Only the status word's upper byte changes (the lower one holds FS).
+    const bool status_high = (p & 0xF) == 0xA || (size == 4 && (p & 0xE) == 0x8);
+    if (!status_high) return INT32_MIN;
     // The status word is a function of hblank alone within a slice (`line`,
     // the frame buffer and the bitmap mode stay as they are), and hblank
     // (pos >= 2600 || pos < 0) changes as pos passes 0 and then 2600.

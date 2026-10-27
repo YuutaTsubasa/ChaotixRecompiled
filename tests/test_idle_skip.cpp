@@ -4,6 +4,7 @@
 // says until when that holds: checked here against the reads themselves, at
 // every remaining cycle count, around both edges of H-blank.
 #include <climits>
+#include <cstdio>
 #include <cstdint>
 #include <memory>
 
@@ -29,6 +30,7 @@ int check(Machine& m, uint32_t a, int size, int32_t at, int32_t lowest) {
     for (int32_t c = at; c >= lowest && c >= last; --c)
         if (read(c) != v) ++bad;
     if (last != INT32_MIN && last - 1 >= lowest && read(last - 1) == v) ++bad;
+    if (bad) std::printf("  %08X size %d at %d: stable to %d, %d differ\n", a, size, at, last, bad);
     return bad;
 }
 
