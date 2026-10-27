@@ -135,18 +135,29 @@ write to a page that holds code. It is now one bit per byte
 ## Results
 
 Desktop (i9-14900KF, Windows, MinGW GCC 15, Release), `chaotix_headless
---frames 3000` (including the 79 frames to reach the stage), best of three:
+--frames 3000` (including the 79 frames to reach the stage), best of two
+runs, before and after taken alternately:
 
-| Scene | Before | Wait loops | + code bits | Speed-up |
-|---|---|---|---|---|
-| BOTANIC BASE 1 | 1.158 ms (863 fps) | 1.005 ms | 0.815 ms (1,227 fps) | 1.42x |
-| Lobby | 1.150 ms (869 fps) | 0.953 ms | 0.763 ms (1,311 fps) | 1.51x |
-| Special stage | 0.900 ms (1,111 fps) | 0.899 ms | 0.849 ms (1,178 fps) | 1.06x |
-| Title / attract | 0.925 ms (1,081 fps) | 0.806 ms | 0.727 ms (1,376 fps) | 1.27x |
+| Scene | Before | After | Speed-up |
+|---|---|---|---|
+| BOTANIC BASE 1 | 1.090 ms (917 fps) | 0.755 ms (1,324 fps) | 1.44x |
+| Lobby | 1.063 ms (941 fps) | 0.720 ms (1,388 fps) | 1.48x |
+| Special stage | 0.846 ms (1,182 fps) | 0.805 ms (1,243 fps) | 1.05x |
+| Title / attract | 0.865 ms (1,157 fps) | 0.689 ms (1,452 fps) | 1.26x |
+
+Of that, in an earlier run (best of three) the wait loops alone took
+BOTANIC BASE 1 from 1.158 to 1.005 ms and the lobby from 1.150 to 0.953 ms;
+the code bitmap the rest, to 0.815 and 0.763 ms.
 
 `--profile` in BOTANIC BASE 1 (ms per frame): master SH-2 0.520 -> 0.169,
 slave SH-2 0.148 -> 0.123, 68000 0.092 -> 0.076; video (0.44) is now the
 largest part, 42% of a frame.
+
+The armeabi-v7a runner cross-compiles without warnings, and the generated
+SH-2 code calls no division helper (`__aeabi_*div*`): the fast-forward's
+divisions are by constants. It was not run on an ARM CPU (no device or
+emulator here), so the phone gain is not measured; the SH-2s' share of a
+frame there should shrink about as it does on the desktop.
 
 The special stage gains least: its master SH-2 is mostly drawing polygons,
 and its main wait (a frame counter in SDRAM) was already skipped.

@@ -154,14 +154,17 @@ read would first differ. Writes over recompiled code in SDRAM are also found
 with a bitmap instead of a scan of 411 ranges. Design, proof and tests:
 [IDLE_SKIP.md](IDLE_SKIP.md).
 
-Desktop, `chaotix_headless --frames 3000`, best of three (ms per frame):
+Desktop, `chaotix_headless --frames 3000`, best of two (ms per frame):
 
 | Scene | Before | After | |
 |---|---|---|---|
-| BOTANIC BASE 1 | 1.158 | 0.815 | 1.42x |
-| Lobby | 1.150 | 0.763 | 1.51x |
-| Special stage | 0.900 | 0.849 | 1.06x |
-| Title / attract | 0.925 | 0.727 | 1.27x |
+| BOTANIC BASE 1 | 1.090 | 0.755 | 1.44x |
+| Lobby | 1.063 | 0.720 | 1.48x |
+| Special stage | 0.846 | 0.805 | 1.05x |
+| Title / attract | 0.865 | 0.689 | 1.26x |
+
+Not yet measured on an ARM CPU; the armv7 runner builds, and the new code
+calls no division helper there.
 
 `--profile`, BOTANIC BASE 1, before -> after: master SH-2 0.520 -> 0.169 ms,
 slave SH-2 0.148 -> 0.123, 68000 0.092 -> 0.076, video 0.45 -> 0.44 (now 42%
