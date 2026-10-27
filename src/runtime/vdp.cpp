@@ -471,6 +471,18 @@ void Vdp::render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     }
 }
 
+int Vdp::walk_sprites(const uint8_t* table, int max_sprites, SatEntry* out) {
+    int len = 0, link = 0;
+    while (len < max_sprites) {
+        const uint8_t* p = table + link * 8;
+        out[len++] = SatEntry{uint16_t(p[0] << 8 | p[1]), uint16_t(p[2] << 8 | p[3]), uint16_t(p[4] << 8 | p[5]),
+                              uint16_t(p[6] << 8 | p[7]), uint8_t(link)};
+        link = p[3] & 0x7F;
+        if (link == 0 || link >= max_sprites) break;
+    }
+    return len;
+}
+
 bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t* out_bg, int extra) {
     const int width = this->width();
     const int xs = -extra, xe = width + extra, n = xe - xs;
@@ -577,23 +589,27 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
         // column of a sprite drawn from one pattern row.
         const bool plain = !st && !(tiles && (tiles->size() || tiles->dumping));
         // The list follows the links from entry 0. The table ends at most at
-        // 0xFC00 + 80 * 8 (H40) or 0xFE00 + 64 * 8 (H32): never wraps.
+        // 0xFC00 + 80 * 8 (H40) or 0xFE00 + 64 * 8 (H32): never wraps. The
+        // plain path keeps it while the table is unchanged; the general one
+        // walks it every line, as tests compare them.
         const size_t sat_size = size_t(max_sprites) * 8;
-        if (sat != sat_addr_ || max_sprites != sat_max_ || !same_bytes(sat_bytes_, vram + sat, sat_size)) {
-            std::memcpy(sat_bytes_, vram + sat, sat_size);
-            sat_addr_ = sat;
-            sat_max_ = max_sprites;
-            sat_len_ = 0;
-            while (sat_len_ < max_sprites) {
-                const uint8_t* p = sat_bytes_ + link * 8;
-                sat_list_[sat_len_++] = SatEntry{uint16_t(p[0] << 8 | p[1]), uint16_t(p[2] << 8 | p[3]),
-                                                 uint16_t(p[4] << 8 | p[5]), uint16_t(p[6] << 8 | p[7]), uint8_t(link)};
-                link = p[3] & 0x7F;
-                if (link == 0 || link >= max_sprites) break;
+        SatEntry walked[80];
+        const SatEntry* list = walked;
+        int list_len;
+        if (!plain) {
+            list_len = walk_sprites(vram + sat, max_sprites, walked);
+        } else {
+            if (sat != sat_addr_ || max_sprites != sat_max_ || !same_bytes(sat_bytes_, vram + sat, sat_size)) {
+                std::memcpy(sat_bytes_, vram + sat, sat_size);
+                sat_addr_ = sat;
+                sat_max_ = max_sprites;
+                sat_len_ = walk_sprites(sat_bytes_, max_sprites, sat_list_);
             }
+            list = sat_list_;
+            list_len = sat_len_;
         }
-        for (; count < sat_len_; ++count) {
-            const SatEntry& se = sat_list_[count];
+        for (; count < list_len; ++count) {
+            const SatEntry& se = list[count];
             link = se.index;
             int sy = (se.y & 0x3FF) - 128;
             uint16_t sz = se.size;

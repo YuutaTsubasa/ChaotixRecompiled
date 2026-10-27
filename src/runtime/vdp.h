@@ -128,6 +128,8 @@ private:
     int sat_max_ = 0;  // 0: not walked yet
     int sat_len_ = 0;
     SatEntry sat_list_[80] = {};
+    // The list in `table` (max_sprites entries) into out; returns its length.
+    static int walk_sprites(const uint8_t* table, int max_sprites, SatEntry* out);
 
     void do_dma_68k(uint32_t len);
     void do_dma_copy(uint32_t len);
