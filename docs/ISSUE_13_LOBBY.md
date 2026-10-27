@@ -50,3 +50,13 @@ attract demos stay widescreen.
 `WidescreenEverywhere = true` in `[Video]`, or OPTIONS > VIDEO > WIDE LOBBY, widens
 the lobby and the INTRODUCTION Eggman scene again, with the glitches described
 above. Off by default. Test: `widescreen_lobby_when_asked`.
+
+## Superseded by issue #61
+
+WORLD ENTRANCE is widescreen again, without the glitches above, and the
+WIDE LOBBY option is gone: see ISSUE_61_WORLD_ENTRANCE.md. Two of the causes
+above turned out otherwise once traced: the chunks missing during the catapult
+were plane B's (the lobby's background pictures, which must keep their native
+ring), not the catapult outrunning plane A; and the palette is chosen by area
+from a table, so the margins can be drawn in the next area's colours. The
+INTRODUCTION Eggman scene stays 4:3 on purpose; nothing widens it any more.
