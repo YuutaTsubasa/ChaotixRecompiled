@@ -2,6 +2,7 @@
 #include "tile_replace.h"
 #include "patches.h"
 #include "log.h"
+#include "same_bytes.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -475,7 +476,7 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     const int xs = -extra, xe = width + extra, n = xe - xs;
     const uint8_t bgidx = reg[7] & 0x3F;
     // CRAM as colours, converted again only when it changed.
-    if (std::memcmp(palrgb_cram_, cram, sizeof cram) != 0 || !palrgb_valid_) {
+    if (!palrgb_valid_ || !same_bytes(palrgb_cram_, cram, sizeof cram)) {
         for (int i = 0; i < 64; ++i) palrgb_[i] = cram_to_rgb(cram[i]);
         std::memcpy(palrgb_cram_, cram, sizeof cram);
         palrgb_valid_ = true;
@@ -575,7 +576,7 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
         // The list follows the links from entry 0. The table ends at most at
         // 0xFC00 + 80 * 8 (H40) or 0xFE00 + 64 * 8 (H32): never wraps.
         const size_t sat_size = size_t(max_sprites) * 8;
-        if (sat != sat_addr_ || max_sprites != sat_max_ || std::memcmp(sat_bytes_, vram + sat, sat_size) != 0) {
+        if (sat != sat_addr_ || max_sprites != sat_max_ || !same_bytes(sat_bytes_, vram + sat, sat_size)) {
             std::memcpy(sat_bytes_, vram + sat, sat_size);
             sat_addr_ = sat;
             sat_max_ = max_sprites;

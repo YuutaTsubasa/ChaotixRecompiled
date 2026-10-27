@@ -11,6 +11,7 @@
 #include "runtime/system.h"
 #include "runtime/character_mods.h"
 #include "runtime/patches.h"
+#include "runtime/same_bytes.h"
 #include "runtime/sprite_record.h"
 
 #include <cstring>
@@ -66,7 +67,7 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src, co
     // palette with their entries substituted, likewise only for the picture.
     const uint16_t* pal = characters ? characters->display(mars.pal, sdram + CharacterPalettes::kOffsetBytes) : mars.pal;
     // The palette's 256 entries encoded once, again only when it changed.
-    if (enc32x_pri != int(pri) || std::memcmp(enc32x_pal, pal, sizeof enc32x_pal) != 0) {
+    if (enc32x_pri != int(pri) || !same_bytes(enc32x_pal, pal, sizeof enc32x_pal)) {
         for (int i = 0; i < 256; ++i) enc32x[i] = encode(pal[i], pri);
         std::memcpy(enc32x_pal, pal, sizeof enc32x_pal);
         enc32x_pri = int(pri);
