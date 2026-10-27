@@ -297,33 +297,44 @@ void render_plane(const Vdp& v, int line, bool planeA, LinePix* out, int xs, int
         // Nothing replaced and nothing recorded (the usual case): the same
         // runs, each tile row read from VRAM as one 8-pixel row.
         const int xmask = pw * 8 - 1, ymask = ph * 8 - 1;
-        const int vs0 = v.vsram[planeA ? 0 : 1];
-        int x = xs;
-        while (x < xe) {
-            if (planeA && x >= win_x0 && x < win_x1) { x = win_x1; continue; }
-            int vs = vs0;
-            int lim = xe;
-            if (planeA && x < win_x0 && win_x0 < lim) lim = win_x0;
-            if (col_vs) {
-                const int col = x < 0 ? 0 : (x >> 4) > 19 ? 19 : (x >> 4);
-                vs = v.vsram[col * 2 + (planeA ? 0 : 1)];
-                if (((x | 15) + 1) < lim) lim = (x | 15) + 1;
+        const int vs_lane = planeA ? 0 : 1;
+        // Columns [x0, x1): stretches of one V-scroll value (the whole span,
+        // or a 16-pixel column), and in each the name table row of one line.
+        auto span = [&](int x0, int x1) {
+            for (int x = x0; x < x1;) {
+                int vs = v.vsram[vs_lane];
+                int lim = x1;
+                if (col_vs) {
+                    const int col = x < 0 ? 0 : (x >> 4) > 19 ? 19 : (x >> 4);
+                    vs = v.vsram[col * 2 + vs_lane];
+                    if (((x | 15) + 1) < lim) lim = (x | 15) + 1;
+                }
+                const int py = (line + vs) & ymask, ty0 = py & 7;
+                // nt is 1 KiB aligned, so every entry address is even.
+                const uint32_t ntrow = nt + uint32_t((py >> 3) * pw) * 2;
+                int px = (x - hscroll) & xmask;
+                while (x < lim) {
+                    const uint32_t ea = (ntrow + uint32_t(px >> 3) * 2) & 0xFFFF;
+                    const uint16_t e = uint16_t((v.vram[ea] << 8) | v.vram[ea + 1]);
+                    const int ty = (e & 0x1000) ? 7 - ty0 : ty0;
+                    LinePix pix[8];
+                    pattern_row(v.vram, e, ty, e, pix);
+                    LinePix* o = out + (x - xs);
+                    int run = 8 - (px & 7);
+                    if (run > lim - x) run = lim - x;
+                    if (run == 8) std::memcpy(o, pix, sizeof pix);
+                    else for (int i = 0; i < run; ++i) o[i] = pix[(px & 7) + i];
+                    x += run;
+                    px = (px + run) & xmask;
+                }
             }
-            const int py = (line + vs) & ymask;
-            const int px = (x - hscroll) & xmask;
-            int run = 8 - (px & 7);
-            if (run > lim - x) run = lim - x;
-            // The name table entry: nt is 1 KiB aligned, so ea is even.
-            const uint32_t ea = (nt + uint32_t(((py >> 3) * pw + (px >> 3)) * 2)) & 0xFFFF;
-            const uint16_t e = uint16_t((v.vram[ea] << 8) | v.vram[ea + 1]);
-            int ty = py & 7;
-            if (e & 0x1000) ty = 7 - ty;
-            LinePix pix[8];
-            pattern_row(v.vram, e, ty, e, pix);
-            LinePix* o = out + (x - xs);
-            if (run == 8) std::memcpy(o, pix, sizeof pix);
-            else for (int i = 0; i < run; ++i) o[i] = pix[(px & 7) + i];
-            x += run;
+        };
+        // Plane A leaves the window's columns to render_window.
+        if (planeA && win_x1 > win_x0) {
+            span(xs, std::min(win_x0, xe));
+            span(std::max(win_x1, xs), xe);
+        } else {
+            span(xs, xe);
         }
         return;
     }
@@ -461,9 +472,8 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
             tiles->sprite_text.refresh(*this, tiles->slot_hashes(), tiles->dumping);
     }
 
+    // Planes A (with the window) and B write every column; sprites only some.
     LinePix a[kMaxWidth], b[kMaxWidth], s[kMaxWidth];
-    std::memset(a, 0, sizeof a);
-    std::memset(b, 0, sizeof b);
     std::memset(s, 0, sizeof s);
 
     // Window region for this line.
