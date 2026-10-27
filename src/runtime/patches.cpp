@@ -716,8 +716,14 @@ void begin_frame(Machine& m) {
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
         const int ce = (e + 7) & ~7;
+        // A WORLD ENTRANCE room shows nothing in its margins: drawing its
+        // sprites there anyway only costs the SH-2 time, and the Combi
+        // Catcher's TIME UP, scaled up past the screen, then flipped a frame
+        // or more late.
+        const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;
+        const int cr = in_lobby(m) ? (e - m.lobby_cut_right + 7) & ~7 : ce;
         // The SH-2 blitters compare vertical bounds in 24.8 fixed point.
-        write_clip(m, int16_t(-ce), int16_t(320 + ce),
+        write_clip(m, int16_t(-cl), int16_t(320 + cr),
                    uint32_t(kActiveLines - 1 + eb) << 8);
         m.clip_overridden = true;
     } else if (m.clip_overridden) {
