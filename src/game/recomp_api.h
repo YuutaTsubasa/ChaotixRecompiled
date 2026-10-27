@@ -89,9 +89,15 @@ inline bool m68k_pure_load(uint32_t a) {
 // iterations of `cost` cycles each are certain to read from `a` (`size`
 // bytes) what this iteration read, made when c->cycles was `at`. 0 when it
 // cannot tell (e.g. a read with side effects).
-int32_t sh2_poll_repeats_slow(const sh2::State* c, uint32_t a, int size, int32_t at, int32_t cost);
+// (Inlined, `cost` a constant: the division is a multiply, also on
+// armeabi-v7a, which has no divide instruction.)
+int32_t sh2_read_stable_to(const sh2::State* c, uint32_t a, int size, int32_t at);
 inline int32_t sh2_poll_repeats(const sh2::State* c, uint32_t a, int size, int32_t at, int32_t cost) {
-    return sh2_pure_load(a) ? INT32_MAX : sh2_poll_repeats_slow(c, a, size, at, cost);
+    if (sh2_pure_load(a)) return INT32_MAX;
+    const int32_t last = sh2_read_stable_to(c, a, size, at);
+    if (last == INT32_MIN) return INT32_MAX;
+    const int64_t span = int64_t(at) - last;
+    return span > INT32_MAX ? INT32_MAX : int32_t(span) / cost;
 }
 
 // Look up generated code for c->pc and call it as a subroutine. Returns the

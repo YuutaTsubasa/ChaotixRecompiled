@@ -268,11 +268,8 @@ bool sh2_callee_valid(const sh2::State* c, uint32_t* cache) {
 #endif
 }
 
-int32_t sh2_poll_repeats_slow(const sh2::State* c, uint32_t a, int size, int32_t at, int32_t cost) {
-    const int32_t last = chaotix::g_m->sh2_read_stable_to(c->id, a, size, at);
-    if (last == INT32_MIN) return INT32_MAX;
-    const int64_t span = int64_t(at) - last;  // 32-bit division below (armeabi-v7a)
-    return span > INT32_MAX ? INT32_MAX : int32_t(span) / cost;
+int32_t sh2_read_stable_to(const sh2::State* c, uint32_t a, int size, int32_t at) {
+    return chaotix::g_m->sh2_read_stable_to(c->id, a, size, at);
 }
 
 int sh2_call_dynamic(sh2::State* c) {
