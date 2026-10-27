@@ -21,6 +21,8 @@ analysis_out/
 # ...except the app icon (THIRD_PARTY.md), which is not runtime output
 !assets/icon/*.png
 !platforms/android/app/src/main/res/mipmap-*/ic_launcher.png
+# ...and the screenshots that docs and issue replies link to
+!docs/images/*.png
 *.ppm
 *.wav
 *.trace
