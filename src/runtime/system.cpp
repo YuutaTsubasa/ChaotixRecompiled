@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include "system.h"
 #include "log.h"
 #include "cpu/m68k/m68k_interp.h"
@@ -379,6 +380,9 @@ void Machine::render_output_line(int src_line, int dst_row) {
     vdp.radial_len = radial_len;
     vdp.radial_cx2 = kNativeWidth;
     vdp.radial_cy2 = kActiveLines;
+    vdp.alt_cram = wide_active && lobby_alt && !std::getenv("DBG_NOALT") ? lobby_cram : nullptr;  // TEMP getenv
+    vdp.alt_x0 = lobby_alt_x0;
+    vdp.alt_x1 = lobby_alt_x1;
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;

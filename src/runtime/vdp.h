@@ -41,6 +41,14 @@ public:
     const uint8_t* radial_lut = nullptr;
     int radial_len = 0;
     int radial_cx2 = 0, radial_cy2 = 0;
+    // Host-only: the plane pixels (and the backdrop) of palette lines 0 and 1
+    // in columns [alt_x0, alt_x1) of the rendered line (0 = the left edge of
+    // the left margin) take their colours from alt_cram instead: WORLD
+    // ENTRANCE's margins showing the next part of the lobby, whose palette
+    // the game loads only once the 4:3 view reaches it (runtime/patches.h,
+    // issue #61). alt_cram null: none.
+    const uint16_t* alt_cram = nullptr;
+    int alt_x0 = 0, alt_x1 = 0;
     // Host-only: the widescreen margins the picture shows game content in
     // (columns beyond each side, rows below the active area); 0 where they
     // are black bars. Text replaced by sprite (sprite_text.h) treats a

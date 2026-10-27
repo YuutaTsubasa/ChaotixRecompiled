@@ -154,7 +154,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
     if (pc == kCamClampMax || pc == kCamClampMin) {
         const int e = std::clamp(m->wide_extra, 0, kMaxWideExtra);
-        if (!e || !wide_zone(*m) || lobby(*m)) return;
+        if (!e || !wide_zone(*m) || in_lobby(*m)) return;
         const int right = int16_t(m68k::rd16(c, c->a[1] + 8));
         const int left = int16_t(m68k::rd16(c, c->a[1] + 0xA));
         int lo = left + e, hi = right - e;
@@ -171,7 +171,7 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
         return;
     }
-    const int w = (c->a[1] & 0xFFFF) != kPlaneAStruct && lobby(*m) ? 0 : m->plane_shift;
+    const int w = (c->a[1] & 0xFFFF) != kPlaneAStruct && in_lobby(*m) ? 0 : m->plane_shift;
     if (!w || m->vdp.reg[16] != kLevelPlaneSize) return;
     switch (pc) {
     case kFillSplitX: {
@@ -492,8 +492,92 @@ uint64_t scene_key(const Machine& m) {
            wram16(m, kSceneLevel);
 }
 
-bool lobby(const Machine& m) {
+bool in_lobby(const Machine& m) {
     return wram16(m, kSceneZone) == kWorldEntrance && wram16(m, kSceneLevel) <= kLastLobbyLevel;
+}
+
+namespace {
+
+// Area k's 32 colours as the lobby's table has them ($9BA764), or false if
+// the ROM does not hold the table where the lobby reads it.
+bool lobby_palette(const Machine& m, int k, uint16_t* out) {
+    const std::vector<uint8_t>& rom = m.rom.data;
+    auto rd16 = [&](uint32_t off, uint16_t& v) {
+        if (off + 2 > rom.size()) return false;
+        v = uint16_t(rom[off] << 8 | rom[off + 1]);
+        return true;
+    };
+    for (int i = 0; i < kLobbyAreas - 1; ++i) {
+        uint16_t b = 0;
+        if (!rd16(kLobbyAreaBounds + 2 * uint32_t(i), b) || int16_t(b) != kLobbyBounds[i]) return false;
+    }
+    uint16_t end = 0;
+    if (!rd16(kLobbyAreaBounds + 2 * (kLobbyAreas - 1), end) || int16_t(end) >= 0) return false;
+    const uint32_t base = (uint32_t(m.mars.bank & 3) << 20) + (kLobbyPalettes - 0x900000);
+    const uint32_t entry = base + 5 * uint32_t(m.wram[lobby::kTime + 1] & 6) + 2 * uint32_t(k);
+    uint16_t rel = 0;
+    if (!rd16(entry, rel)) return false;
+    const uint32_t colours = entry + uint32_t(int16_t(rel));
+    for (uint32_t i = 0; i < 32; ++i)
+        if (!rd16(colours + 2 * i, out[i])) return false;
+    return true;
+}
+
+} // namespace
+
+void lobby_margins(Machine& m, int e) {
+    m.lobby_alt = false;
+    m.lobby_alt_x0 = m.lobby_alt_x1 = 0;
+    const int x = camera_x(m);
+    // Rooms narrower than the view: black outside the range the camera is
+    // held to, the part of the layout the 4:3 view can show from there. The
+    // stage select room's range is one point (2816..2816): its margins would
+    // show the corridor and the outdoor entrance beside it, and as the room
+    // scrolls down, blocks the engine never draws. A wider range is no room:
+    // its ends move as the player goes on (1552 past the COMBI CATCHER, with
+    // the camera at 1573) and what lies beyond them was just in view.
+    const CameraRange r = camera_range(m);
+    const bool room = r.right - r.left < 2 * e;
+    m.lobby_cut_left = room ? std::clamp(e - (x - r.left), 0, e) : 0;
+    m.lobby_cut_right = room ? std::clamp(x + e - r.right, 0, e) : 0;
+    // Which area's colours the game shows: the one whose table matches lines
+    // 0 and 1 but for the few it cycles. The area by plane A's X first; the
+    // palette follows it a frame later.
+    uint16_t pal[kLobbyAreas][32];
+    for (int k = 0; k < kLobbyAreas; ++k)
+        if (!lobby_palette(m, k, pal[k])) return;
+    auto differ = [&](int k) {
+        int d = 0;
+        for (int i = 0; i < 32; ++i) d += pal[k][i] != m.vdp.cram[i];
+        return d;
+    };
+    int by_x = 0;
+    while (by_x < kLobbyAreas - 1 && x >= kLobbyBounds[by_x]) ++by_x;
+    int k = -1;
+    for (int c : {by_x, by_x - 1, by_x + 1})
+        if (c >= 0 && c < kLobbyAreas && differ(c) <= kLobbyCycled) { k = c; break; }
+    // Area k is seen on world [lo, hi): columns of the widened line, world
+    // x - e + i, left of lo or from hi on belong to the areas beside it.
+    const int lo = k > 0 ? kLobbyBounds[k - 1] : INT32_MIN / 2;
+    const int hi = k >= 0 && k < kLobbyAreas - 1 ? kLobbyBounds[k] + kNativeWidth : INT32_MAX / 2;
+    const int left = std::clamp(lo - (x - e), 0, e);           // columns [0, left)
+    const int right = std::clamp(x + kNativeWidth + e - hi, 0, e);  // the last `right`
+    if (k < 0) {
+        // A fade, or colours of no area: nothing to show them in.
+        const int lk = std::clamp(e - (x - (by_x > 0 ? kLobbyBounds[by_x - 1] : INT32_MIN / 2)), 0, e);
+        const int rk = by_x < kLobbyAreas - 1 ? std::clamp(x + e - kLobbyBounds[by_x], 0, e) : 0;
+        m.lobby_cut_left = std::max(m.lobby_cut_left, lk);
+        m.lobby_cut_right = std::max(m.lobby_cut_right, rk);
+        return;
+    }
+    if (!left && !right) return;
+    // One side at most: the areas are far wider than the margins.
+    const int other = left ? k - 1 : k + 1;
+    for (int i = 0; i < 32; ++i)
+        m.lobby_cram[i] = m.vdp.cram[i] != pal[k][i] ? m.vdp.cram[i] : pal[other][i];
+    m.lobby_alt = true;
+    m.lobby_alt_x0 = left ? 0 : kNativeWidth + 2 * e - right;
+    m.lobby_alt_x1 = left ? left : kNativeWidth + 2 * e;
 }
 
 bool wide_zone(const Machine& m) {
@@ -540,11 +624,10 @@ MarginCut margin_cut(const Machine& m, int extra) {
     // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
     c.left = std::clamp(extra - camera_x(m), 0, extra);
-    if (lobby(m)) {
-        const CameraRange r = camera_range(m);
-        const int cam = camera_x(m);
-        c.left = std::max(c.left, std::clamp(extra - (cam - r.left), 0, extra));
-        c.right = std::clamp(cam + extra - r.right, 0, extra);
+    if (in_lobby(m)) {
+        // WORLD ENTRANCE: worked out for this frame by lobby_margins.
+        c.left = std::max(c.left, std::min(m.lobby_cut_left, extra));
+        c.right = std::min(m.lobby_cut_right, extra);
     }
     return c;
 }
@@ -626,6 +709,8 @@ void begin_frame(Machine& m) {
             m.bonus_clip_overridden = true;
         }
     }
+    if (level && in_lobby(m)) lobby_margins(m, e);
+    else m.lobby_alt = false;
     if (level) {
         // The blitters write 16-bit words at clip-aligned addresses: an odd
         // bound makes the SH-2 raise an address error (it crashed at E = 53).

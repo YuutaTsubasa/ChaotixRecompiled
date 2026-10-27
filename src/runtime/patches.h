@@ -399,7 +399,29 @@ bool wide_scene_active(const Machine& m);
 constexpr uint16_t kWorldEntrance = 7;
 constexpr uint16_t kLastLobbyLevel = 1;
 bool wide_zone(const Machine& m);
-bool lobby(const Machine& m);
+bool in_lobby(const Machine& m);
+
+// The lobby's palette areas (issue #61). Every frame ($8891C6) the lobby
+// picks palette lines 0 and 1 by where plane A is: area k while its X is at
+// least k of the bounds at $88922A (0x180, 0x4C0, 0x900, 0x1010, then -1),
+// 32 colours from the table at $9BA764 (in the zone's ROM bank): a word at
+// +10 * (time of day, $FFDFF6 & 6, halved) + 2k, the offset of the colours
+// from itself. The 4:3 view shows world [X, X + 320), so area k's colours
+// are only ever seen on world [bound(k), bound(k + 1) + 320); the margins
+// reach past that by E, into the next area's scenery, which then showed in
+// the wrong colours until the view itself got there (a blue-grey pillar
+// before the COMBI CATCHER). Those columns are drawn with the neighbouring
+// area's colours instead (Vdp::alt_cram). The game also cycles a few of
+// these colours: what the game shows now in place of the table's colours is
+// kept. When the game's colours match no area (a fade), they are black.
+constexpr uint32_t kLobbyAreaBounds = 0x922A;     // ROM offset ($88922A)
+constexpr uint32_t kLobbyPalettes = 0x9BA764;     // 68K, banked
+constexpr int kLobbyAreas = 5;
+constexpr int16_t kLobbyBounds[kLobbyAreas - 1] = {0x180, 0x4C0, 0x900, 0x1010};
+// Colours of an area the game may be cycling when it is matched.
+constexpr int kLobbyCycled = 8;
+// Fills Machine::lobby_* for this frame's picture, margins of e px.
+void lobby_margins(Machine& m, int e);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
 // mean the same scene; Machine::level_scene holds the key the level engine

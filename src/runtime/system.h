@@ -191,7 +191,15 @@ public:
     // The bonus stage's rings by radius (Vdp::radial_lut); render only.
     uint8_t radial_lut[512 * 4] = {};
     int radial_len = 0;
-    int special_shift = 0;             // px its polygons are drawn right of true
+    // WORLD ENTRANCE's margins (patches::lobby_margins, issue #61), worked
+    // out at the start of every frame for its picture; render only. Columns
+    // [lobby_alt_x0, lobby_alt_x1) of the widened line show the next part of
+    // the lobby in its own colours (Vdp::alt_cram), and lobby_cut is black.
+    uint16_t lobby_cram[32] = {};
+    bool lobby_alt = false;
+    int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
+    int lobby_cut_left = 0, lobby_cut_right = 0;
+    int special_shift = 0;            // px its polygons are drawn right of true
     int cull_shift = 0;                // pending d2 offset inside the ring cull patch
     bool plane_fill_clamped = true;    // last plane fill used the unmasked (clamped) form
     // A stage the host has asked the game to start (TIME ATTACK). A game mode
