@@ -483,7 +483,10 @@ uint64_t scene_key(const Machine& m) {
            wram16(m, kSceneLevel);
 }
 
-bool wide_zone(const Machine& m) { return m.wide_everywhere || wram16(m, kSceneZone) != kWorldEntrance; }
+bool wide_zone(const Machine& m) {
+    if (wram16(m, kSceneZone) != kWorldEntrance) return true;
+    return m.wide_everywhere && wram16(m, kSceneLevel) <= kLastLobbyLevel;
+}
 
 bool wide_scene_active(const Machine& m) {
     if (!wide_zone(m)) return false;

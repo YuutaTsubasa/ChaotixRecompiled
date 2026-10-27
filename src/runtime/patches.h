@@ -390,8 +390,14 @@ bool wide_scene_active(const Machine& m);
 // 96 - E px of slack (natively 192) can keep up with, so chunks went missing
 // even in the 4:3 centre. There the ring is not shifted, the camera clamp is
 // left alone and the margins are black, exactly as a 4:3 window shows it.
-// Machine::wide_everywhere lifts this, and the INTRODUCTION mask below.
+// Machine::wide_everywhere (WIDE LOBBY) lifts this for the lobby itself,
+// levels 0 and 1, and the INTRODUCTION mask below. Levels 2-6 of the zone are
+// the final boss and the ending's scenes (issue #56): the boss's arena is
+// drawn by the 32X across the 4:3 view only, so widened, the margins showed
+// stretched bars of its floor and the boss cut off at the old edge. They stay
+// 4:3 with WIDE LOBBY on as well.
 constexpr uint16_t kWorldEntrance = 7;
+constexpr uint16_t kLastLobbyLevel = 1;
 bool wide_zone(const Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
