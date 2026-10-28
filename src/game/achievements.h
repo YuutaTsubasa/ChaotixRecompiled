@@ -19,6 +19,18 @@
 // frame, which is how "changed" conditions are written:
 //
 //   when = rings > prev(rings)
+//
+// An achievement about a whole attempt ("clear a level without losing a
+// ring") adds `start` and `fail`, two more condition lists. `start` begins an
+// attempt (again), `fail` spoils it, and `when` only counts while an attempt
+// is going. Each frame `fail` is looked at first, then `start`, then `when`:
+//
+//   start = clock == 0
+//   fail  = rings < prev(rings)
+//   when  = goal == 0xFF and prev(goal) != 0xFF
+//
+// `icon` names the emblem the list and the notification draw for it (ring,
+// chaos, goal, clock, place, team, boss, star); anything else is a star.
 #pragma once
 #include <cstdint>
 #include <functional>
@@ -59,6 +71,11 @@ struct Achievement {
     std::string description;
     int points = 0;
     std::vector<Condition> when;  // all must hold
+    // An attempt (see above): only with `start`. `armed` is whether one is
+    // going; nothing is armed until `start` has held once.
+    std::vector<Condition> start, fail;
+    bool armed = false;
+    std::string icon;             // emblem name, "" for the default
     bool unlocked = false;
     uint64_t unlocked_at = 0;     // unix time, 0 while locked
 };
@@ -91,7 +108,9 @@ public:
     // The game jumped in time (a save state loaded, a rewind step): the last
     // frame seen is not the one before the next, so prev() has nothing to
     // compare with until a frame has been seen again.
-    void forget_previous() { previous_.clear(); have_previous_ = false; }
+    // Any attempt going is dropped as well: what happened in between is not
+    // known, so it has to start again.
+    void forget_previous();
 
     const std::vector<Achievement>& list() const { return achievements_; }
     int unlocked_count() const;

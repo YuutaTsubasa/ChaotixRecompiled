@@ -228,6 +228,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         src/platform/sdl_rom_import.cpp
         src/platform/menu.cpp
         src/platform/ui.cpp
+        src/platform/award_art.cpp
         src/platform/backdrops.cpp
         src/frontend/config.cpp
         src/frontend/debug_overlay.cpp

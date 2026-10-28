@@ -141,9 +141,11 @@ bool parse(const std::string& text, std::map<std::string, Var>& vars,
             if (k == "description") a.description = value;
             else if (k == "id") a.id = value;
             else if (k == "points") a.points = std::atoi(value.c_str());
-            else if (k == "when") {
+            else if (k == "icon") a.icon = lower(value);
+            else if (k == "when" || k == "start" || k == "fail") {
                 std::string err;
-                if (!parse_conditions(value, vars, &a.when, &err)) fail(a.title + ": " + err);
+                std::vector<Condition>& into = k == "when" ? a.when : k == "start" ? a.start : a.fail;
+                if (!parse_conditions(value, vars, &into, &err)) fail(a.title + ": " + err);
             } else {
                 fail("unknown key '" + key + "'");
             }
@@ -151,8 +153,11 @@ bool parse(const std::string& text, std::map<std::string, Var>& vars,
             fail("value outside a section: " + line);
         }
     }
-    for (const Achievement& a : out)
+    for (const Achievement& a : out) {
         if (a.when.empty()) fail(a.title + ": no 'when' conditions");
+        // An attempt that can be spoiled but never begun would never count.
+        if (!a.fail.empty() && a.start.empty()) fail(a.title + ": 'fail' without 'start'");
+    }
     return ok;
 }
 
@@ -194,10 +199,17 @@ bool Tracker::load_progress(const std::string& path) {
     return true;
 }
 
+void Tracker::forget_previous() {
+    previous_.clear();
+    have_previous_ = false;
+    for (Achievement& a : achievements_) a.armed = false;
+}
+
 void Tracker::reset_progress() {
     for (Achievement& a : achievements_) {
         a.unlocked = false;
         a.unlocked_at = 0;
+        a.armed = false;
     }
     LOGI("achievements", "progress reset");
 }
@@ -261,7 +273,16 @@ void Tracker::update_memory(const uint8_t* wram, size_t size, const std::functio
     // earning anything.
     if (have_previous_ && holds(require_)) {
         for (Achievement& a : achievements_) {
-            if (a.unlocked || !holds(a.when)) continue;
+            if (a.unlocked) continue;
+            // An attempt: spoiled first, so a frame that both begins and
+            // spoils one (a new level, where the count drops back to zero)
+            // begins it; and only then may it count.
+            if (!a.start.empty()) {
+                if (a.armed && !a.fail.empty() && holds(a.fail)) a.armed = false;
+                if (holds(a.start)) a.armed = true;
+                if (!a.armed) continue;
+            }
+            if (!holds(a.when)) continue;
             a.unlocked = true;
             a.unlocked_at = uint64_t(std::time(nullptr));
             LOGI("achievements", "unlocked: %s (%d points)", a.title.c_str(), a.points);

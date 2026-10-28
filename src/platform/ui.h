@@ -162,6 +162,12 @@ public:
     void rect(const SDL_FRect& r, Color c, float radius = 0);
     void outline(const SDL_FRect& r, Color c, float radius = 0, float thickness = 1);
     void panel(const SDL_FRect& r, Color fill, Color border, float radius, float thickness = 1);
+    // A filled convex polygon, points in order around it.
+    void poly(const SDL_FPoint* pts, int n, Color c);
+    // A filled ellipse, and an elliptical band `thickness` wide inside its
+    // edge (a ring seen edge-on as it turns is one of these).
+    void ellipse(float cx, float cy, float rx, float ry, Color c);
+    void ellipse_band(float cx, float cy, float rx, float ry, float thickness, Color c);
     // A rounded label, e.g. "VERIFIED". Returns the rectangle it occupied.
     SDL_FRect pill(float x, float y, const std::string& label, Color fg, Color bg);
 
