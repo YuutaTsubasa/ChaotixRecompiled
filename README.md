@@ -122,11 +122,13 @@ and the app's Documents on iOS (the Files app's On My iPhone > Chaotix).
 | F12 | Screenshot |
 | Home / End | Start / reset a speedrun timer run (see Speedrun tools below) |
 
-The menu is the front end: it is up as soon as the program starts, a screen of
-its own with the game's title art framed on the left and the list beside it —
-START GAME, TIME ATTACK, LEVEL SELECT, OPTIONS, CONTROLS, MUSIC PLAYER, AWARDS, QUIT —
-over the same picture enlarged and dimmed. The art is the game drawing its own
-title screen, from your ROM, so nothing is extracted or shipped.
+The menu is the front end: it is up as soon as the program starts, drawn on the
+game's own title screen, which fills the window as the game does in play. The
+entries — START GAME, TIME ATTACK, LEVEL SELECT, OPTIONS, CONTROLS, MUSIC PLAYER,
+AWARDS, NETPLAY, QUIT — slide through the box where the title shows PUSH START,
+the chosen one on a purple plaque between two spinning rings, the others above
+and below it (issue #3; [docs/MENU_ART.md](docs/MENU_ART.md)). The title is the
+game drawing its own screen, from your ROM, so nothing is extracted or shipped.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen, menu size),
 SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad), EXTRAS (cheats,

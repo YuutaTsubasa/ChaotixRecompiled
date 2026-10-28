@@ -1745,23 +1745,118 @@ TEST(menu_size, rows_grow_and_stay_on_the_screen) {
     }
 }
 
-TEST(menu_size, the_front_end_picture_gives_way_on_a_portrait_window) {
-    // On a portrait window the list used to run off the right-hand side
-    // beside a postage stamp of a picture: there the picture goes across the
-    // top and the list below it.
-    Drawn d(412, 860);
+namespace {
+
+bool covers(const SDL_FRect& outer, const SDL_FRect& inner) {
+    return outer.x <= inner.x + 0.5f && outer.y <= inner.y + 0.5f && outer.x + outer.w >= inner.x + inner.w - 0.5f &&
+           outer.y + outer.h >= inner.y + inner.h - 0.5f;
+}
+
+} // namespace
+
+TEST(front_end, the_box_is_where_the_title_screen_shows_push_start) {
+    // The title screen is 320x224 and 4:3 in every mode; its PUSH START frame
+    // is centred, under the logo. A wide frame buffer has its extra columns
+    // either side, so the box is where it was in the 4:3 picture.
+    const SDL_FRect b = Menu::push_start_box({160, 0, 960, 720}, 320, 224, 0);
+    CHECK(std::fabs(b.x + b.w * 0.5f - 640.0f) < 1.0f);
+    CHECK(b.y > 720 * 0.25f && b.y + b.h < 720 * 0.5f);
+    const SDL_FRect w = Menu::push_start_box({0, 0, 1200, 720}, 400, 224, 40);
+    CHECK(std::fabs(w.x + w.w * 0.5f - 600.0f) < 1.0f);
+    CHECK(std::fabs(w.w - b.w) < 1.0f);
+    CHECK(std::fabs(w.y - b.y) < 1.0f);
+}
+
+TEST(front_end, the_selected_entry_covers_push_start) {
+    // Issue #3: the entries are drawn on the title screen, the selected one
+    // over the box the game shows PUSH START in -- whichever entry it is, at
+    // every MENU SIZE, in a 16:9 and a 4:3 window, a phone and a portrait
+    // one -- with the others above and below it, apart from it.
+    struct Window { int w, h; SDL_FRect picture; };
+    const Window windows[] = {{1280, 720, {160, 0, 960, 720}},     {1024, 768, {0, 0, 1024, 768}},
+                              {2400, 1080, {480, 0, 1440, 1080}}, {412, 860, {0, 276, 412, 309}},
+                              {800, 360, {160, 0, 480, 360}}};
+    for (const Window& win : windows) {
+        for (int z = 0; z < ui::kMenuSizes; ++z) {
+            for (bool game_font : {true, false}) {
+                Drawn d(win.w, win.h);
+                CHECK(d.ok);
+                if (!d.ok) return;
+                if (game_font) CHECK(d.g.set_game_font(block_font()));
+                Config cfg;
+                cfg.set_defaults();
+                cfg.menu_size = z;
+                cfg.menu_game_font = game_font;
+                Menu m;
+                m.bind(cfg);
+                m.open_front();
+                m.set_picture(win.picture, 320, 224, 0);
+                const SDL_FRect box = Menu::push_start_box(win.picture, 320, 224, 0);
+                for (int step = 0; step < 9; ++step) {
+                    d.draw(m);
+                    SDL_FRect plaque{};
+                    bool found = false;
+                    for (const auto& [index, r] : m.drawn_rows())
+                        if (index == m.selected_index()) { plaque = r; found = true; }
+                    CHECK(found);
+                    if (!covers(plaque, box))
+                        std::printf("    %dx%d size %d%s, %s: %.0f,%.0f %.0fx%.0f does not cover %.0f,%.0f %.0fx%.0f\n",
+                                    win.w, win.h, z, game_font ? " (game font)" : "", m.selected_label().c_str(),
+                                    double(plaque.x), double(plaque.y), double(plaque.w), double(plaque.h),
+                                    double(box.x), double(box.y), double(box.w), double(box.h));
+                    // On a window short enough that the plaque must move up
+                    // to stay above the hint, it still covers what it can.
+                    if (win.h >= 480) CHECK(covers(plaque, box));
+                    for (const auto& [index, r] : m.drawn_rows()) {
+                        if (index == m.selected_index()) continue;
+                        // Before it above, after it below, never on it.
+                        if (index < m.selected_index()) CHECK(r.y + r.h <= plaque.y + 0.5f);
+                        else CHECK(r.y >= plaque.y + plaque.h - 0.5f);
+                    }
+                    m.on_key(SDLK_DOWN);
+                }
+            }
+        }
+    }
+}
+
+TEST(front_end, a_tap_selects_an_entry_and_a_second_starts_it) {
+    Drawn d(1280, 720);
     CHECK(d.ok);
     if (!d.ok) return;
     Config cfg;
     cfg.set_defaults();
     Menu m;
     m.bind(cfg);
+    int started = 0;
+    Menu::Hooks h;
+    h.start_game = [&started] { ++started; };
+    m.set_hooks(h);
     m.open_front();
     d.draw(m);
-    SDL_FRect art{};
-    CHECK(m.art_panel(d.g, &art));
-    CHECK(art.w > 412 * 0.6f);
-    for (const auto& [index, r] : m.drawn_rows()) CHECK(r.y >= art.y + art.h);
+    // TIME ATTACK is right under START GAME: one tap brings it into the box.
+    SDL_FRect below{};
+    for (const auto& [index, r] : m.drawn_rows())
+        if (index == 1) below = r;
+    CHECK(below.w > 0);
+    d.tap(m, below.x + below.w * 0.5f, below.y + below.h * 0.5f);
+    CHECK_STR(m.selected_label(), "TIME ATTACK");
+    CHECK_STR(m.page_name(), "front");
+    // START GAME is now above it; a tap there and one on the box starts.
+    SDL_FRect above{}, plaque{};
+    for (const auto& [index, r] : m.drawn_rows()) {
+        if (index == 0) above = r;
+        if (index == 1) plaque = r;
+    }
+    CHECK(above.w > 0 && above.y + above.h <= plaque.y + 0.5f);
+    d.tap(m, above.x + above.w * 0.5f, above.y + above.h * 0.5f);
+    CHECK_STR(m.selected_label(), "START GAME");
+    CHECK_EQ(started, 0);
+    for (const auto& [index, r] : m.drawn_rows())
+        if (index == 0) plaque = r;
+    d.tap(m, plaque.x + plaque.w * 0.5f, plaque.y + plaque.h * 0.5f);
+    CHECK_EQ(started, 1);
+    CHECK(!m.open());
 }
 
 // ---------------------------------------------------------------------------
