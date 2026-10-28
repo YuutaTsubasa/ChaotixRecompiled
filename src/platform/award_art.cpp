@@ -134,4 +134,34 @@ void emblem(ui::Ui& g, float cx, float cy, float r, const std::string& icon, boo
     }
 }
 
+void ring(ui::Ui& g, float cx, float cy, float r, float turn) {
+    using namespace color;
+    gold_ring(g, cx, cy, r, turn, gold, gold_dark, cream, ink);
+}
+
+SDL_FRect heading(ui::Ui& g, float x, float y, ui::Font f, const std::string& text, float max_w) {
+    using namespace color;
+    const float edge = std::max(2.0f, std::round(g.px(3)));
+    const float head_h = g.line_height(f) + g.px(18);
+    const float lean = head_h * 0.45f;
+    const float pad = lean + g.px(16);
+    const float w = std::min(g.text_width(f, text) + lean * 2 + g.px(40), std::max(head_h * 2, max_w - g.px(10)));
+    const SDL_FRect box{x, y, w, head_h};
+    banner(g, {box.x + g.px(10), box.y + head_h - g.px(6), box.w, g.px(14)}, lean * 0.3f, magenta, ink, edge);
+    banner(g, box, lean, purple, ink, edge);
+    g.text_fit(f, box.x + pad, y + (head_h - g.line_height(f)) * 0.5f, std::max(0.0f, w - pad - lean), text,
+               ui::theme::text);
+    return box;
+}
+
+void arrowhead(ui::Ui& g, float cx, float cy, float s, bool up, ui::Color fill, float edge) {
+    const float d = up ? -1.0f : 1.0f;
+    const SDL_FPoint outer[3] = {{cx - s - edge, cy - d * (s * 0.6f + edge * 0.5f)},
+                                 {cx + s + edge, cy - d * (s * 0.6f + edge * 0.5f)},
+                                 {cx, cy + d * (s * 0.6f + edge)}};
+    const SDL_FPoint inner[3] = {{cx - s, cy - d * s * 0.6f}, {cx + s, cy - d * s * 0.6f}, {cx, cy + d * s * 0.6f}};
+    g.poly(outer, 3, color::ink);
+    g.poly(inner, 3, fill);
+}
+
 } // namespace chaotix::award_art

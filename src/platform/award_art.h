@@ -38,4 +38,18 @@ void banner(ui::Ui& g, const SDL_FRect& r, float lean, ui::Color fill, ui::Color
 void emblem(ui::Ui& g, float cx, float cy, float r, const std::string& icon, bool earned, float turn = 0,
             unsigned seed = 0);
 
+// A gold ring on its own, as the emblems draw it: radius r, turned by `turn`
+// (0-1) about its upright axis. The front end's cursor is a pair of them, the
+// two rings of the game's combi.
+void ring(ui::Ui& g, float cx, float cy, float r, float turn);
+
+// A page's title, as AWARDS has it: the words on a slanted purple banner
+// with a magenta stripe under it, its top left at (x, y), the words in font
+// `f`, `max_w` wide at most (the words are shortened past that). Returns the
+// banner's rectangle.
+SDL_FRect heading(ui::Ui& g, float x, float y, ui::Font f, const std::string& text, float max_w);
+
+// An arrowhead pointing up or down, edged in black: s is half its width.
+void arrowhead(ui::Ui& g, float cx, float cy, float s, bool up, ui::Color fill, float edge);
+
 } // namespace chaotix::award_art

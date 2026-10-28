@@ -1340,7 +1340,10 @@ TEST(menu, the_game_font_lays_out_in_whole_cells) {
     SDL_DestroySurface(c);
 }
 
-TEST(menu, a_zone_picture_fills_the_panel_when_asked) {
+TEST(menu, the_settings_panel_is_plain_and_fits_its_rows) {
+    // Issue #3: the settings pages' panel is the awards' near-black purple
+    // over the dimmed title, with no zone's picture inside it (that made two
+    // pictures one over the other), and only as wide as its rows need.
     Drawn d;
     CHECK(d.ok);
     if (!d.ok) return;
@@ -1361,21 +1364,28 @@ TEST(menu, a_zone_picture_fills_the_panel_when_asked) {
         SDL_RenderClear(d.renderer);
         d.draw(m);
         SDL_RenderPresent(d.renderer);
+        // Inside the panel, in the margin left of the second row's label.
+        SDL_FRect row{};
+        for (const auto& [index, r] : m.drawn_rows())
+            if (index == 1) row = r;
         SDL_Surface* s = SDL_RenderReadPixels(d.renderer, nullptr);
         if (!s) return -1;
         SDL_Surface* c = SDL_ConvertSurface(s, SDL_PIXELFORMAT_XRGB8888);
         SDL_DestroySurface(s);
         if (!c) return -1;
-        // Inside the panel, right of its labels: only the panel's fill.
-        const uint32_t p = static_cast<const uint32_t*>(c->pixels)[size_t(360) * size_t(c->pitch / 4) + 930];
+        const uint32_t p = static_cast<const uint32_t*>(
+            c->pixels)[size_t(row.y + row.h * 0.5f) * size_t(c->pitch / 4) + size_t(row.x + 6)];
         SDL_DestroySurface(c);
         return int((p >> 16) & 0xFF);
     };
-    const int zone = panel_red();
+    CHECK(panel_red() < 30);  // the zone is set, and not drawn in the panel
     cfg.menu_background = "Plain";
-    const int plain = panel_red();
-    CHECK(zone > 30);    // the red shows through the tint
-    CHECK(plain < 30);   // the theme's near-black
+    CHECK(panel_red() < 30);
+    // OPTIONS' rows are short: its panel is far narrower than the 560 units
+    // it used to take whatever the rows were.
+    float right = 0;
+    for (const auto& [index, r] : m.drawn_rows()) right = std::max(right, r.x + r.w);
+    CHECK(right < 640 + 560 * 0.5f - 60);
     SDL_DestroyTexture(red);
 }
 
@@ -1745,23 +1755,154 @@ TEST(menu_size, rows_grow_and_stay_on_the_screen) {
     }
 }
 
-TEST(menu_size, the_front_end_picture_gives_way_on_a_portrait_window) {
-    // On a portrait window the list used to run off the right-hand side
-    // beside a postage stamp of a picture: there the picture goes across the
-    // top and the list below it.
-    Drawn d(412, 860);
+namespace {
+
+bool covers(const SDL_FRect& outer, const SDL_FRect& inner) {
+    return outer.x <= inner.x + 0.5f && outer.y <= inner.y + 0.5f && outer.x + outer.w >= inner.x + inner.w - 0.5f &&
+           outer.y + outer.h >= inner.y + inner.h - 0.5f;
+}
+
+} // namespace
+
+TEST(front_end, the_box_is_where_the_title_screen_shows_push_start) {
+    // The title screen is 320x224 and 4:3 in every mode; its PUSH START frame
+    // is centred, under the logo. A wide frame buffer has its extra columns
+    // either side, so the box is where it was in the 4:3 picture.
+    const SDL_FRect b = Menu::push_start_box({160, 0, 960, 720}, 320, 224, 0);
+    CHECK(std::fabs(b.x + b.w * 0.5f - 640.0f) < 1.0f);
+    CHECK(b.y > 720 * 0.25f && b.y + b.h < 720 * 0.5f);
+    const SDL_FRect w = Menu::push_start_box({0, 0, 1200, 720}, 400, 224, 40);
+    CHECK(std::fabs(w.x + w.w * 0.5f - 600.0f) < 1.0f);
+    CHECK(std::fabs(w.w - b.w) < 1.0f);
+    CHECK(std::fabs(w.y - b.y) < 1.0f);
+}
+
+TEST(front_end, the_selected_entry_covers_push_start) {
+    // Issue #3: the entries are drawn on the title screen, the selected one
+    // over the box the game shows PUSH START in -- whichever entry it is, at
+    // every MENU SIZE, in a 16:9 and a 4:3 window, a phone and a portrait
+    // one -- with the others under it, apart from it: nothing above the box,
+    // where the logo and the line under it are. On a portrait window the
+    // picture is at the top and the others are under the picture.
+    struct Window { int w, h; SDL_FRect picture; };
+    const Window windows[] = {
+        {1280, 720, {160, 0, 960, 720}},
+        {1024, 768, {0, 0, 1024, 768}},
+        {2400, 1080, {480, 0, 1440, 1080}},
+        {412, 860, {0, Menu::title_picture_y(276, 412, 860), 412, 309}},
+        {800, 360, {160, 0, 480, 360}},
+        {1080, 2400, {0, Menu::title_picture_y(795, 1080, 2400), 1080, 810}},
+    };
+    for (const Window& win : windows) {
+        for (int z = 0; z < ui::kMenuSizes; ++z) {
+            for (bool game_font : {true, false}) {
+                Drawn d(win.w, win.h);
+                CHECK(d.ok);
+                if (!d.ok) return;
+                if (game_font) CHECK(d.g.set_game_font(block_font()));
+                Config cfg;
+                cfg.set_defaults();
+                cfg.menu_size = z;
+                cfg.menu_game_font = game_font;
+                Menu m;
+                m.bind(cfg);
+                m.open_front();
+                m.set_picture(win.picture, 320, 224, 0);
+                const SDL_FRect box = Menu::push_start_box(win.picture, 320, 224, 0);
+                for (int step = 0; step < 9; ++step) {
+                    d.draw(m);
+                    SDL_FRect plaque{};
+                    bool found = false;
+                    for (const auto& [index, r] : m.drawn_rows())
+                        if (index == m.selected_index()) { plaque = r; found = true; }
+                    CHECK(found);
+                    if (!covers(plaque, box))
+                        std::printf("    %dx%d size %d%s, %s: %.0f,%.0f %.0fx%.0f does not cover %.0f,%.0f %.0fx%.0f\n",
+                                    win.w, win.h, z, game_font ? " (game font)" : "", m.selected_label().c_str(),
+                                    double(plaque.x), double(plaque.y), double(plaque.w), double(plaque.h),
+                                    double(box.x), double(box.y), double(box.w), double(box.h));
+                    // On a window short enough that the plaque must move up
+                    // to stay above the hint, it still covers what it can.
+                    if (win.h >= 480) CHECK(covers(plaque, box));
+                    // Nor does it rise over the line above the box.
+                    if (win.h >= 480) CHECK(plaque.y >= box.y - 0.5f);
+                    const bool portrait = win.h > win.w;
+                    const int sel = m.selected_index();
+                    int others = 0, last = -1;
+                    bool before = sel == 0, after = sel == 8, in_order = true;
+                    for (const auto& [index, r] : m.drawn_rows()) {
+                        if (portrait) {
+                            // The whole menu in its own order, top to bottom,
+                            // the selected entry's place among them; the
+                            // plaque's target comes last.
+                            if (!(index == sel && r.y < win.picture.y + win.picture.h)) {
+                                in_order = in_order && index > last;
+                                last = index;
+                                CHECK(r.y >= win.picture.y + win.picture.h - 0.5f);
+                            }
+                            before = before || index == sel - 1;
+                            after = after || index == sel + 1;
+                        }
+                        if (index == sel) continue;
+                        ++others;
+                        CHECK(r.y >= plaque.y + plaque.h - 0.5f);
+                        CHECK(r.y >= box.y + box.h - 0.5f);
+                    }
+                    if (portrait) {
+                        CHECK(in_order);
+                        // A column too long for the room keeps the entries
+                        // either side of the selection in view...
+                        CHECK(before && after);
+                        // ...and a phone has the room for all of them up to
+                        // LARGE.
+                        if (win.w >= 1000 && z <= 1) CHECK_EQ(others, 8);
+                    }
+                    m.on_key(SDLK_DOWN);
+                }
+            }
+        }
+    }
+}
+
+TEST(front_end, a_tap_selects_an_entry_and_a_second_starts_it) {
+    Drawn d(1280, 720);
     CHECK(d.ok);
     if (!d.ok) return;
     Config cfg;
     cfg.set_defaults();
     Menu m;
     m.bind(cfg);
+    int started = 0;
+    Menu::Hooks h;
+    h.start_game = [&started] { ++started; };
+    m.set_hooks(h);
     m.open_front();
     d.draw(m);
-    SDL_FRect art{};
-    CHECK(m.art_panel(d.g, &art));
-    CHECK(art.w > 412 * 0.6f);
-    for (const auto& [index, r] : m.drawn_rows()) CHECK(r.y >= art.y + art.h);
+    // TIME ATTACK is right under START GAME: one tap brings it into the box.
+    // (The plaque's target is drawn last, so it comes last.)
+    SDL_FRect below{};
+    for (const auto& [index, r] : m.drawn_rows())
+        if (index == 1) below = r;
+    CHECK(below.w > 0);
+    d.tap(m, below.x + below.w * 0.5f, below.y + below.h * 0.5f);
+    CHECK_STR(m.selected_label(), "TIME ATTACK");
+    CHECK_STR(m.page_name(), "front");
+    // The entries come round: QUIT's successor, START GAME, is listed after
+    // the others, never above the box.
+    SDL_FRect plaque{};
+    for (const auto& [index, r] : m.drawn_rows())
+        if (index == 1) plaque = r;
+    CHECK(plaque.w > 0);
+    for (const auto& [index, r] : m.drawn_rows()) CHECK(index == 1 || r.y >= plaque.y + plaque.h - 0.5f);
+    CHECK(m.on_key(SDLK_UP));
+    CHECK_STR(m.selected_label(), "START GAME");
+    CHECK_EQ(started, 0);
+    d.draw(m);
+    for (const auto& [index, r] : m.drawn_rows())
+        if (index == 0) plaque = r;
+    d.tap(m, plaque.x + plaque.w * 0.5f, plaque.y + plaque.h * 0.5f);
+    CHECK_EQ(started, 1);
+    CHECK(!m.open());
 }
 
 // ---------------------------------------------------------------------------

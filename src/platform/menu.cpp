@@ -1731,59 +1731,50 @@ bool Menu::on_touch_up() {
     return true;
 }
 
-// The front end is a screen of its own: the game's own title art on the left,
-// the list on the right, in the manner of a modern re-release. Everywhere
-// else the menu sits over the game, so the image keeps the whole window.
-bool Menu::art_panel(ui::Ui& g, SDL_FRect* out) const {
-    if (page_ != Page::Front) return false;
-    *out = front_layout(g).art;
-    return true;
+// Issue #3: the front end is drawn on the game's own title screen, which fills
+// the window as the game does in play; the app says where it is.
+void Menu::set_picture(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra) {
+    picture_ = image;
+    picture_fb_w_ = std::max(1, fb_width);
+    picture_fb_h_ = std::max(1, fb_height);
+    picture_extra_ = std::max(0, fb_extra);
 }
 
-Menu::FrontLayout Menu::front_layout(ui::Ui& g) const {
-    FrontLayout l;
-    const float W = g.width(), H = g.height();
-    const float margin = g.px(34);
-    const float gutter = g.px(40);     // between the picture and the list
-    const float right_pad = g.px(28);
-    // The list needs its longest entry, the bar behind the selected one and
-    // the room its marker bobs in -- measured in the letters it is drawn in,
-    // which the app asks for (art_panel) before the menu has switched them on.
-    const bool game_font_was = g.game_font_enabled();
-    g.enable_game_font(cfg_ && cfg_->menu_game_font);
-    float need = g.text_width(ui::Font::PixelBig, "CHAOTIX");
-    for (const Item& it : items_) need = std::max(need, g.text_width(ui::Font::PixelBig, it.label));
-    need += g.px(48);
-    g.enable_game_font(game_font_was);
-    const float hint_room = g.line_height(ui::Font::Small) + g.px(34);
+SDL_FRect Menu::push_start_box(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra) {
+    // The title screen shows PUSH START in a lime-green frame under the
+    // logo: columns 114-206 and lines 75-101 of its 320x224 picture once it
+    // has settled (from about frame 1520 after power-on; it zooms in before
+    // that), measured on the program's own screenshots of it. The selected
+    // entry covers the inside of the frame's outer edge, columns 115-205 and
+    // lines 76-100, so the game's prompt does not show beside ours. The title
+    // screen is 4:3 in every mode; a wide frame buffer has its extra columns
+    // either side.
+    constexpr float kX = 115, kY = 76, kW = 90, kH = 24;
+    const float sx = image.w / float(std::max(1, fb_width)), sy = image.h / float(std::max(1, fb_height));
+    return {image.x + (float(std::max(0, fb_extra)) + kX) * sx, image.y + kY * sy, kW * sx, kH * sy};
+}
 
-    // The 4:3 image gets the left side, as large as the height allows, and
-    // no wider than leaves the list its room.
-    const float max_w = std::min(W * 0.54f - margin * 2, W - right_pad - need - gutter - margin);
-    const float max_h = H - margin * 2;
-    float w = max_w, h = w * 3.0f / 4.0f;
-    if (h > max_h) { h = max_h; w = h * 4.0f / 3.0f; }
-    // A portrait window, or one too narrow for the two side by side: the
-    // picture across the top, the list below it.
-    if (H > W || w < W * 0.25f) {
-        w = W - margin * 2;
-        h = w * 3.0f / 4.0f;
-        const float cap = H * 0.36f;
-        if (h > cap) { h = cap; w = h * 4.0f / 3.0f; }
-        l.art = {(W - w) * 0.5f, margin, w, h};
-        // The whole width but a little: a narrow window has no room to spare.
-        l.column = W - g.px(16) * 2;
-        l.left = (W - l.column) * 0.5f + g.px(12);
-        l.top = l.art.y + l.art.h + g.px(24);
-        l.bottom = H - hint_room;
-        return l;
+float Menu::title_picture_y(float y, float window_w, float window_h) {
+    // A portrait window has room to spare above and below the picture; the
+    // front end wants it all below, for its list.
+    return window_h > window_w ? std::min(y, std::round(window_h * 0.03f)) : y;
+}
+
+SDL_FRect Menu::picture_rect(ui::Ui& g) const {
+    if (picture_.w > 0 && picture_.h > 0) return picture_;
+    const float W = g.width(), H = g.height();
+    float w = W, h = W * 3.0f / 4.0f;
+    if (h > H) {
+        h = H;
+        w = H * 4.0f / 3.0f;
     }
-    l.art = {margin + (max_w - w) * 0.5f, (H - h) * 0.5f, w, h};
-    l.left = l.art.x + l.art.w + gutter;
-    l.column = std::max(g.px(120), W - right_pad - l.left);
-    l.top = g.px(24);
-    l.bottom = H - hint_room;
-    return l;
+    return {(W - w) * 0.5f, title_picture_y((H - h) * 0.5f, W, H), w, h};
+}
+
+SDL_FRect Menu::title_box(ui::Ui& g) const {
+    if (picture_.w > 0 && picture_.h > 0)
+        return push_start_box(picture_, picture_fb_w_, picture_fb_h_, picture_extra_);
+    return push_start_box(picture_rect(g), 320, 224, 0);
 }
 
 void Menu::set_backdrop(SDL_Texture* texture, float width, float height, ui::Color tint, ui::Color accent) {
@@ -1795,6 +1786,8 @@ void Menu::set_backdrop(SDL_Texture* texture, float width, float height, ui::Col
 }
 
 bool Menu::backdrop_on() const { return backdrop_ && cfg_ && cfg_->menu_backdrop_on(); }
+
+ui::Color Menu::accent() const { return backdrop_on() ? zone_accent_ : award_art::color::magenta; }
 
 void Menu::fill(ui::Ui& g, const SDL_FRect& r, ui::Color plain, uint8_t tint_alpha) const {
     if (!backdrop_on()) {
@@ -1815,14 +1808,10 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     // notifications keep the pixel face.
     g.enable_game_font(cfg_ && cfg_->menu_game_font);
 
-    // Dim the game rather than cover it: the characters on the title screen
-    // are the backdrop. On the front end with a zone's picture, only the
-    // title's panel is dimmed, as before; the picture has its own tint.
-    SDL_FRect art{};
-    if (page_ == Page::Front && backdrop_on() && art_panel(g, &art))
-        g.rect(art, ui::theme::background.alpha(150));
-    else
-        g.rect({0, 0, g.width(), g.height()}, ui::theme::background.alpha(150));
+    // The front end is the title screen itself, with nothing over it but its
+    // entries. Every other page dims the game behind it rather than covering
+    // it, in the awards' near-black purple.
+    if (page_ != Page::Front) g.rect({0, 0, g.width(), g.height()}, award_art::color::ink.alpha(150));
 
     if (page_ == Page::Front)
         draw_front(g);
@@ -1837,90 +1826,173 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     g.enable_game_font(false);
 }
 
-// A vertical list down the right-hand side, beside the art panel.
-void Menu::draw_backdrop_dim(ui::Ui& g) const {
-    // With a zone picture the title is still drawn in its panel, so the
-    // window around it can be the picture instead of a darkened copy.
-    fill(g, {0, 0, g.width(), g.height()}, ui::theme::background.alpha(226), 185);
-}
-
+// The front end (issue #3): the entries on the game's title screen. The
+// selected entry is on a purple plaque laid over the box the title shows PUSH
+// START in, with a spinning ring at each end -- the two rings of the game's
+// combi -- for the cursor, so the chosen entry is always where the player
+// looks for PUSH START. In a landscape window the entries after it, in the
+// order Down reaches them (round past the last to the first), are stacked
+// under it on smaller banners over the characters, three of them, fading. In
+// a portrait one the whole menu is a column in the room under the picture, in
+// its own order, the selected entry's place marked. Nothing is drawn above the
+// box, so the logo and the line under it stay clear. The intro and the attract
+// demo run behind it the same way.
 void Menu::draw_front(ui::Ui& g) {
-    SDL_FRect art{};
-    art_panel(g, &art);
-
-    // A frame around the game's image, so it reads as a picture rather than
-    // as the game running underneath.
-    g.outline({art.x - g.px(3), art.y - g.px(3), art.w + g.px(6), art.h + g.px(6)},
-              accent(), g.px(3), g.px(3));
-
-    const FrontLayout l = front_layout(g);
-    const float left = l.left;
-    const float column = l.column;
-
-    const float row_h = g.line_height(ui::Font::PixelBig) + g.px(14);
-    const float title_h = g.line_height(ui::Font::PixelBig) + g.px(26);
-    const float title_block = g.line_height(ui::Font::Pixel) + g.px(2) + title_h;
-    const float room = l.bottom - l.top;
-    // Issue #49: at a larger MENU SIZE on a short screen the list may not
-    // fit. The title goes first; then the list shows a window of its rows
-    // that follows the selection, with a marker where there are more.
-    const bool titled = title_block + row_h * float(items_.size()) <= room;
-    const float rows_room = room - (titled ? title_block : 0.0f);
+    namespace art = award_art;
+    namespace col = award_art::color;
+    using ui::Font;
     const size_t n = items_.size();
-    const size_t fit = std::max<size_t>(1, size_t(std::max(0.0f, rows_room) / row_h));
-    size_t first = 0, last = n;
-    if (fit < n) {
-        const int sel = std::clamp(selected_, 0, int(n) - 1);
-        int top = std::clamp(scroll_, 0, int(n - fit));
-        if (sel < top) top = sel;
-        if (sel >= top + int(fit)) top = sel - int(fit) + 1;
-        scroll_ = top;
-        first = size_t(top);
-        last = first + fit;
-    }
-    const float total = (titled ? title_block : 0.0f) + row_h * float(last - first);
-    // Centred in the window, as it always was, unless that would run it past
-    // the hint at the bottom.
-    float y = std::max(l.top, std::min((g.height() - total) * 0.5f, l.bottom - total));
+    if (n == 0) return;
+    const float W = g.width(), H = g.height();
+    const bool portrait = H > W;
+    const float edge = std::max(2.0f, std::round(g.px(3)));
+    const float margin = g.px(8);
+    const int sel = std::clamp(selected_, 0, int(n) - 1);
+    // A larger MENU SIZE (issue #49) spaces the entries a little more as well,
+    // as the lists do, so a finger has more to land on.
+    const float extra = g.px(4.0f * float(g.zoom()));
+    const float lp = g.line_height(Font::Pixel), ls = g.line_height(Font::Small);
+    auto clamp_to = [](float v, float lo, float hi) { return std::max(lo, std::min(v, hi)); };
 
-    if (titled) {
-        g.text(ui::Font::Pixel, left, y, "KNUCKLES", ui::theme::text_dim);
-        y += g.line_height(ui::Font::Pixel) + g.px(2);
-        g.text(ui::Font::PixelBig, left, y, "CHAOTIX", accent());
-        y += title_h;
-    }
+    // The hint along the foot, on a dark strip of its own so that it reads
+    // over any part of the title or the demo; whole phrases only.
+    const char* hint = "Up/Down choose    Enter select    Esc close";
+    if (g.text_width(Font::Small, hint) + g.px(24) > W - margin * 2) hint = "Up/Down choose    Enter select";
+    const float hint_h = ls + g.px(12);
+    const float top = g.px(4), bottom = std::max(top + lp * 2, H - hint_h - g.px(8));
 
-    const float mark_w = g.px(56);
-    if (first > 0) {
-        g.text(ui::Font::PixelBig, left + column - g.text_width(ui::Font::PixelBig, "^"), y, "^", accent());
-        hits_.push_back({{left + column - mark_w, y - g.px(6), mark_w + g.px(12), row_h}, kScrollUp});
+    // The plaque: at least the PUSH START box, larger if its letters need it.
+    // The large letters, unless they and the rings would not fit across the
+    // window (a portrait one at a larger MENU SIZE): then the smaller ones,
+    // so that it still has its rings.
+    const SDL_FRect box = title_box(g);
+    const std::string& label = items_[size_t(sel)].label;
+    Font font = Font::PixelBig;
+    for (Font f : {Font::PixelBig, Font::Pixel}) {
+        font = f;
+        const float h = std::max(box.h, g.line_height(f) + g.px(20) + extra);
+        const float r = std::min(h * 0.3f, g.line_height(f) * 0.75f);
+        // ...or when they would make the plaque much taller than the box
+        // (a portrait window, where the letters are sized to its height).
+        if (g.text_width(f, label) + h * 0.32f + (r * 2 + g.px(12)) * 2 + g.px(24) <= W - margin * 2 &&
+            h <= box.h * 1.35f)
+            break;
     }
-    if (last < n) {
-        const float my = y + row_h * float(last - first - 1);
-        g.text(ui::Font::PixelBig, left + column - g.text_width(ui::Font::PixelBig, "v"), my, "v", accent());
-        hits_.push_back({{left + column - mark_w, my - g.px(6), mark_w + g.px(12), row_h}, kScrollDown});
-    }
+    const float lf = g.line_height(font);
+    const float plaque_h = std::min(std::max(box.h, lf + g.px(20) + extra), bottom - top);
+    const float lean = plaque_h * 0.32f;
+    const float ring_r = std::min(plaque_h * 0.3f, lf * 0.75f);
+    const float ring_room = ring_r * 2 + g.px(12);
+    const float tw = g.text_width(font, label);
+    const float plaque_w = std::min(std::max(box.w + lean, tw + lean + ring_room * 2 + g.px(24)), W - margin * 2);
+    // Too narrow for the rings and the words even so: the words keep the room.
+    const bool rings = plaque_w - lean - ring_room * 2 - g.px(12) >= tw;
+    const float cx = clamp_to(box.x + box.w * 0.5f, margin + plaque_w * 0.5f, W - margin - plaque_w * 0.5f);
+    // Taller than the box, it grows downwards only: above the box are the
+    // logo and the line under it, which stay clear.
+    const float cy = clamp_to(box.y + std::max(box.h, plaque_h) * 0.5f, top + plaque_h * 0.5f,
+                              bottom - plaque_h * 0.5f);
+    const SDL_FRect plaque{cx - plaque_w * 0.5f, cy - plaque_h * 0.5f, plaque_w, plaque_h};
 
-    for (size_t i = first; i < last; ++i) {
-        const bool sel = int(i) == selected_;
-        const float w = g.text_width(ui::Font::PixelBig, items_[i].label);
-        if (sel) {
-            // The selected entry sits on a bar, the way these menus mark a
-            // choice, with a marker that bobs.
-            const float bob = std::sin(anim_ * 3.0f) * g.px(2);
-            g.rect({left - g.px(12), y - g.px(6), std::min(column, w + g.px(36)),
-                    g.line_height(ui::Font::PixelBig) + g.px(12)},
-                   backdrop_on() ? zone_accent_.alpha(80) : ui::theme::accent_dim, g.px(4));
-            g.text_fit(ui::Font::PixelBig, left + bob, y, column - g.px(4), items_[i].label, ui::theme::text);
-        } else {
-            g.text_fit(ui::Font::PixelBig, left, y, column - g.px(4), items_[i].label, ui::theme::text_faint);
+    // The entries after it, all as wide as the longest.
+    // A portrait column is a little closer set, so that a phone holds all of
+    // it at LARGE.
+    const float pitch = lp + g.px(portrait ? 12.0f : 16.0f) + extra;
+    const float row_h = lp + g.px(10) + extra * 0.5f;
+    const float nlean = row_h * 0.4f;
+    float nw = 0;
+    for (const Item& it : items_) nw = std::max(nw, g.text_width(Font::Pixel, it.label));
+    nw = std::min(nw + nlean * 2 + g.px(36), W - margin * 2);
+    const float text_room = std::max(0.0f, nw - nlean * 2 - g.px(16));
+    const float gap = g.px(6) + extra * 0.5f;
+    float list_y = plaque.y + plaque.h + gap;
+    if (portrait) list_y = std::max(list_y, picture_rect(g).y + picture_rect(g).h + gap);
+    const int room = int(std::max(0.0f, bottom - list_y) / pitch);
+    auto entry = [&](int i, float slot_y, uint8_t a, bool here) {
+        const SDL_FRect slot{cx - nw * 0.5f, slot_y, nw, pitch};
+        const SDL_FRect b{slot.x, slot_y + (pitch - row_h) * 0.5f, nw, row_h};
+        // The selected entry's own place in the column: purple edged in
+        // magenta, in full brightness, as the plaque is.
+        if (here) art::banner(g, b, nlean, col::magenta, col::magenta, 0);
+        art::banner(g, here ? SDL_FRect{b.x + edge, b.y + edge, b.w - edge * 2, b.h - edge * 2} : b, nlean,
+                    here ? col::purple : col::night.alpha(a), col::ink.alpha(a), edge);
+        const std::string& l = items_[size_t(i)].label;
+        const float w = std::min(g.text_width(Font::Pixel, l), text_room);
+        g.text_fit(Font::Pixel, cx - w * 0.5f, b.y + (row_h - lp) * 0.5f, text_room, l,
+                   here ? ui::theme::text : col::text_dim.alpha(a));
+        hits_.push_back({slot, i});
+    };
+    // Which entries the arrows beside the plaque need to stand in for.
+    bool before_shown = sel == 0, after_shown = sel == int(n) - 1;
+    if (portrait) {
+        // The whole menu in its own order, START GAME to QUIT, with the
+        // selected entry's place marked; a column too long for the room
+        // shows a window of it that keeps the entries either side of the
+        // selection in view.
+        const int fit = std::max(1, std::min(int(n), room));
+        const int first = std::clamp(sel - (fit - 1) / 2, 0, int(n) - fit);
+        for (int k = 0; k < fit; ++k) {
+            const int i = first + k;
+            entry(i, list_y + pitch * float(k), 235, i == sel);
         }
-        hits_.push_back({{left - g.px(12), y - g.px(6), column, row_h}, int(i)});
-        y += row_h;
+        before_shown = before_shown || sel - 1 >= first;
+        after_shown = after_shown || sel + 1 < first + fit;
+    } else {
+        // Landscape: the entries after it, in the order Down reaches them
+        // (round past the last to the first), fading out over the characters.
+        const int shown = std::min({int(n) - 1, 3, room});
+        for (int d = 1; d <= shown; ++d)
+            entry((sel + d) % int(n), list_y + pitch * float(d - 1), uint8_t(d == 1 ? 235 : d == 2 ? 185 : 135),
+                  false);
+        before_shown = before_shown || shown >= int(n) - 1;
+        after_shown = after_shown || shown > 0;
     }
 
-    g.text_fit(ui::Font::Small, left, g.height() - g.px(26), g.width() - left - g.px(8),
-               "Up/Down choose    Enter select", faint());
+    // The plaque, with a magenta stripe under it as under the AWARDS title.
+    art::banner(g, {plaque.x + g.px(10), plaque.y + plaque.h - g.px(4), plaque.w - g.px(10), g.px(12)},
+                lean * 0.3f, col::magenta, col::ink, edge);
+    art::banner(g, plaque, lean, col::purple, col::ink, edge);
+
+    // Arrows that step the selection, since a finger has no Up/Down: up
+    // whenever the entry before this one is not shown (where a tap would
+    // reach it), down likewise for the one after. Beside the plaque, or with
+    // no room beside it at its right-hand end in place of the ring.
+    const bool more_up = !before_shown, more_down = !after_shown;
+    const float mh = std::min(plaque.h * 0.5f - g.px(3), lp + g.px(12)), mw = mh * 1.7f;
+    const bool inside = plaque.x + plaque.w + g.px(8) + mw > W - g.px(4);
+    const bool markers = more_up || more_down;
+    const float mx = inside ? plaque.x + plaque.w - lean * 0.5f - edge - g.px(4) - mw : plaque.x + plaque.w + g.px(8);
+    const float right_room = markers && inside ? mw + g.px(8) : (rings ? ring_room : 0.0f);
+    const float left_room = rings ? ring_room : (markers && inside ? mw + g.px(8) : 0.0f);
+
+    const float ring_x = lean * 0.5f + edge + g.px(6) + ring_r;
+    if (rings) {
+        const float turn = anim_ * 0.12f;
+        art::ring(g, plaque.x + ring_x, cy, ring_r, turn);
+        if (!(markers && inside))
+            art::ring(g, plaque.x + plaque.w - ring_x, cy, ring_r, turn + 0.25f);  // a quarter turn behind
+    }
+    const float text_w = std::max(0.0f, plaque.w - lean - left_room - right_room - g.px(12));
+    const float mid = plaque.x + lean * 0.5f + g.px(6) + left_room + text_w * 0.5f;
+    g.text_fit(font, mid - std::min(tw, text_w) * 0.5f, cy - lf * 0.5f, text_w, label, ui::theme::text);
+
+    // The arrows' targets go before the plaque's, which they may sit on.
+    if (markers) {
+        auto marker = [&](float my, bool up, int index) {
+            const SDL_FRect m{mx, my, mw, mh};
+            art::banner(g, m, mh * 0.3f, col::magenta, col::ink, edge);
+            art::arrowhead(g, m.x + mw * 0.5f, m.y + mh * 0.5f, mh * 0.3f, up, col::gold, edge);
+            hits_.push_back({{m.x - g.px(2), m.y - g.px(2), m.w + g.px(4), m.h + g.px(4)}, index});
+        };
+        if (more_up) marker(cy - mh - g.px(3), true, kScrollUp);
+        if (more_down) marker(cy + g.px(3), false, kScrollDown);
+    }
+    hits_.push_back({plaque, sel});
+
+    const float hw = std::min(g.text_width(Font::Small, hint) + g.px(24), W - margin * 2);
+    const SDL_FRect hr{(W - hw) * 0.5f, H - hint_h - g.px(4), hw, hint_h};
+    g.rect(hr, col::ink.alpha(170), hint_h * 0.5f);
+    g.text_fit(Font::Small, hr.x + g.px(12), hr.y + (hint_h - ls) * 0.5f, hw - g.px(24), hint, col::text_dim);
 }
 
 void Menu::draw_row_page(ui::Ui& g, const char* hint) {
@@ -1990,7 +2062,46 @@ void Menu::draw_options(ui::Ui& g) {
     // MENU SIZE) both shrink before the column does.
     const bool narrow = g.width() < g.px(560 + 34 * 2 + 24);
     const float pad = narrow ? g.px(28) : g.px(34);
-    const float column = std::min(g.width() - pad * 2 - (narrow ? g.px(8) : g.px(24)), g.px(560));
+    const char* heading = page_ == Page::TimeAttack ? "TIME ATTACK"
+                        : page_ == Page::LevelSelect ? "LEVEL SELECT"
+                        : page_ == Page::Cheats ? "CHEATS"
+                        : page_ == Page::Video ? "VIDEO"
+                        : page_ == Page::Sound ? "SOUND"
+                        : page_ == Page::Input ? "INPUT"
+                        : page_ == Page::Extras ? "EXTRAS"
+                        : page_ == Page::Controls ? "CONTROLS"
+                        : page_ == Page::States ? "SAVE STATES"
+                        : page_ == Page::StateKeys ? "STATES AND REWIND"
+                        : page_ == Page::Keys
+                              ? (keys_player_ == 0 ? (keys_pad_ ? "1P GAMEPAD" : "1P KEYBOARD")
+                                                   : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))
+                        : page_ == Page::Mods ? "MODS"
+                        : page_ == Page::Music ? "MUSIC PLAYER"
+                        : page_ == Page::Netplay ? "NETPLAY"
+                        : "OPTIONS";
+    std::string pack_heading = heading;
+    if (page_ == Page::ModInfo) {
+        const std::vector<mod_packs::Pack>* list = packs();
+        pack_heading = list && mod_index_ < list->size() ? upper((*list)[mod_index_].title()) : "MOD";
+    }
+    const float widest = std::min(g.width() - pad * 2 - (narrow ? g.px(8) : g.px(24)), g.px(560));
+    // As wide as the page needs (issue #3), not a fixed width with half of it
+    // empty: its longest row with its value, its heading on its banner and
+    // its hint, in steps of 40 units so that stepping a value does not make
+    // the panel twitch. A pack's page keeps the whole width for its words.
+    float need = g.px(300);
+    if (!info_lines_.empty()) need = widest;
+    for (const Item& it : items_) {
+        float w = g.text_width(ui::Font::Pixel, it.label);
+        if (!it.note.empty()) w += g.text_width(ui::Font::Small, it.note) + g.px(16);
+        if (it.value) w += g.text_width(ui::Font::Pixel, it.value()) + g.px(60);
+        need = std::max(need, w);
+    }
+    need = std::max({need, g.text_width(ui::Font::Small, "Up/Down choose    Left/Right change    Esc back"),
+                     g.text_width(ui::Font::PixelBig, pack_heading) +
+                         (g.line_height(ui::Font::PixelBig) + g.px(18)) * 0.9f + g.px(40)});
+    need = std::ceil(need / g.px(40)) * g.px(40);
+    const float column = std::min(widest, need);
     const float x = (g.width() - column) * 0.5f;
     // A larger MENU SIZE (issue #49) spaces the rows a little more as well,
     // so a finger has more to land on than the letters alone would give it.
@@ -2088,42 +2199,23 @@ void Menu::draw_options(ui::Ui& g) {
     const float panel_top = y - g.px(16);
 
     const SDL_FRect panel{x - pad, panel_top, column + pad * 2, total};
-    if (backdrop_on()) {
-        fill(g, panel, ui::theme::background, 205);
-        g.outline(panel, accent(), g.px(4), g.px(3));
-    } else {
-        g.panel(panel, ui::theme::background.alpha(240), accent(), g.px(4), g.px(3));
-    }
+    // The awards' colours (issue #3): near-black purple, edged in magenta,
+    // over the dimmed title -- no zone's picture inside it, which made two
+    // pictures one over the other.
+    g.panel(panel, award_art::color::ink.alpha(235), award_art::color::magenta, g.px(4), g.px(3));
 
-    const char* heading = page_ == Page::TimeAttack ? "TIME ATTACK"
-                        : page_ == Page::LevelSelect ? "LEVEL SELECT"
-                        : page_ == Page::Cheats ? "CHEATS"
-                        : page_ == Page::Video ? "VIDEO"
-                        : page_ == Page::Sound ? "SOUND"
-                        : page_ == Page::Input ? "INPUT"
-                        : page_ == Page::Extras ? "EXTRAS"
-                        : page_ == Page::Controls ? "CONTROLS"
-                        : page_ == Page::States ? "SAVE STATES"
-                        : page_ == Page::StateKeys ? "STATES AND REWIND"
-                        : page_ == Page::Keys
-                              ? (keys_player_ == 0 ? (keys_pad_ ? "1P GAMEPAD" : "1P KEYBOARD")
-                                                   : (keys_pad_ ? "2P GAMEPAD" : "2P KEYBOARD"))
-                        : page_ == Page::Mods ? "MODS"
-                        : page_ == Page::Music ? "MUSIC PLAYER"
-                        : page_ == Page::Netplay ? "NETPLAY"
-                        : "OPTIONS";
-    std::string pack_heading;
-    if (page_ == Page::ModInfo) {
-        const std::vector<mod_packs::Pack>* list = packs();
-        pack_heading = list && mod_index_ < list->size() ? upper((*list)[mod_index_].title()) : "MOD";
-        g.text_fit(ui::Font::PixelBig, x, y, column, pack_heading, accent());
-    } else {
-        g.text_fit(ui::Font::PixelBig, x, y, column, heading, accent());
+    // The page's name on the AWARDS title's slanted banner (issue #3), so
+    // every page reached from the title screen wears the same header.
+    {
+        const float lean = (g.line_height(ui::Font::PixelBig) + g.px(18)) * 0.45f;
+        const float hx = std::max(g.px(2), x - lean * 0.5f - g.px(6));
+        award_art::heading(g, hx, y - g.px(8), ui::Font::PixelBig, pack_heading,
+                           column + (x - hx) - (first > 0 ? g.px(56) : 0.0f));
     }
     // More rows above the window: a marker at the heading's right.
     if (first > 0) {
         const float mw = g.text_width(ui::Font::Pixel, "^");
-        g.text(ui::Font::Pixel, x + column - mw, y, "^", accent());
+        g.text(ui::Font::Pixel, x + column - mw, y, "^", award_art::color::magenta);
         hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), head_h}, kScrollUp});
     }
     y += head_h;
@@ -2148,8 +2240,9 @@ void Menu::draw_options(ui::Ui& g) {
         const bool sel = int(i) == selected_;
         const Item& it = items_[i];
         if (sel) {
-            const float bob = std::sin(anim_ * 3.0f) * g.px(2);
-            g.text(ui::Font::Pixel, x - g.px(24) + bob, y, ">", accent());
+            // The cursor is a spinning ring, as on the title screen.
+            const float rr = g.line_height(ui::Font::Pixel) * 0.36f;
+            award_art::ring(g, x - g.px(10) - rr, y + g.line_height(ui::Font::Pixel) * 0.5f, rr, anim_ * 0.12f);
         }
         const float label_w = g.text_fit(ui::Font::Pixel, x, y, column, it.label,
                                      sel ? ui::theme::text : ui::theme::text_dim);
@@ -2158,7 +2251,7 @@ void Menu::draw_options(ui::Ui& g) {
             // it reads as a caption rather than as a second entry.
             const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(ui::Font::Small)) * 0.5f;
             // Shortened rather than run out of the panel on a narrow window.
-            g.text_fit(ui::Font::Small, x + label_w + g.px(16), ny, column - label_w - g.px(16), it.note, faint());
+            g.text_fit(ui::Font::Small, x + label_w + g.px(16), ny, column - label_w - g.px(16), it.note, ui::theme::text_faint);
         }
         const float this_h = wrapped[i] ? row_h * 2 : row_h;
         Hit hit{{x - g.px(24), y - g.px(4) - extra * 0.5f, column + g.px(48), this_h}, int(i)};
@@ -2171,14 +2264,14 @@ void Menu::draw_options(ui::Ui& g) {
             const float vx = wrapped[i] ? x + g.px(16) : x + column - vw;
             const float room = wrapped[i] ? column - g.px(46) : column;
             g.text_fit(ui::Font::Pixel, vx, vy, room, v,
-                       sel ? accent() : ui::theme::text_dim);
+                       sel ? award_art::color::magenta : ui::theme::text_dim);
             // Arrows only where left/right actually does something: on the
             // key page the value changes by capturing a press instead.
             if (sel && !it.pressed && !it.read_only) {
                 const float aw = wrapped[i] ? std::min(vw, room) : vw;
                 const float ax = wrapped[i] ? vx : x + column - vw;
-                g.text(ui::Font::Pixel, ax - g.px(22), vy, "<", accent());
-                g.text(ui::Font::Pixel, ax + aw + g.px(10), vy, ">", accent());
+                g.text(ui::Font::Pixel, ax - g.px(22), vy, "<", award_art::color::magenta);
+                g.text(ui::Font::Pixel, ax + aw + g.px(10), vy, ">", award_art::color::magenta);
             }
             // The "<" arrow's area, padded to a finger's width. It is taken
             // from where the arrow is drawn when the row is selected, so it
@@ -2199,11 +2292,11 @@ void Menu::draw_options(ui::Ui& g) {
                        : page_ == Page::Mods ? "Up/Down choose    Left/Right on/off    Enter details"
                        : page_ == Page::Music ? "Up/Down choose    Enter play    Esc back"
                                              : "Up/Down choose    Left/Right change    Esc back";
-    g.text_fit(ui::Font::Small, x, y + g.px(8), column, hint, faint());
+    g.text_fit(ui::Font::Small, x, y + g.px(8), column, hint, ui::theme::text_faint);
     // More rows below the window: a marker at the hint's right.
     if (last < items_.size()) {
         const float mw = g.text_width(ui::Font::Pixel, "v");
-        g.text(ui::Font::Pixel, x + column - mw, y + g.px(2), "v", accent());
+        g.text(ui::Font::Pixel, x + column - mw, y + g.px(2), "v", award_art::color::magenta);
         hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), hint_h + g.px(20)}, kScrollDown});
     }
 }
@@ -2243,8 +2336,14 @@ void Menu::draw_showcase(ui::Ui& g) {
     const char* title = s.timed ? "TIME ATTACK" : "LEVEL SELECT";
     // The large letters, or the smaller ones on a narrow window at a larger
     // MENU SIZE rather than cut short.
-    const Font title_font = g.text_width(Font::PixelBig, title) <= back_r.x - M - g.px(12) ? Font::PixelBig : Font::Pixel;
-    g.text_fit(title_font, M, head_y + (head_h - g.line_height(title_font)) * 0.5f, back_r.x - M - g.px(12), title, acc);
+    // (The banner it is on takes its lean twice and some room besides.)
+    const Font title_font =
+        g.text_width(Font::PixelBig, title) + (lh_b + g.px(18)) * 0.9f + g.px(40) <= back_r.x - M - g.px(12)
+            ? Font::PixelBig : Font::Pixel;
+    // On the AWARDS title's banner (issue #3), as every page from the title
+    // screen is.
+    award_art::heading(g, M, head_y + (head_h - g.line_height(title_font) - g.px(18)) * 0.5f, title_font, title,
+                       back_r.x - M - g.px(12));
     {
         const bool sel = selected_ == s.back_row;
         g.rect(back_r, sel ? acc.alpha(90) : ui::theme::background.alpha(160), g.px(4));
@@ -2922,15 +3021,9 @@ void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {
     g.rect({0, 0, W, y + g.px(80)}, col::purple.alpha(70));
 
     // The title: AWARDS on a slanted banner, a magenta stripe under it.
-    const float head_h = g.line_height(Font::PixelBig) + g.px(18);
-    const float lean = head_h * 0.45f;
-    const float title_w = g.text_width(Font::PixelBig, "AWARDS");
-    const SDL_FRect title_box{x - lean * 0.5f, y, title_w + lean * 2 + g.px(40), head_h};
-    art::banner(g, {title_box.x + g.px(10), title_box.y + head_h - g.px(6), title_box.w, g.px(14)}, lean * 0.3f,
-                col::magenta, col::ink, edge);
-    art::banner(g, title_box, lean, col::purple, col::ink, edge);
-    g.text(Font::PixelBig, title_box.x + lean + g.px(16), y + (head_h - g.line_height(Font::PixelBig)) * 0.5f,
-           "AWARDS", ui::theme::text);
+    const float lean = (g.line_height(Font::PixelBig) + g.px(18)) * 0.45f;
+    const SDL_FRect title_box = art::heading(g, x - lean * 0.5f, y, Font::PixelBig, "AWARDS", column);
+    const float head_h = title_box.h;
 
     // Right of it: how many, and the points, beside a ring.
     char count[48], points[48];
@@ -3030,13 +3123,7 @@ void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {
         const SDL_FRect m{mx, my, mw, mh};
         art::banner(g, m, mh * 0.3f, live ? col::magenta : col::locked_dark, col::ink, edge);
         // An arrowhead, edged in black like everything else.
-        const float cx = m.x + mw * 0.5f, cy = m.y + mh * 0.5f, s = mh * 0.3f, d = up ? -1.0f : 1.0f;
-        const SDL_FPoint outer[3] = {{cx - s - edge, cy - d * (s * 0.6f + edge * 0.5f)},
-                                     {cx + s + edge, cy - d * (s * 0.6f + edge * 0.5f)},
-                                     {cx, cy + d * (s * 0.6f + edge)}};
-        const SDL_FPoint inner[3] = {{cx - s, cy - d * s * 0.6f}, {cx + s, cy - d * s * 0.6f}, {cx, cy + d * s * 0.6f}};
-        g.poly(outer, 3, col::ink);
-        g.poly(inner, 3, live ? col::gold : col::locked);
+        art::arrowhead(g, m.x + mw * 0.5f, m.y + mh * 0.5f, mh * 0.3f, up, live ? col::gold : col::locked, edge);
         if (live) hits_.push_back({{m.x - g.px(6), m.y - g.px(14), m.w + g.px(12), m.h + g.px(14)}, index});
     };
     const bool more = lines > rows_;

@@ -86,12 +86,10 @@ in landscape is about 1080 pixels and 6-7 cm tall: at NORMAL a settings row is
 should be and the "too small, too much empty space" of the report; LARGE's is
 about 93 pixels (35 dp), EXTRA LARGE's 136 (52 dp).
 
-Pages with more rows than fit (the front end, at a larger size on a short
-screen, as well as the settings lists) show a window of them that follows the
-selection, with a marker that steps it; the front end drops its KNUCKLES
-CHAOTIX title first. The front end's picture gives way to the list's width,
-and on a portrait window goes across the top with the list below it. The
-pause menu's row carries on onto a second line rather than off the screen.
+Pages with more rows than fit (the settings lists at a larger size on a short
+screen) show a window of them that follows the selection, with a marker that
+steps it. The front end shows as many of its entries around the selected one
+as fit (see below). The pause menu's row carries on onto a second line rather than off the screen.
 Anything still too wide for its column is shortened with an ellipsis.
 `tests/test_menu_size.py` runs the program at each size in an 800x360, a
 412x860 and a 1280x720 window and checks every touch target is on the screen
@@ -182,10 +180,12 @@ picture
 covers the area (cropped to its shape, never stretched) and a translucent
 coat of the zone's own colour goes over it (`backdrop_tint`: the picture's
 average colour at a third of its brightness) so that the white and yellow
-letters stay readable: over the whole window behind the front end and the
-awards, inside the panel of the list pages, inside the band of the pause row.
+letters stay readable: over the whole window behind the awards and the zone
+showcase, inside the band of the pause row. Since issue #3 the front end has
+no zone behind it (it is drawn on the game's title screen, below), and nor do
+the settings pages' panels, which are plain over the dimmed title.
 The frames, markers and arrows take the zone's most common vivid colour
-(`backdrop_accent`) instead of the theme's blue. In a level the game stays
+(`backdrop_accent`) instead of the awards' magenta (the theme's blue before issue #3). In a level the game stays
 visible around the panel, dimmed as before.
 
 `chaotix_headless --backdrop all|KEY|PLACE:LEVEL:TIME[:WIDE] DIR` renders
@@ -250,3 +250,95 @@ characters are drawn at one whole-number scale, taken from the tallest
 (Vector), so that switching keeps them in proportion. Slot 1 has no graphics
 and shows a question mark.
 
+
+## The front end on the title screen (issue #3)
+
+Issue #3 asked for the front end to feel like the game's own title screen
+rather than an emulator's list beside a picture of it, in the way Sonic 3
+A.I.R. builds its menus into the game. Since then:
+
+- **The title fills the window**, exactly as the game does in play: the
+  ASPECT RATIO, SCALING and WIDESCREEN settings place it (the title screen is
+  4:3 in every mode; the attract demo goes wide when WIDESCREEN is on). The
+  app tells the menu where the picture is each frame (`Menu::set_picture`).
+  Nothing is laid over it but the entries and a small hint at the foot.
+- **The selected entry covers PUSH START.** The title screen shows PUSH START
+  in a lime-green frame under the logo, columns 114-206 and lines 75-101 of
+  its 320x224 picture once it has settled (measured on the program's own
+  screenshots). The title zooms in for its first moments (it is shown from
+  about frame 1400 after power-on and settles about frame 1520; the attract
+  demo follows about frame 1950), so a picture taken before then shows the
+  logo cut off at the top and the frame lower and larger. The selected entry
+  is drawn on a purple plaque over the inside of the settled frame
+  (`Menu::push_start_box`: columns 115-205, lines 76-100), at least that large
+  at every window size and MENU SIZE, so the game's prompt and ours are never
+  both on the screen. This is drawing only: the game still shows PUSH START
+  underneath and runs exactly as it would without the menu, so lockstep and
+  the golden frames are untouched.
+- **The other entries are under it**, in the order Down reaches them (round
+  past the last to the first), on smaller night-purple banners. Nothing is
+  drawn above the box: the logo and the line under it ("FEATURING KNUCKLES
+  THE ECHIDNA ... IN 32X WORLD") stay clear, and a plaque taller than the box
+  grows downwards only. In a landscape window three of them follow it over the
+  characters, fading. Up and down move the selection, so the chosen entry is
+  always where the player looks for PUSH START.
+- **A portrait window** has the room under the picture: while the menu is
+  over the title the picture goes to the top of the window
+  (`Menu::title_picture_y`; the game goes back to the usual centring once it
+  is handed over), and the whole menu is a column under it, over black, in
+  its own order (START GAME to QUIT, no wrapping), with the selected entry's
+  place marked: purple edged in magenta, in full brightness. A phone holds all
+  of it at NORMAL and LARGE; a column too long for the room shows a window of
+  it that keeps the entries either side of the selection in view. The plaque
+  stays on PUSH START, in the smaller letters if the large ones would make it
+  much taller than the box.
+- **The cursor** is a pair of spinning gold rings at the plaque's ends, a
+  quarter turn apart: the two rings of the game's combi. Plaque, stripe and
+  banners are `award_art`'s shapes (`banner`, `ring`, `heading`,
+  `arrowhead`), the same as the AWARDS page's; no picture is taken from the
+  game.
+- **The intro and the attract demo** still run behind the front end; the
+  plaque stays where PUSH START will be.
+
+**Touch.** A tap on an entry brings it into the box; a tap on the plaque (or
+on the selected entry's place in the portrait column) acts on it (the first
+tap selects, the second acts, as on every list). While the entry before the
+selected one is not shown, a magenta arrow beside the plaque -- or at its
+right-hand end in place of the ring when there is no room beside it -- steps
+back; while the one after it is not shown (an 800x360 window at EXTRA LARGE),
+a second one steps on.
+
+**Sizes.** Everything is measured in the menu's letters, so MENU SIZE grows
+the plaque, the banners and their spacing.
+
+**MENU FONT and MENU BACKGROUND.** MENU FONT works as everywhere: GAME draws
+the entries in the game's letters, PIXEL in the pixel face, on the same
+plaque. MENU BACKGROUND no longer applies to the front end, whose background
+is the live title screen, nor to the settings pages' panels. It still sets
+what is behind the awards, the zone showcase and the pause menu's band.
+
+**The pages behind it.** OPTIONS and its categories, CONTROLS, the binding
+pages, MODS, MUSIC PLAYER and NETPLAY keep their lists, now with the page's
+name on the AWARDS title's slanted banner at the panel's top, a spinning ring
+for the cursor, and the panel in the awards' near-black purple edged in
+magenta (no zone's picture inside it: that made two pictures one over the
+other), over the title dimmed in the same purple. The panel is as wide as the
+page needs -- its longest row with its value and note, its heading and its
+hint, in steps of 40 units so that stepping a value does not make it twitch
+-- up to the width it always had; a pack's page keeps the whole width for its
+description. TIME ATTACK and LEVEL SELECT put their names on the same banner.
+The frames, values and arrows that were the theme's blue are the awards'
+magenta (on the showcase and the awards, the zone's colour while its picture
+is shown). The pause menu over a level is unchanged.
+
+`tests/test_menu.cpp` (`front_end.*`) checks that the selected entry covers
+the box for every entry, at every MENU SIZE, in 16:9, 4:3, phone, portrait and
+short windows and with both fonts; that nothing rises above the box; that the
+other entries are under the plaque; that on a portrait window the column is
+under the picture, in the menu's own order, with the selection's neighbours
+in view (all of it on a phone up to LARGE); and that taps select and start.
+`menu.the_settings_panel_is_plain_and_fits_its_rows` checks the panel shows
+no zone and is narrower than before; `menu_size.*` and
+`tests/test_menu_size.py` check the touch targets grow and stay on the screen.
+
+![The front end, 16:9](images/issue-3-title-menu-16-9.png)

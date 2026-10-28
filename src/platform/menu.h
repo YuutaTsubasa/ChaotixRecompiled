@@ -162,12 +162,23 @@ public:
     bool on_text(const char* text);
 
     void draw(ui::Ui& g, achievements::Tracker& ach);
-    // The front end shows the game beside the list rather than behind it, so
-    // it says where the image goes. Returns false to fill the window as usual.
-    bool art_panel(ui::Ui& g, SDL_FRect* out) const;
-    // Damps the full-window backdrop before the panel is drawn over it, or
-    // with a zone picture behind the menu puts it there instead.
-    void draw_backdrop_dim(ui::Ui& g) const;
+    // Issue #3: the front end is drawn on the game's own title screen, which
+    // fills the window as the game does in play. Its selected entry sits on
+    // the box the title screen shows PUSH START in, covering it, so the app
+    // says where the game's picture is each frame (the image's rectangle in
+    // the window, the frame buffer's size and its extra columns a side).
+    // Without it the menu takes a 4:3 picture fitted to the window.
+    void set_picture(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra);
+    // Where the title screen's PUSH START box is for that picture: the inside
+    // of its frame, in window pixels.
+    static SDL_FRect push_start_box(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra);
+    // Whether the menu is over the title screen: the front end, or a page
+    // opened from it.
+    bool on_title() const { return page_ != Page::Closed && return_to_ == Page::Front; }
+    // Where the picture's top goes on a window w x h while on_title(), for
+    // the top `y` the viewport gave it: on a portrait window it is raised to
+    // the top, so that the front end's list has the room below it.
+    static float title_picture_y(float y, float window_w, float window_h);
     // Issue #8: a picture of one of the game's zones (platform/backdrops.h)
     // for the menu's panels and backgrounds, with the translucent colour laid
     // over it and the colour for frames and markers, both taken from it. The
@@ -281,28 +292,29 @@ private:
     // Escape, the menu button or the pad's back button: one level up, or
     // closed.
     void back_out();
-    // The front end's layout: the game's picture, and the column its list
-    // goes in. Beside each other on a landscape screen, the list under the
-    // picture on a portrait one; the picture gives way to the list's width.
-    struct FrontLayout {
-        SDL_FRect art{};
-        float left = 0, column = 0;   // the list's column
-        float top = 0, bottom = 0;    // and the height it has
-    };
-    FrontLayout front_layout(ui::Ui& g) const;
+    // The PUSH START box for the picture the app gave (set_picture), or for
+    // a 4:3 picture fitted to the window.
+    SDL_FRect title_box(ui::Ui& g) const;
+    // The game's picture as set_picture gave it, or that 4:3 picture.
+    SDL_FRect picture_rect(ui::Ui& g) const;
     void draw_front(ui::Ui& g);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);
     std::vector<std::string> device_choices() const;
     void draw_achievements(ui::Ui& g, achievements::Tracker& ach);
     bool backdrop_on() const;
-    // The theme's blue, or the zone's colour while its picture is shown.
-    ui::Color accent() const { return backdrop_on() ? zone_accent_ : ui::theme::accent; }
+    // The awards' magenta (issue #3, platform/award_art.h), or the zone's
+    // colour while its picture is shown.
+    ui::Color accent() const;
     // Captions and hints: a step brighter over a picture than over plain dark.
     ui::Color faint() const { return backdrop_on() ? ui::theme::text_dim : ui::theme::text_faint; }
     // Fills r with the zone's picture under its tint (or `plain` without
     // one), as the panels and bands are filled.
     void fill(ui::Ui& g, const SDL_FRect& r, ui::Color plain, uint8_t tint_alpha) const;
+
+    // The game's picture in the window (set_picture); zero width until set.
+    SDL_FRect picture_{};
+    int picture_fb_w_ = 320, picture_fb_h_ = 224, picture_extra_ = 0;
 
     SDL_Texture* backdrop_ = nullptr;
     float backdrop_w_ = 0, backdrop_h_ = 0;

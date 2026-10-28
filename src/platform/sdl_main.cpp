@@ -3088,15 +3088,16 @@ int main(int argc, char** argv) {
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
         SDL_FRect src{0, 0, float(app.m->fb_width), float(app.m->fb_height)};
         SDL_FRect dst{float(vp.image.x), float(vp.image.y), float(vp.image.w), float(vp.image.h)};
-        // The front end puts the game's own picture beside its list instead of
-        // behind it, and says where.
-        SDL_FRect art{};
-        bool panelled = false;
+        // Over the title screen on a portrait window the picture goes to the
+        // top, leaving the room under it to the front end's list (issue #3).
+        if (app.menu.on_title()) dst.y = Menu::title_picture_y(dst.y, float(ow), float(oh));
         if (app.ui.ready()) {
             // MENU SIZE (issue #49): the menu, and only the menu, larger.
             app.ui.set_zoom(app.menu.zoom());
             app.ui.begin_frame();
-            panelled = app.menu.art_panel(app.ui, &art);
+            // The front end is drawn on the title screen (issue #3), which
+            // fills the window as the game does in play: where it is.
+            app.menu.set_picture(dst, app.m->fb_width, app.m->fb_height, app.m->fb_extra);
             app.backdrops.choose(app.cfg.menu_backdrop_zone());
             app.backdrops.update(app.renderer, app.cfg.menu_backdrop_on(), app.menu.open());
             MenuBackdrops::Shown zone;
@@ -3110,13 +3111,7 @@ int main(int argc, char** argv) {
                 app.menu.clear_backdrop();
             }
         }
-        // With a panel the picture is drawn twice: once filling the window as
-        // a backdrop, which the menu then dims, and once in the panel itself.
         SDL_RenderTexture(app.renderer, app.texture, &src, &dst);
-        if (panelled) {
-            app.menu.draw_backdrop_dim(app.ui);
-            SDL_RenderTexture(app.renderer, app.texture, &src, &art);
-        }
         if (app.touch_enabled) {
             // The fast-forward button is not there during a time attack run,
             // and is lit while fast-forward is on (TOGGLE leaves it on).
