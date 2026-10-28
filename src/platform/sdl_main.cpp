@@ -34,6 +34,7 @@
 #include "game/cheats.h"
 #include "runtime/lobby.h"
 #include "runtime/tether.h"
+#include "runtime/title_hold.h"
 #include "game/recomp_dispatch.h"
 #include "input/input.h"
 #include "input/touch_controls.h"
@@ -174,6 +175,11 @@ struct App {
     // request is waiting, Start is tapped for it. Counts frames since the
     // request, to pace the taps and to give up rather than press for ever.
     int stage_kick = -1;
+    // The front end's first press during the boot screens or the intro
+    // (runtime/title_hold.h) skips them, as Start does in the game: Start is
+    // tapped, in the same way, until PUSH START is up. Frames since the press;
+    // -1 when not skipping.
+    int intro_kick = -1;
     // --stage FRAME:PLACE:LEVEL:TIME:PLAYER:PARTNER:2P, for testing: any
     // place, the special stage included, started as TIME ATTACK starts one.
     uint64_t cli_stage_frame = 0;
@@ -253,6 +259,14 @@ struct App {
         int strength, partner;
     };
     std::vector<TetherEvent> recorded_tether;
+    // And so does the title held while the front end is on it (issue #3,
+    // runtime/title_hold.h): when the hold began and ended.
+    struct TitleHoldEvent {
+        uint64_t frame;
+        bool on;
+    };
+    std::vector<TitleHoldEvent> recorded_title_hold;
+    bool title_holding = false;
     uint16_t prev_buttons = 0;
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
@@ -373,6 +387,8 @@ void write_recording(const App& app, const std::string& path, int result_frames 
         std::fprintf(f, "lobby %llu %d %d\n", (unsigned long long)e.frame, e.partner, e.time);
     for (const auto& e : app.recorded_tether)
         std::fprintf(f, "tether %llu %d %d\n", (unsigned long long)e.frame, e.strength, e.partner);
+    for (const auto& e : app.recorded_title_hold)
+        std::fprintf(f, "title_hold %llu %d\n", (unsigned long long)e.frame, int(e.on));
     for (uint32_t v : app.recorded) std::fprintf(f, "%X\n", v);
     std::fclose(f);
     LOGI("app", "session recorded to %s (%zu frames)", path.c_str(), app.recorded.size());
@@ -681,6 +697,7 @@ bool return_to_title(App& app) {
     // and its Start taps would go on pressing.
     app.m->stage_pending = false;
     app.stage_kick = -1;
+    app.intro_kick = -1;
     app.ta.cancel();
     app.ls.cancel();
     stop_ghost(app);
@@ -904,6 +921,40 @@ uint16_t stage_kick_button(App& app) {
     const bool down = app.stage_kick % 24 < 6;
     ++app.stage_kick;
     return down ? uint16_t(PAD_START) : uint16_t(0);
+}
+
+// The front end's first press during the boot screens or the intro skips to
+// the title, as Start does in the game (runtime/title_hold.h). The game takes
+// Start only at some moments of them (the SEGA logo leads to the intro, and
+// the intro to the title, each at its own pace), so it is tapped as for a
+// stage, and let go the frame PUSH START is up: the idle counter is then under
+// $40, where Start on the title only finishes the logo's zoom, so the front
+// end's START GAME is still the player's to choose. Measured from power-on:
+// about 3 s at worst (tapping from frame 0), a few frames once the intro runs.
+uint16_t intro_kick_button(App& app) {
+    if (app.intro_kick < 0) return 0;
+    if (app.handed_over || !title_hold::before_title(*app.m) || app.intro_kick > 900) {
+        app.intro_kick = -1;
+        return 0;
+    }
+    const bool down = app.intro_kick % 24 < 6;
+    ++app.intro_kick;
+    return down ? uint16_t(PAD_START) : uint16_t(0);
+}
+
+// Issue #3: while the front end is on the game's title screen, the title is
+// held there rather than giving way to the attract demo
+// (runtime/title_hold.h); once the game is handed over -- START GAME, the
+// front menu closed, TIME ATTACK or LEVEL SELECT -- it runs as it always did.
+// Not during netplay: the front end is one side's own, and holding one of the
+// two games would split them; the session runs the game as it is, on both.
+void apply_title_hold(App& app) {
+    const bool on = !app.handed_over && !app.net.on;
+    if (on != app.title_holding) {
+        app.title_holding = on;
+        app.recorded_title_hold.push_back({app.m->frame_count, on});
+    }
+    if (on) title_hold::apply(*app.m);
 }
 
 // Watches a time attack run; called once per emulated frame. The game just
@@ -2434,6 +2485,10 @@ int main(int argc, char** argv) {
             if (app.net.on) { notice(app, "NETPLAY", "NOT DURING NETPLAY", "DISCONNECT FIRST."); return; }
             if (return_to_title(app)) app.menu.open_front();
         };
+        hooks.skip_intro = [&app] {
+            // Start tapped until PUSH START is up (intro_kick_button).
+            if (app.m && !app.handed_over && !app.net.on && app.intro_kick < 0) app.intro_kick = 0;
+        };
         hooks.front_closed = [&app] {
             // Playing on from the game's own title screen hands it control as
             // much as START GAME does, only without pressing Start for the
@@ -2956,12 +3011,14 @@ int main(int argc, char** argv) {
             // through the title screen: counted in emulated frames, or a pass
             // that simulates several would stretch a tap into a hold.
             scripted |= stage_kick_button(app);
+            scripted |= intro_kick_button(app);
             app.m->input.pad[0] = uint16_t(buttons | scripted);
             app.recorded.push_back(uint32_t(uint16_t(buttons | scripted)) | uint32_t(raw2) << 16);
             app.m->input.pad[1] = raw2;
             apply_cheats(app);
             apply_lobby_shortcuts(app);
             apply_tether(app);
+            apply_title_hold(app);
             audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
                                                float(app.cfg.effects_volume) / 100.0f);
             const size_t first_sample = app.m->audio_out.size();
@@ -3098,6 +3155,12 @@ int main(int argc, char** argv) {
             // The front end is drawn on the title screen (issue #3), which
             // fills the window as the game does in play: where it is.
             app.menu.set_picture(dst, app.m->fb_width, app.m->fb_height, app.m->fb_extra);
+            // And whether PUSH START is up yet: before it (the boot screens,
+            // the intro, the logo's zoom) the front end shows only its hint,
+            // since the plaque would float over the city, and its first press
+            // skips them. Not during netplay, where nothing is pressed or held
+            // for one side only (apply_title_hold): the menu is as it was.
+            app.menu.set_title_ready(app.handed_over || app.net.on || !title_hold::before_title(*app.m));
             app.backdrops.choose(app.cfg.menu_backdrop_zone());
             app.backdrops.update(app.renderer, app.cfg.menu_backdrop_on(), app.menu.open());
             MenuBackdrops::Shown zone;
@@ -3180,6 +3243,13 @@ int main(int argc, char** argv) {
                      double(app.fps_box.y), double(app.fps_box.w), double(app.fps_box.h), ow, oh);
             LOGI("app", "autotest: picture hash %016llx",
                  (unsigned long long)image_hash(app.m->framebuffer, app.m->fb_width, app.m->fb_height, kScreenWidth));
+            // For tests of the title held under the front end (issue #3,
+            // runtime/title_hold.h): the scene, the title's idle counter, and
+            // whether the game has been handed over.
+            LOGI("app", "autotest: game mode %04X, title counter %04X, %s, menu %s",
+                 unsigned(app.m->wram[patches::kGameMode] << 8 | app.m->wram[patches::kGameMode + 1]),
+                 unsigned(app.m->wram[title_hold::kIdleCounter] << 8 | app.m->wram[title_hold::kIdleCounter + 1]),
+                 app.handed_over ? "handed over" : "front end", app.menu.open() ? app.menu.page_name().c_str() : "closed");
             if (!app.autotest_shot.empty()) capture_output(app);
             if (app.menu.open()) {
                 // Where the menu's touch targets were, for tests of MENU SIZE

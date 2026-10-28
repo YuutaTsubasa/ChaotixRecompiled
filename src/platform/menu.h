@@ -58,6 +58,10 @@ public:
         // button) instead of START GAME: the player goes on from the game's
         // own title screen.
         std::function<void()> front_closed;
+        // The front end's first press before PUSH START is up (the boot
+        // screens, the intro, the logo's zoom; see set_title_ready): skip to
+        // the title, as Start does in the game.
+        std::function<void()> skip_intro;
         // Save states (issue #40), in slots 1..kStateSlots: save or load one
         // (the app says how it went), what a slot holds ("EMPTY", or when it
         // was saved), and why states cannot be used just now (a TIME ATTACK
@@ -172,6 +176,17 @@ public:
     // Where the title screen's PUSH START box is for that picture: the inside
     // of its frame, in window pixels.
     static SDL_FRect push_start_box(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra);
+    // Whether the game shows PUSH START yet (runtime/title_hold.h), told by
+    // the app each frame; true until told otherwise. Before it the front end
+    // draws only its hint -- the plaque would float over the city and the
+    // road -- and the first press of Up, Down, Left, Right or Enter (the pad's
+    // d-pad and confirm button, a tap anywhere) goes to Hooks::skip_intro
+    // instead of the entries, which are shown from then on: the player has
+    // seen nothing to choose yet, and every later press acts as usual, even
+    // before the title is up. Escape and the back button close it as ever.
+    // A page opened by name (show_page("front"), --menu) is shown at once.
+    void set_title_ready(bool ready) { title_ready_ = ready; }
+    bool title_ready() const { return title_ready_; }
     // Whether the menu is over the title screen: the front end, or a page
     // opened from it.
     bool on_title() const { return page_ != Page::Closed && return_to_ == Page::Front; }
@@ -315,6 +330,18 @@ private:
     // The game's picture in the window (set_picture); zero width until set.
     SDL_FRect picture_{};
     int picture_fb_w_ = 320, picture_fb_h_ = 224, picture_extra_ = 0;
+    bool title_ready_ = true;  // set_title_ready
+    // A press has already been made on the front end before PUSH START (or
+    // the page was asked for by name): the entries are shown from then on,
+    // whether or not the title is up yet. Reset when the front end opens.
+    bool revealed_ = false;
+    // The front end before PUSH START is up, nothing pressed yet: only the
+    // hint, and the first press skips to the title (and shows the entries).
+    bool waiting_for_title() const { return page_ == Page::Front && !title_ready_ && !revealed_; }
+    void skip_intro() {
+        revealed_ = true;
+        if (hooks_.skip_intro) hooks_.skip_intro();
+    }
 
     SDL_Texture* backdrop_ = nullptr;
     float backdrop_w_ = 0, backdrop_h_ = 0;

@@ -11,6 +11,7 @@
 //                    [--lobby-partner ID|none] [--lobby-time 0-3]   (issue #44, runtime/lobby.h)
 //                    [--tether-strength weak|normal|strong] [--tether-partner normal|follow|solo]
 //                    [--tether-at FRAME:STRENGTH:PARTNER]   (issue #43, runtime/tether.h)
+//                    [--hold-title FROM:TO]   (the front end's hold, issue #3, runtime/title_hold.h)
 //                    [--mods-dir DIR [--mods-order A,B] [--mods-disable C] [--mods-no-loose]]
 //                                 (mod packs as the app loads them, issue #42, runtime/mod_packs.h)
 //                    [--ghost FILE] [--ghost-record FILE] [--ghost-log N] [--ghost-threaded]
@@ -40,6 +41,7 @@
 #include "runtime/sprite_replace.h"
 #include "runtime/tether.h"
 #include "runtime/tile_replace.h"
+#include "runtime/title_hold.h"
 #include "frontend/backdrop.h"
 #include "frontend/ghost.h"
 #include "frontend/jukebox.h"
@@ -555,6 +557,13 @@ int main(int argc, char** argv) {
     // lines do.
     int tether_strength = 0, tether_partner = 0;
     std::map<uint64_t, std::pair<int, int>> tether_events;
+    // The title held while the front end is on it (issue #3,
+    // runtime/title_hold.h): --hold-title FROM:TO holds it for those frames,
+    // as the frontend does while its front menu is open; a recorded session's
+    // "title_hold FRAME 0|1" lines say when it did.
+    std::map<uint64_t, bool> title_hold_events;
+    bool title_holding = false;
+    uint64_t title_held_frames = 0;
     auto tether_value = [](const std::string& v, const char* const* names, int count) {
         for (int k = 0; k < count; ++k) {
             std::string n = names[k];
@@ -761,6 +770,14 @@ int main(int argc, char** argv) {
             if (ts < 0 || tp < 0) { std::fprintf(stderr, "bad --tether-at\n"); return 2; }
             tether_events[std::strtoull(parts[0].c_str(), nullptr, 10)] = {ts, tp};
         }
+        else if (a == "--hold-title") {
+            auto parts = split(next(), ':');
+            const uint64_t from = parts.size() == 2 ? std::strtoull(parts[0].c_str(), nullptr, 10) : 0;
+            const uint64_t to = parts.size() == 2 ? std::strtoull(parts[1].c_str(), nullptr, 10) : 0;
+            if (to <= from) { std::fprintf(stderr, "bad --hold-title\n"); return 2; }
+            title_hold_events[from] = true;
+            title_hold_events[to] = false;
+        }
         else if (a == "--ghost") ghost_path = next();
         else if (a == "--speedrun") speedrun_on = true;
         else if (a == "--speedrun-start") { speedrun_on = true; speedrun_start = std::atoll(next().c_str()); }
@@ -828,6 +845,10 @@ int main(int argc, char** argv) {
                     }
                     if (std::sscanf(line, "tether %llu %d %d", &lf, &lp, &lt) == 3) {
                         tether_events[lf] = {lp, lt};
+                        continue;
+                    }
+                    if (std::sscanf(line, "title_hold %llu %d", &lf, &lp) == 2) {
+                        title_hold_events[lf] = lp != 0;
                         continue;
                     }
                 }
@@ -1377,6 +1398,16 @@ int main(int argc, char** argv) {
             }
         cheats::apply(*m, cheat_writes);
         if (ref) cheats::apply(*ref, cheat_writes);
+        {
+            auto th = title_hold_events.find(f);
+            if (th != title_hold_events.end()) title_holding = th->second;
+        }
+        if (title_holding) {
+            // Every machine alike, as the frontend holds the one it runs.
+            if (title_hold::apply(*m)) ++title_held_frames;
+            for (Machine* x : {ref.get(), nat.get()})
+                if (x) title_hold::apply(*x);
+        }
         // The music player opened mid-run: the game is held (no frame of it
         // runs) while the player's machine plays, then goes on.
         if (jukebox_mid_run && f == jukebox_at && !play_jukebox(nullptr)) return 4;
@@ -1778,6 +1809,8 @@ int main(int argc, char** argv) {
         std::printf("input display: drawn on %llu shots, %llu pixels inside its box, %llu outside\n",
                     (unsigned long long)input_display_shots, (unsigned long long)input_display_changed,
                     (unsigned long long)input_display_outside);
+    if (!title_hold_events.empty())
+        std::printf("title hold: the idle counter held on %llu frames\n", (unsigned long long)title_held_frames);
     if (ref) std::printf("lockstep: %llu frames bit-identical between interpreter and recompiled execution\n", (unsigned long long)lockstep_ok_frames);
     if (character_palettes)
         std::printf("characters: displayed palette worked out %llu times (%llu blocks left as they were), %d colour block(s) replaced at the end\n",

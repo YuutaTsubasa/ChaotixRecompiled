@@ -1905,6 +1905,69 @@ TEST(front_end, a_tap_selects_an_entry_and_a_second_starts_it) {
     CHECK(!m.open());
 }
 
+TEST(front_end, before_push_start_only_the_hint_shows_and_a_press_skips_to_it) {
+    // The boot screens, the intro and the logo's zoom (runtime/title_hold.h):
+    // no plaque or entries over them, and the first key, button or tap that
+    // would drive the entries asks for the title instead, choosing nothing;
+    // the entries are up from then on and the presses after it act.
+    Config cfg;
+    cfg.set_defaults();
+    int skips = 0, started = 0, closed = 0;
+    Menu::Hooks h;
+    h.skip_intro = [&skips] { ++skips; };
+    h.start_game = [&started] { ++started; };
+    h.front_closed = [&closed] { ++closed; };
+    // Each way of pressing, on a front end just opened before PUSH START.
+    const std::function<void(Menu&, Drawn&)> presses[] = {
+        [](Menu& m, Drawn&) { CHECK(m.on_key(SDLK_DOWN)); },
+        [](Menu& m, Drawn&) { CHECK(m.on_key(SDLK_RETURN)); },
+        [](Menu& m, Drawn&) { CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_SOUTH)); },
+        [](Menu& m, Drawn&) { CHECK(m.on_pad(SDL_GAMEPAD_BUTTON_DPAD_UP)); },
+        [](Menu& m, Drawn& d) { d.tap(m, 640, 360); },
+    };
+    int expected = 0;
+    for (const auto& press : presses) {
+        Drawn d(1280, 720);
+        CHECK(d.ok);
+        if (!d.ok) return;
+        Menu m;
+        m.bind(cfg);
+        m.set_hooks(h);
+        m.open_front();
+        m.set_picture({160, 0, 960, 720}, 320, 224, 0);
+        m.set_title_ready(false);
+        d.draw(m);
+        CHECK(m.drawn_rows().empty());
+        press(m, d);
+        CHECK_EQ(skips, ++expected);
+        CHECK_EQ(started, 0);
+        CHECK_STR(m.page_name(), "front");
+        CHECK_STR(m.selected_label(), "START GAME");
+        // The entries are up, the title or not, and the next press acts.
+        d.draw(m);
+        CHECK(!m.drawn_rows().empty());
+        CHECK(m.on_key(SDLK_DOWN));
+        CHECK_STR(m.selected_label(), "TIME ATTACK");
+        CHECK_EQ(skips, expected);
+    }
+    // Opening the front end again starts over; Escape closes it before the
+    // title as it does on it.
+    Menu m;
+    m.bind(cfg);
+    m.set_hooks(h);
+    m.set_title_ready(false);
+    m.open_front();
+    CHECK(m.on_key(SDLK_ESCAPE));
+    CHECK(!m.open());
+    CHECK_EQ(closed, 1);
+    CHECK_EQ(skips, expected);
+    // A page asked for by name is shown at once.
+    Drawn d(1280, 720);
+    CHECK(m.show_page("front"));
+    d.draw(m);
+    CHECK(!m.drawn_rows().empty());
+}
+
 // ---------------------------------------------------------------------------
 // LEVEL SELECT (issue #51)
 // ---------------------------------------------------------------------------

@@ -16,6 +16,7 @@ add_executable(chaotix_tests
     test_stage_select.cpp
     test_lobby.cpp
     test_tether.cpp
+    test_title_hold.cpp
     test_music_mods.cpp
     test_cheats.cpp
     test_volumes.cpp
@@ -106,6 +107,13 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_fps_counter.py"
                         $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
             set_tests_properties(fps_counter_stays_in_its_box PROPERTIES TIMEOUT 1200)
+            # Issue #3: the front end holds the title (no attract demo while
+            # it is open, the demo as ever once closed), shows only its hint
+            # before PUSH START, and a press there skips to the title.
+            add_test(NAME title_held_under_the_front_end
+                COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_title_hold.py"
+                        $<TARGET_FILE:chaotix> "${CHAOTIX_ROM}")
+            set_tests_properties(title_held_under_the_front_end PROPERTIES TIMEOUT 900)
         endif()
     endif()
     # Issue #35: ROM patches from the Mods folder, over data and over code.
@@ -601,6 +609,30 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 ${_script}
                 --expect-hash 2800:${CHAOTIX_GOLDEN_169_A} --expect-hash 3200:${CHAOTIX_GOLDEN_169_B})
     set_tests_properties(lockstep_boot_to_level golden_frames lockstep_widescreen golden_frames_widescreen golden_frames_16_9 widescreen_centre_matches_4_3 PROPERTIES TIMEOUT 900)
+
+    # Issue #3 (runtime/title_hold.h): while the front end is on the title,
+    # the title is held there. Unheld it gives way to the attract demo (mode
+    # $38) at frame 2024; held, it is still the title (mode $08) at 4200,
+    # its music ($0E) still the one playing, and the interpreter and the
+    # recompiled code still agree on every frame.
+    add_test(NAME title_held_past_the_demo_with_the_front_end_open
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4200 --lockstep --hold-title 0:4200
+                --peek-every 4200:DFDE:2 --peek-every 4200:FCFC:2)
+    set_tests_properties(title_held_past_the_demo_with_the_front_end_open PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "peek 4200 DFDE 0008[\r\n]+peek 4200 FCFC 0E00"
+        FAIL_REGULAR_EXPRESSION "DIVERGENCE|DFDE 0038")
+    # With the front end closed the demo starts as in the original...
+    add_test(NAME title_demo_starts_with_the_front_end_closed
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2100 --peek-every 2100:DFDE:2)
+    set_tests_properties(title_demo_starts_with_the_front_end_closed PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "peek 2100 DFDE 0038")
+    # ...and once the hold ends (the front end closed at frame 4000), after
+    # the title's own wait less the 32 frames counted before the hold.
+    add_test(NAME title_demo_starts_once_the_hold_ends
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4600 --hold-title 0:4000
+                --peek-every 4470:DFDE:2 --peek-every 4490:DFDE:2)
+    set_tests_properties(title_demo_starts_once_the_hold_ends PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "peek 4470 DFDE 0008.*peek 4490 DFDE 0038")
 
     # The shipped achievement definitions must still unlock while the attract
     # demos play (a definition that never fires is silent otherwise).

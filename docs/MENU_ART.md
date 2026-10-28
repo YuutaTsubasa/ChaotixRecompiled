@@ -266,15 +266,15 @@ A.I.R. builds its menus into the game. Since then:
   in a lime-green frame under the logo, columns 114-206 and lines 75-101 of
   its 320x224 picture once it has settled (measured on the program's own
   screenshots). The title zooms in for its first moments (it is shown from
-  about frame 1400 after power-on and settles about frame 1520; the attract
-  demo follows about frame 1950), so a picture taken before then shows the
-  logo cut off at the top and the frame lower and larger. The selected entry
-  is drawn on a purple plaque over the inside of the settled frame
+  about frame 1400 after power-on and settles at frame 1511; left alone, the
+  attract demo follows at frame 2024), so a picture taken before then shows
+  the logo cut off at the top and the frame lower and larger. The selected
+  entry is drawn on a purple plaque over the inside of the settled frame
   (`Menu::push_start_box`: columns 115-205, lines 76-100), at least that large
   at every window size and MENU SIZE, so the game's prompt and ours are never
-  both on the screen. This is drawing only: the game still shows PUSH START
-  underneath and runs exactly as it would without the menu, so lockstep and
-  the golden frames are untouched.
+  both on the screen. The plaque is drawing only: the game still shows PUSH
+  START underneath. What the front end changes in the game is the one word
+  that would end the title (below).
 - **The other entries are under it**, in the order Down reaches them (round
   past the last to the first), on smaller night-purple banners. Nothing is
   drawn above the box: the logo and the line under it ("FEATURING KNUCKLES
@@ -297,8 +297,10 @@ A.I.R. builds its menus into the game. Since then:
   banners are `award_art`'s shapes (`banner`, `ring`, `heading`,
   `arrowhead`), the same as the AWARDS page's; no picture is taken from the
   game.
-- **The intro and the attract demo** still run behind the front end; the
-  plaque stays where PUSH START will be.
+- **The title stays** while the front end is open: the game never goes into
+  its attract demo under it, and before PUSH START is up (the boot screens,
+  the intro and the logo's zoom) the front end shows only its hint. See
+  *Holding the title* below.
 
 **Touch.** A tap on an entry brings it into the box; a tap on the plaque (or
 on the selected entry's place in the portrait column) acts on it (the first
@@ -342,3 +344,79 @@ no zone and is narrower than before; `menu_size.*` and
 `tests/test_menu_size.py` check the touch targets grow and stay on the screen.
 
 ![The front end, 16:9](images/issue-3-title-menu-16-9.png)
+
+### Holding the title
+
+In 0.15.8 the front end was drawn over whatever the game showed. Left open,
+about 30 seconds after power-on the title gave way to the attract demo (TECHNO
+TOWER, its title card and all), and the plaque and the entries floated over a
+level playing itself; the same after BACK TO TITLE. Before the title, they
+floated over the city and the road of the intro. Now the title is held while
+the front end is on it, and the front end waits for PUSH START.
+
+**How the title ends** (68K code, frames from power-on with no input,
+`--trace` and `--peek-every`; `runtime/title_hold.h`):
+
+- The game mode (`$FFDFDE`) is `$08` for the title from frame 379 to 2023,
+  the intro included; before it are the boot screens and the SEGA logo
+  (modes `$00`, `$04`, `$0C`, `$10`, `$14`).
+- The title's two logo objects (`$FFB008` and `$FFB048`, routine `$884482`)
+  each add 1 to the word `$FFE200` every frame once their zoom (`$3C(a6)`)
+  has reached `$100`, from frame 1511, so it counts two a frame from 0. At
+  `$8844EE` (`cmpi.b #4,$FFE200`) the first to find it at `$400` writes mode
+  `$38` and jumps to the mode dispatcher (`$883262`): the demo, frame 2024
+  (1511 + 1024 / 2).
+- The same word gates Start: at `$883BCE` and `$883BF8` Start on the title
+  leaves for the game's own menu only from `$40` on (below, it just finishes
+  the logo's zoom), and `$883EA2` runs the title's palette cycle only while it
+  is not 0. Start in the intro skips to the title with the counter at 0.
+
+**The hold.** Before every frame, while the front end is on the title, the
+app puts the counter back to `$40` once it has passed it
+(`title_hold::apply`). So it never reaches `$400` and the demo never starts;
+Start acts as on the settled title (START GAME, TIME ATTACK and LEVEL SELECT
+hand over exactly as before); the palette cycle runs; and nothing is
+stopped, restored or replayed, so the title music plays on (measured in a
+4600-frame run: the track stays `$0E` and the sound is as loud at 76 s as at
+10 s). When the game is handed over -- START GAME, the front menu closed,
+TIME ATTACK or LEVEL SELECT -- the hold ends and the title runs as in the
+original: the demo comes 480 frames later (the full wait less the 32 frames
+counted before the hold), at frame 4479 for a hold ended at 4000.
+
+**Before PUSH START.** Until the counter starts (`title_hold::before_title`)
+the front end draws only its hint, "Enter skip intro", and no plaque
+(`Menu::set_title_ready`). The first press of Up, Down, Left, Right or Enter
+(the pad's d-pad or confirm button, or a tap anywhere) skips to the title, as
+Start does in the game: the app taps Start, 6 frames down in every 24, as
+it does to carry a stage request through the title, and lets go the frame the
+counter starts, under `$40`, so the press chooses nothing. The game takes
+Start only at some moments of the boot screens and the intro; measured, the
+title is up about 195 frames after a press at power-on, 28-52 frames after one
+at the start of the intro, 3-6 frames after one later. That first press only
+skips (nothing was on the screen to choose); the entries are up from then on,
+and the presses after it drive them at once, so someone quick on the keys
+loses nothing while the title arrives. Escape and the back button close the
+front end there as anywhere. A page asked for by name (`--menu front`) is
+shown at once.
+
+**Lockstep, recordings, netplay.** The hold is a write to 68K work RAM
+between two frames, so the interpreter and the recompiled code see the same
+thing: `chaotix_headless --hold-title FROM:TO` holds it on every machine it
+runs, and `title_held_past_the_demo_with_the_front_end_open` plays 4200
+frames held in lockstep, bit-identical. A recorded session keeps when the
+hold began and ended (`title_hold FRAME 0|1` lines), so `--replay-input` plays
+it back the same. During netplay there is no hold and no skip, and the front
+end is as it was: the front end is one side's own, and holding or pressing for
+one of the two games would split them; the session runs the game on both
+sides exactly as the original does.
+
+Tests: `title_hold.*` in `tests/test_title_hold.cpp` (what is held, what is
+before the title), `front_end.before_push_start_only_the_hint_shows_and_a_press_skips_to_it`
+in `tests/test_menu.cpp`, the headless `title_*` tests (held to frame 4200;
+the demo at 2100 with no hold, and 480 frames after the hold ends), and
+`tests/test_title_hold.py`, which runs the program: held at frame 4300 with the
+entries up, the demo at 2300 with the front end closed, only the hint at
+frame 1000, a press at frame 200 skipping to the title without choosing, and
+START GAME after it handing over.
+
+![The front end at frame 4300, the title held](images/issue-3-title-menu-held.png)
