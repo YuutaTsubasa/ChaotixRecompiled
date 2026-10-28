@@ -181,9 +181,9 @@ covers the area (cropped to its shape, never stretched) and a translucent
 coat of the zone's own colour goes over it (`backdrop_tint`: the picture's
 average colour at a third of its brightness) so that the white and yellow
 letters stay readable: over the whole window behind the awards and the zone
-showcase, inside the panel of the list pages, inside the band of the pause
-row. The front end itself has no zone behind it since issue #3: it is drawn
-on the game's title screen (below).
+showcase, inside the band of the pause row. Since issue #3 the front end has
+no zone behind it (it is drawn on the game's title screen, below), and nor do
+the settings pages' panels, which are plain over the dimmed title.
 The frames, markers and arrows take the zone's most common vivid colour
 (`backdrop_accent`) instead of the awards' magenta (the theme's blue before issue #3). In a level the game stays
 visible around the panel, dimmed as before.
@@ -271,11 +271,20 @@ A.I.R. builds its menus into the game. Since then:
   both on the screen. This is drawing only: the game still shows PUSH START
   underneath and runs exactly as it would without the menu, so lockstep and
   the golden frames are untouched.
-- **The list slides through that box.** The entries before the selected one
-  are stacked above it and the ones after it below, on smaller night-purple
-  banners that fade with distance (three a side at most, fewer where the
-  window has no room). Up and down move the list, so the chosen entry is
-  always where the player looks for PUSH START; the list wraps as before.
+- **The other entries are under it**, in the order Down reaches them (round
+  past the last to the first), on smaller night-purple banners. Nothing is
+  drawn above the box: the logo and the line under it ("FEATURING KNUCKLES
+  THE ECHIDNA ... IN 32X WORLD") stay clear, and a plaque taller than the box
+  grows downwards only. In a landscape window three of them follow it over the
+  characters, fading. Up and down move the selection, so the chosen entry is
+  always where the player looks for PUSH START.
+- **A portrait window** has the room under the picture: while the menu is
+  over the title the picture goes to the top of the window
+  (`Menu::title_picture_y`; the game goes back to the usual centring once it
+  is handed over), and the other entries are listed under it, over black, as
+  many as fit (all of them on a phone at NORMAL and LARGE). The plaque stays
+  on PUSH START, in the smaller letters if the large ones would make it much
+  taller than the box.
 - **The cursor** is a pair of spinning gold rings at the plaque's ends, a
   quarter turn apart: the two rings of the game's combi. Plaque, stripe and
   banners are `award_art`'s shapes (`banner`, `ring`, `heading`,
@@ -284,36 +293,43 @@ A.I.R. builds its menus into the game. Since then:
 - **The intro and the attract demo** still run behind the front end; the
   plaque stays where PUSH START will be.
 
-**Touch.** A tap on an entry above or below brings it into the box; a tap on
+**Touch.** A tap on an entry under the plaque brings it into the box; a tap on
 the plaque acts on it (the first tap selects, the second acts, as on every
-list). When a window is too short for even the next entry on a side (an
-800x360 window at EXTRA LARGE), a magenta arrow beside the plaque -- or at its
-right-hand end in place of the ring when there is no room beside it -- steps
-the selection that way.
+list). While the entry before the selected one is not among those shown, a
+magenta arrow beside the plaque -- or at its right-hand end in place of the
+ring when there is no room beside it -- steps back; when none are shown (an
+800x360 window at EXTRA LARGE), a second one steps on.
 
 **Sizes.** Everything is measured in the menu's letters, so MENU SIZE grows
-the plaque, the banners and their spacing. A portrait window keeps the title
-across its middle, as in play, and the list runs above and below it.
+the plaque, the banners and their spacing.
 
 **MENU FONT and MENU BACKGROUND.** MENU FONT works as everywhere: GAME draws
 the entries in the game's letters, PIXEL in the pixel face, on the same
-plaque. MENU BACKGROUND no longer applies to the front end: its background is
-the live title screen. It still sets what is behind the awards, the zone
-showcase and inside the panels of the settings pages.
+plaque. MENU BACKGROUND no longer applies to the front end, whose background
+is the live title screen, nor to the settings pages' panels. It still sets
+what is behind the awards, the zone showcase and the pause menu's band.
 
 **The pages behind it.** OPTIONS and its categories, CONTROLS, the binding
 pages, MODS, MUSIC PLAYER and NETPLAY keep their lists, now with the page's
 name on the AWARDS title's slanted banner at the panel's top, a spinning ring
-for the cursor, the panel in the awards' near-black purple edged in magenta,
-and the title screen dimmed behind them in the same purple. TIME ATTACK and
-LEVEL SELECT put their names on the same banner. The frames, values and
-arrows that were the theme's blue are the awards' magenta (or the zone's
-colour while its picture is shown). The pause menu over a level is unchanged.
+for the cursor, and the panel in the awards' near-black purple edged in
+magenta (no zone's picture inside it: that made two pictures one over the
+other), over the title dimmed in the same purple. The panel is as wide as the
+page needs -- its longest row with its value and note, its heading and its
+hint, in steps of 40 units so that stepping a value does not make it twitch
+-- up to the width it always had; a pack's page keeps the whole width for its
+description. TIME ATTACK and LEVEL SELECT put their names on the same banner.
+The frames, values and arrows that were the theme's blue are the awards'
+magenta (on the showcase and the awards, the zone's colour while its picture
+is shown). The pause menu over a level is unchanged.
 
 `tests/test_menu.cpp` (`front_end.*`) checks that the selected entry covers
-the box for every entry, at every MENU SIZE, in 16:9, 4:3, phone and portrait
-windows and with both fonts, that the other entries keep above and below it,
-and that taps select and start; `menu_size.*` and `tests/test_menu_size.py`
-check the touch targets grow and stay on the screen.
+the box for every entry, at every MENU SIZE, in 16:9, 4:3, phone, portrait and
+short windows and with both fonts; that nothing rises above the box; that the
+other entries are under the plaque (under the picture on a portrait window,
+all of them where there is the room); and that taps select and start.
+`menu.the_settings_panel_is_plain_and_fits_its_rows` checks the panel shows
+no zone and is narrower than before; `menu_size.*` and
+`tests/test_menu_size.py` check the touch targets grow and stay on the screen.
 
 ![The front end, 16:9](images/issue-3-title-menu-16-9.png)

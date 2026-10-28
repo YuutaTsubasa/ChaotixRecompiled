@@ -3088,6 +3088,9 @@ int main(int argc, char** argv) {
         ViewportResult vp = compute_viewport(app.cfg.viewport, ow, oh, app.m->fb_width, app.m->fb_height);
         SDL_FRect src{0, 0, float(app.m->fb_width), float(app.m->fb_height)};
         SDL_FRect dst{float(vp.image.x), float(vp.image.y), float(vp.image.w), float(vp.image.h)};
+        // Over the title screen on a portrait window the picture goes to the
+        // top, leaving the room under it to the front end's list (issue #3).
+        if (app.menu.on_title()) dst.y = Menu::title_picture_y(dst.y, float(ow), float(oh));
         if (app.ui.ready()) {
             // MENU SIZE (issue #49): the menu, and only the menu, larger.
             app.ui.set_zoom(app.menu.zoom());

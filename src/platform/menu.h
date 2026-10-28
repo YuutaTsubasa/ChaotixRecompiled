@@ -172,6 +172,13 @@ public:
     // Where the title screen's PUSH START box is for that picture: the inside
     // of its frame, in window pixels.
     static SDL_FRect push_start_box(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra);
+    // Whether the menu is over the title screen: the front end, or a page
+    // opened from it.
+    bool on_title() const { return page_ != Page::Closed && return_to_ == Page::Front; }
+    // Where the picture's top goes on a window w x h while on_title(), for
+    // the top `y` the viewport gave it: on a portrait window it is raised to
+    // the top, so that the front end's list has the room below it.
+    static float title_picture_y(float y, float window_w, float window_h);
     // Issue #8: a picture of one of the game's zones (platform/backdrops.h)
     // for the menu's panels and backgrounds, with the translucent colour laid
     // over it and the colour for frames and markers, both taken from it. The
@@ -288,6 +295,8 @@ private:
     // The PUSH START box for the picture the app gave (set_picture), or for
     // a 4:3 picture fitted to the window.
     SDL_FRect title_box(ui::Ui& g) const;
+    // The game's picture as set_picture gave it, or that 4:3 picture.
+    SDL_FRect picture_rect(ui::Ui& g) const;
     void draw_front(ui::Ui& g);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);

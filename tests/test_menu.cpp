@@ -1340,7 +1340,10 @@ TEST(menu, the_game_font_lays_out_in_whole_cells) {
     SDL_DestroySurface(c);
 }
 
-TEST(menu, a_zone_picture_fills_the_panel_when_asked) {
+TEST(menu, the_settings_panel_is_plain_and_fits_its_rows) {
+    // Issue #3: the settings pages' panel is the awards' near-black purple
+    // over the dimmed title, with no zone's picture inside it (that made two
+    // pictures one over the other), and only as wide as its rows need.
     Drawn d;
     CHECK(d.ok);
     if (!d.ok) return;
@@ -1361,21 +1364,28 @@ TEST(menu, a_zone_picture_fills_the_panel_when_asked) {
         SDL_RenderClear(d.renderer);
         d.draw(m);
         SDL_RenderPresent(d.renderer);
+        // Inside the panel, in the margin left of the second row's label.
+        SDL_FRect row{};
+        for (const auto& [index, r] : m.drawn_rows())
+            if (index == 1) row = r;
         SDL_Surface* s = SDL_RenderReadPixels(d.renderer, nullptr);
         if (!s) return -1;
         SDL_Surface* c = SDL_ConvertSurface(s, SDL_PIXELFORMAT_XRGB8888);
         SDL_DestroySurface(s);
         if (!c) return -1;
-        // Inside the panel, right of its labels: only the panel's fill.
-        const uint32_t p = static_cast<const uint32_t*>(c->pixels)[size_t(360) * size_t(c->pitch / 4) + 930];
+        const uint32_t p = static_cast<const uint32_t*>(
+            c->pixels)[size_t(row.y + row.h * 0.5f) * size_t(c->pitch / 4) + size_t(row.x + 6)];
         SDL_DestroySurface(c);
         return int((p >> 16) & 0xFF);
     };
-    const int zone = panel_red();
+    CHECK(panel_red() < 30);  // the zone is set, and not drawn in the panel
     cfg.menu_background = "Plain";
-    const int plain = panel_red();
-    CHECK(zone > 30);    // the red shows through the tint
-    CHECK(plain < 30);   // the theme's near-black
+    CHECK(panel_red() < 30);
+    // OPTIONS' rows are short: its panel is far narrower than the 560 units
+    // it used to take whatever the rows were.
+    float right = 0;
+    for (const auto& [index, r] : m.drawn_rows()) right = std::max(right, r.x + r.w);
+    CHECK(right < 640 + 560 * 0.5f - 60);
     SDL_DestroyTexture(red);
 }
 
@@ -1771,11 +1781,18 @@ TEST(front_end, the_selected_entry_covers_push_start) {
     // Issue #3: the entries are drawn on the title screen, the selected one
     // over the box the game shows PUSH START in -- whichever entry it is, at
     // every MENU SIZE, in a 16:9 and a 4:3 window, a phone and a portrait
-    // one -- with the others above and below it, apart from it.
+    // one -- with the others under it, apart from it: nothing above the box,
+    // where the logo and the line under it are. On a portrait window the
+    // picture is at the top and the others are under the picture.
     struct Window { int w, h; SDL_FRect picture; };
-    const Window windows[] = {{1280, 720, {160, 0, 960, 720}},     {1024, 768, {0, 0, 1024, 768}},
-                              {2400, 1080, {480, 0, 1440, 1080}}, {412, 860, {0, 276, 412, 309}},
-                              {800, 360, {160, 0, 480, 360}}};
+    const Window windows[] = {
+        {1280, 720, {160, 0, 960, 720}},
+        {1024, 768, {0, 0, 1024, 768}},
+        {2400, 1080, {480, 0, 1440, 1080}},
+        {412, 860, {0, Menu::title_picture_y(276, 412, 860), 412, 309}},
+        {800, 360, {160, 0, 480, 360}},
+        {1080, 2400, {0, Menu::title_picture_y(795, 1080, 2400), 1080, 810}},
+    };
     for (const Window& win : windows) {
         for (int z = 0; z < ui::kMenuSizes; ++z) {
             for (bool game_font : {true, false}) {
@@ -1807,12 +1824,21 @@ TEST(front_end, the_selected_entry_covers_push_start) {
                     // On a window short enough that the plaque must move up
                     // to stay above the hint, it still covers what it can.
                     if (win.h >= 480) CHECK(covers(plaque, box));
+                    // Nor does it rise over the line above the box.
+                    if (win.h >= 480) CHECK(plaque.y >= box.y - 0.5f);
+                    int others = 0;
                     for (const auto& [index, r] : m.drawn_rows()) {
                         if (index == m.selected_index()) continue;
-                        // Before it above, after it below, never on it.
-                        if (index < m.selected_index()) CHECK(r.y + r.h <= plaque.y + 0.5f);
-                        else CHECK(r.y >= plaque.y + plaque.h - 0.5f);
+                        ++others;
+                        CHECK(r.y >= plaque.y + plaque.h - 0.5f);
+                        CHECK(r.y >= box.y + box.h - 0.5f);
+                        if (win.h > win.w) CHECK(r.y >= win.picture.y + win.picture.h - 0.5f);
                     }
+                    // A portrait phone has the room for all of them up to
+                    // LARGE, a small portrait window at NORMAL; a larger
+                    // MENU SIZE there shows as many as fit.
+                    if (win.h > win.w && (z == 0 || (win.w >= 1000 && z == 1))) CHECK_EQ(others, 8);
+                    else if (win.h > win.w) CHECK(others >= 3);
                     m.on_key(SDLK_DOWN);
                 }
             }
@@ -1835,6 +1861,7 @@ TEST(front_end, a_tap_selects_an_entry_and_a_second_starts_it) {
     m.open_front();
     d.draw(m);
     // TIME ATTACK is right under START GAME: one tap brings it into the box.
+    // (The plaque's target is drawn last, so it comes last.)
     SDL_FRect below{};
     for (const auto& [index, r] : m.drawn_rows())
         if (index == 1) below = r;
@@ -1842,16 +1869,17 @@ TEST(front_end, a_tap_selects_an_entry_and_a_second_starts_it) {
     d.tap(m, below.x + below.w * 0.5f, below.y + below.h * 0.5f);
     CHECK_STR(m.selected_label(), "TIME ATTACK");
     CHECK_STR(m.page_name(), "front");
-    // START GAME is now above it; a tap there and one on the box starts.
-    SDL_FRect above{}, plaque{};
-    for (const auto& [index, r] : m.drawn_rows()) {
-        if (index == 0) above = r;
+    // The entries come round: QUIT's successor, START GAME, is listed after
+    // the others, never above the box.
+    SDL_FRect plaque{};
+    for (const auto& [index, r] : m.drawn_rows())
         if (index == 1) plaque = r;
-    }
-    CHECK(above.w > 0 && above.y + above.h <= plaque.y + 0.5f);
-    d.tap(m, above.x + above.w * 0.5f, above.y + above.h * 0.5f);
+    CHECK(plaque.w > 0);
+    for (const auto& [index, r] : m.drawn_rows()) CHECK(index == 1 || r.y >= plaque.y + plaque.h - 0.5f);
+    CHECK(m.on_key(SDLK_UP));
     CHECK_STR(m.selected_label(), "START GAME");
     CHECK_EQ(started, 0);
+    d.draw(m);
     for (const auto& [index, r] : m.drawn_rows())
         if (index == 0) plaque = r;
     d.tap(m, plaque.x + plaque.w * 0.5f, plaque.y + plaque.h * 0.5f);
