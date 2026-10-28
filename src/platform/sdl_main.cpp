@@ -28,6 +28,7 @@
 #include "frontend/portrait.h"
 #include "platform/frame_pacing.h"
 #include "platform/menu.h"
+#include "platform/award_art.h"
 #include "platform/ui.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
@@ -161,6 +162,7 @@ struct App {
     achievements::Tracker achievements;
     ui::Ui ui;
     bool achievements_on = false;
+    bool achievements_paused = false;  // frames are going by that the tracker does not see
     Menu menu;
     // Pictures of the game's zones behind the menu (issue #8), made on a
     // machine of their own and cached in the user data folder.
@@ -270,9 +272,14 @@ struct App {
     // Notifications: unlocks, time attack results, save states. `caption` is
     // the small line above the title.
     struct Toast {
+        Toast(std::string t, std::string d, Uint64 until, std::string c = "AWARD GET!")
+            : title(std::move(t)), description(std::move(d)), until_ms(until), caption(std::move(c)) {}
         std::string title, description;
         Uint64 until_ms = 0;
-        std::string caption = "ACHIEVEMENT UNLOCKED";
+        std::string caption = "AWARD GET!";
+        int points = 0;        // an award's points: drawn with its emblem when > 0
+        std::string icon;      // the award's emblem (achievements.h)
+        Uint64 shown_ms = 0;   // when it was first drawn, for sliding in
     };
     std::vector<Toast> toasts;
     // Rewind (issue #40): a snapshot every kRewindInterval frames of play,
@@ -536,38 +543,86 @@ void draw_toasts(App& app) {
     ui::Ui& g = app.ui;
     if (!g.ready()) return;
 
+    namespace art = award_art;
+    namespace col = award_art::color;
+    const float edge = std::max(2.0f, std::round(g.px(3)));
+    const Uint64 now = SDL_GetTicks();
+
     app.achievement_tap = {0, 0, 0, 0};
     if (app.achievements_on && app.touch_enabled && !app.menu.open()) {
+        // A ring and the count, on a small slanted tab in the top corner.
         char label[32];
         std::snprintf(label, sizeof label, "%d/%zu", app.achievements.unlocked_count(),
                       app.achievements.list().size());
-        const float w = g.text_width(ui::Font::Small, label) + g.px(22);
-        const float h = g.line_height(ui::Font::Small) + g.px(12);
+        const float h = g.line_height(ui::Font::Small) + g.px(14);
+        const float w = g.text_width(ui::Font::Small, label) + h + g.px(26);
         const SDL_FRect r{g.width() - w - g.px(12), g.px(12), w, h};
-        g.panel(r, ui::theme::surface.alpha(200), ui::theme::outline_strong, h * 0.5f);
-        g.text(ui::Font::Small, r.x + g.px(11), r.y + g.px(6), label, ui::theme::text_dim);
-        // The pill is small; the area that responds to a finger is padded out
+        art::banner(g, r, h * 0.3f, col::purple.alpha(220), col::ink, edge);
+        art::emblem(g, r.x + h * 0.3f + h * 0.5f + g.px(2), r.y + h * 0.5f, h * 0.38f, "ring", true);
+        g.text(ui::Font::Small, r.x + h * 0.3f + h + g.px(4), r.y + g.px(7), label, col::text);
+        // The tab is small; the area that responds to a finger is padded out
         // around it so it clears the usual minimum touch target.
         const float pad = g.px(10);
         app.achievement_tap = {r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2};
     }
 
-    const Uint64 now = SDL_GetTicks();
     app.toasts.erase(std::remove_if(app.toasts.begin(), app.toasts.end(),
                                     [&](const App::Toast& t) { return now >= t.until_ms; }),
                      app.toasts.end());
-    const float toast_h = g.line_height(ui::Font::Body) + g.line_height(ui::Font::Small) + g.px(18);
-    const float toast_w = std::min(g.width() - g.px(24), g.px(380));
-    float ty = g.height() - g.px(14) - (toast_h + g.px(8)) * float(app.toasts.size());
-    for (const auto& t : app.toasts) {
-        const SDL_FRect box{g.px(14), ty, toast_w, toast_h};
-        g.panel(box, ui::theme::surface_raised, ui::theme::accent, g.px(10), g.px(1.5f));
-        g.text_fit(ui::Font::Small, box.x + g.px(14), ty + g.px(7), toast_w - g.px(28),
-                   t.caption, ui::theme::accent);
-        g.text_fit(ui::Font::Body, box.x + g.px(14), ty + g.px(6) + g.line_height(ui::Font::Small),
-                   toast_w - g.px(28), t.title, ui::theme::text);
-        ty += toast_h + g.px(8);
+    if (app.toasts.empty()) return;
+    // Notifications are banners in the game's manner (issue #3): slanted,
+    // purple, edged in black, the award's emblem in a medallion over the left
+    // end and its title in the game's own letters. They slide in from the
+    // left and back out again.
+    const bool game_font_was = g.game_font_enabled();
+    g.enable_game_font(app.cfg.menu_game_font);
+    const float ls = g.line_height(ui::Font::Small), lp = g.line_height(ui::Font::Pixel);
+    const float toast_h = ls + lp + ls + g.px(24);
+    const float lean = toast_h * 0.28f;
+    const float medal = toast_h * 0.5f + g.px(4);
+    const float toast_w = std::min(g.width() - g.px(28), g.px(500));
+    float ty = g.height() - g.px(14) - (toast_h + g.px(10)) * float(app.toasts.size());
+    for (auto& t : app.toasts) {
+        if (!t.shown_ms) t.shown_ms = now;
+        // In over a fifth of a second, out over a quarter, eased.
+        const float in = std::min(1.0f, float(now - t.shown_ms) / 220.0f);
+        const float out = std::min(1.0f, float(t.until_ms - std::min(now, t.until_ms)) / 250.0f);
+        const float k = std::min(in, out);
+        const float ease = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k);
+        const float x0 = g.px(14) - (1.0f - ease) * (toast_w + medal * 2 + g.px(28));
+
+        const std::string icon = t.points > 0 ? t.icon : t.caption == "TIME ATTACK" ? "clock" : "";
+        const bool medallion = t.points > 0 || !icon.empty();
+        const float bx = x0 + (medallion ? medal : 0.0f);
+        const SDL_FRect box{bx, ty, toast_w - (bx - x0), toast_h};
+        // A magenta strip under the banner, then the banner.
+        art::banner(g, {box.x + lean * 0.5f, box.y + box.h - g.px(8), box.w, g.px(14)}, lean * 0.4f, col::magenta,
+                    col::ink, edge);
+        art::banner(g, box, lean, col::purple, col::ink, edge);
+        const float text_x = box.x + (medallion ? medal + g.px(8) : lean + g.px(14));
+        float right = box.x + box.w - lean - g.px(12);
+        if (t.points > 0) {
+            char pts[16];
+            std::snprintf(pts, sizeof pts, "%d PTS", t.points);
+            const float pw = g.text_width(ui::Font::Pixel, pts);
+            right -= pw;
+            g.text(ui::Font::Pixel, right, ty + g.px(8), pts, col::text);
+            right -= g.px(10);
+        }
+        g.text_fit(ui::Font::Small, text_x, ty + g.px(8), right - text_x, t.caption, col::gold);
+        g.text_fit(ui::Font::Pixel, text_x, ty + g.px(10) + ls, box.x + box.w - lean - g.px(10) - text_x, t.title,
+                   col::text);
+        g.text_fit(ui::Font::Small, text_x, ty + g.px(12) + ls + lp, box.x + box.w - lean * 2 - g.px(4) - text_x,
+                   t.description, col::text_dim);
+        if (medallion) {
+            const float turn = float((now - t.shown_ms) % 1200) / 1200.0f;
+            unsigned seed = 0;
+            for (char ch : t.title) seed = seed * 31u + unsigned(uint8_t(ch));
+            art::emblem(g, x0 + medal, ty + toast_h * 0.5f, medal, icon, true, turn, seed);
+        }
+        ty += toast_h + g.px(10);
     }
+    g.enable_game_font(game_font_was);
 }
 
 void save_screenshot(App& app) {
@@ -2942,10 +2997,20 @@ int main(int argc, char** argv) {
             // Not with the ring tether changed either (issue #43): the game
             // plays differently.
             if (app.achievements_on && !app.cheating && !tether::any(*app.m) && !app.ls.running) {
+                app.achievements_paused = false;
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {
-                    app.toasts.push_back({a.title, a.description, SDL_GetTicks() + 5000});
+                    App::Toast t{a.title, a.description, SDL_GetTicks() + 5000, "AWARD GET!"};
+                    t.points = a.points;
+                    t.icon = a.icon;
+                    app.toasts.push_back(t);
                     app.achievements.save_progress(achievements_progress_path(app));
                 });
+            } else if (app.achievements_on && !app.achievements_paused) {
+                // Frames the tracker does not see (a cheat on, the tether
+                // changed) are frames it knows nothing about: an attempt going
+                // ("without losing a ring") has to start again afterwards.
+                app.achievements.forget_previous();
+                app.achievements_paused = true;
             }
             if (autotest && !app.fast_forward) accumulator -= frame_ticks;
             ++steps;

@@ -1,4 +1,5 @@
 #include "platform/menu.h"
+#include "platform/award_art.h"
 #include "runtime/tether.h"
 #include "runtime/lobby.h"
 
@@ -1691,7 +1692,9 @@ bool Menu::on_touch_down(float x, float y) {
         if (x < h.r.x || x > h.r.x + h.r.w || y < h.r.y || y > h.r.y + h.r.h) continue;
         // The markers of a list longer than the screen step through it.
         if (h.index == kScrollUp || h.index == kScrollDown) {
-            move(h.index == kScrollUp ? -1 : +1);
+            // AWARDS scrolls its cards; the lists move their selection.
+            if (page_ == Page::Achievements) scroll_ += h.index == kScrollUp ? -1 : +1;
+            else move(h.index == kScrollUp ? -1 : +1);
             drag_total_ = 1e9f;
             return true;
         }
@@ -2900,54 +2903,150 @@ void Menu::draw_showcase(ui::Ui& g) {
     }
 }
 
+// AWARDS (issue #3): in the manner of the game's own screens rather than a
+// settings list -- a slanted purple title banner edged in black, a ring-gold
+// meter, and a card for each award with its emblem (award_art.h). Two columns
+// of cards where the window is wide enough, one on a 4:3 or narrow window.
 void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {
-    const float column = std::min(g.width() - g.px(32), g.px(680));
-    const float x = (g.width() - column) * 0.5f;
-    float y = std::max(g.px(18), g.height() * 0.05f);
+    namespace art = award_art;
+    namespace col = award_art::color;
+    using ui::Font;
+    const float W = g.width(), H = g.height();
+    const float column = std::min(W - g.px(28), g.px(1180));
+    const float x = (W - column) * 0.5f;
+    const float edge = std::max(2.0f, std::round(g.px(3)));
+    float y = std::max(g.px(12), H * 0.03f);
 
-    fill(g, {0, 0, g.width(), g.height()}, ui::theme::background.alpha(200), 210);
-    g.text(ui::Font::PixelBig, x, y, "AWARDS", accent());
-    char head[96];
-    std::snprintf(head, sizeof head, "%d OF %zu    %d / %d PTS", ach.unlocked_count(),
-                  ach.list().size(), ach.points_earned(), ach.points_total());
-    const float hw = g.text_width(ui::Font::Pixel, head);
-    g.text(ui::Font::Pixel, x + column - hw, y + g.px(10), head, ui::theme::text_dim);
-    y += g.line_height(ui::Font::PixelBig) + g.px(12);
+    fill(g, {0, 0, W, H}, ui::theme::background.alpha(200), 210);
+    // A wash of the game's purple from the top, under the title.
+    g.rect({0, 0, W, y + g.px(80)}, col::purple.alpha(70));
 
-    const float bar_h = g.px(6);
+    // The title: AWARDS on a slanted banner, a magenta stripe under it.
+    const float head_h = g.line_height(Font::PixelBig) + g.px(18);
+    const float lean = head_h * 0.45f;
+    const float title_w = g.text_width(Font::PixelBig, "AWARDS");
+    const SDL_FRect title_box{x - lean * 0.5f, y, title_w + lean * 2 + g.px(40), head_h};
+    art::banner(g, {title_box.x + g.px(10), title_box.y + head_h - g.px(6), title_box.w, g.px(14)}, lean * 0.3f,
+                col::magenta, col::ink, edge);
+    art::banner(g, title_box, lean, col::purple, col::ink, edge);
+    g.text(Font::PixelBig, title_box.x + lean + g.px(16), y + (head_h - g.line_height(Font::PixelBig)) * 0.5f,
+           "AWARDS", ui::theme::text);
+
+    // Right of it: how many, and the points, beside a ring.
+    char count[48], points[48];
+    std::snprintf(count, sizeof count, "%d OF %zu", ach.unlocked_count(), ach.list().size());
+    std::snprintf(points, sizeof points, "%d OF %d PTS", ach.points_earned(), ach.points_total());
+    const float lp = g.line_height(Font::Pixel);
+    const float info_w = std::max(g.text_width(Font::Pixel, count), g.text_width(Font::Pixel, points));
+    const float ring_r = lp * 0.95f;
+    const float info_x = x + column - info_w;
+    const bool info_fits = info_x - ring_r * 2 - g.px(12) > title_box.x + title_box.w;
+    if (info_fits) {
+        const float iy = y + (head_h - lp * 2 - g.px(4)) * 0.5f;
+        art::emblem(g, info_x - ring_r - g.px(12), y + head_h * 0.5f, ring_r, "ring", true, anim_ * 0.12f);
+        g.text(Font::Pixel, info_x, iy, count, ui::theme::text);
+        g.text(Font::Pixel, info_x, iy + lp + g.px(4), points, ui::theme::text);
+    }
+    y += head_h + g.px(14);
+    if (!info_fits) {  // a narrow window: the figures go under the title
+        g.text_fit(Font::Pixel, x, y, column, std::string(count) + "  " + points, ui::theme::text);
+        y += lp + g.px(8);
+    }
+
+    // The meter: points earned, in ring gold.
+    const float bar_h = std::max(g.px(12), 6.0f);
     const int total = ach.points_total();
     const float done = total > 0 ? float(ach.points_earned()) / float(total) : 0.0f;
-    g.rect({x, y, column, bar_h}, ui::theme::surface_raised);
-    if (done > 0) g.rect({x, y, column * done, bar_h}, accent());
-    y += bar_h + g.px(14);
-
-    const float row_h = g.line_height(ui::Font::Pixel) + g.line_height(ui::Font::Small) + g.px(16);
-    const float gap = g.px(6);
-    const float bottom = g.height() - g.line_height(ui::Font::Small) - g.px(20);
-    const auto& all = ach.list();
-    rows_ = std::max(1, int((bottom - y) / (row_h + gap)));
-    row_h_ = row_h + gap;
-    scroll_ = std::clamp(scroll_, 0, std::max(0, int(all.size()) - rows_));
-    const int last = std::min(int(all.size()), scroll_ + rows_);
-    for (int i = scroll_; i < last; ++i) {
-        const auto& a = all[size_t(i)];
-        const SDL_FRect row{x, y, column, row_h};
-        g.panel(row, a.unlocked ? ui::theme::surface_raised : ui::theme::surface,
-                a.unlocked ? accent() : ui::theme::outline, g.px(4), a.unlocked ? 2.0f : 1.0f);
-        char pts[16];
-        std::snprintf(pts, sizeof pts, "%d", a.points);
-        const float pw = g.text_width(ui::Font::Pixel, pts);
-        g.text(ui::Font::Pixel, x + column - pw - g.px(12), y + g.px(8), pts,
-               a.unlocked ? accent() : ui::theme::text_faint);
-        const float tw = column - pw - g.px(32);
-        g.text_fit(ui::Font::Pixel, x + g.px(12), y + g.px(6), tw, a.title,
-                   a.unlocked ? ui::theme::text : ui::theme::text_dim);
-        g.text_fit(ui::Font::Small, x + g.px(12), y + g.px(6) + g.line_height(ui::Font::Pixel),
-                   tw, a.description, a.unlocked ? ui::theme::text_dim : ui::theme::text_faint);
-        y += row_h + gap;
+    g.rect({x, y, column, bar_h}, col::ink, bar_h * 0.5f);
+    const SDL_FRect track{x + edge, y + edge, column - edge * 2, bar_h - edge * 2};
+    g.rect(track, col::locked_dark, track.h * 0.5f);
+    if (done > 0) {
+        const SDL_FRect f{track.x, track.y, std::max(track.h, track.w * done), track.h};
+        g.rect(f, col::gold_dark, f.h * 0.5f);
+        g.rect({f.x, f.y, f.w, f.h * 0.55f}, col::gold, f.h * 0.27f);
     }
-    g.text(ui::Font::Small, x, g.height() - g.line_height(ui::Font::Small) - g.px(10),
-           "Up/Down scroll    Enter or Esc back", faint());
+    y += bar_h + g.px(12);
+
+    // The cards.
+    const float hint_h = g.line_height(Font::Small) + g.px(18);
+    // Two columns only where a card is still wide enough for its line of
+    // description: a 16:9 window, not a 4:3 one or a phone at a larger size.
+    const int cols = column >= g.px(1120) ? 2 : 1;
+    const float gap = g.px(10);
+    const float card_w = (column - gap * float(cols - 1)) / float(cols);
+    const float pad = g.px(10);
+    const float card_h = lp + g.line_height(Font::Body) + pad * 2 + g.px(4);
+    const float bottom = H - hint_h;
+    const auto& all = ach.list();
+    const int lines = (int(all.size()) + cols - 1) / cols;
+    rows_ = std::max(1, int((bottom - y + gap) / (card_h + gap)));
+    row_h_ = card_h + gap;
+    scroll_ = std::clamp(scroll_, 0, std::max(0, lines - rows_));
+    for (int line = scroll_; line < std::min(lines, scroll_ + rows_); ++line) {
+        for (int c = 0; c < cols; ++c) {
+            const size_t i = size_t(line * cols + c);
+            if (i >= all.size()) break;
+            const auto& a = all[i];
+            const float cx0 = x + float(c) * (card_w + gap);
+            const SDL_FRect card{cx0, y, card_w, card_h};
+            const float cl = g.px(12);  // the cards lean a little, as the title does
+            art::banner(g, card, cl, a.unlocked ? col::night : ui::Color{20, 16, 34}, col::ink, edge);
+            if (a.unlocked)  // a magenta edge along the top of an earned one
+                art::banner(g, {card.x + cl, card.y + edge, card.w - cl * 2.0f, std::max(2.0f, g.px(3))}, 0,
+                            col::magenta, col::magenta, 0);
+            const float er = card_h * 0.5f - g.px(4);
+            unsigned seed = 0;
+            for (char ch : a.title) seed = seed * 31u + unsigned(uint8_t(ch));
+            art::emblem(g, card.x + cl * 0.5f + pad + er, card.y + card_h * 0.5f, er, a.icon, a.unlocked, 0, seed);
+
+            // The points, at the right: a small ring and the number.
+            char pts[16];
+            std::snprintf(pts, sizeof pts, "%d", a.points);
+            const float pw = g.text_width(Font::Pixel, pts);
+            const float rr = lp * 0.4f;
+            const float px_r = card.x + card_w - cl * 0.5f - pad - pw;
+            art::emblem(g, px_r - rr - g.px(6), card.y + pad + lp * 0.5f, rr, "ring", a.unlocked);
+            g.text(Font::Pixel, px_r, card.y + pad, pts, a.unlocked ? ui::theme::text : ui::theme::text_dim);
+
+            const float tx = card.x + cl * 0.5f + pad + er * 2 + g.px(10);
+            const float tw = std::max(g.px(40), px_r - rr * 2 - g.px(14) - tx);
+            // Not earned: the game's letters greyed (tinted), not just dimmed.
+            g.tint_game_font(!a.unlocked);
+            g.text_fit(Font::Pixel, tx, card.y + pad, tw, a.title,
+                       a.unlocked ? ui::theme::text : ui::Color{150, 140, 175});
+            g.tint_game_font(false);
+            const float dw = card.x + card_w - cl - pad - tx;
+            g.text_fit(Font::Body, tx, card.y + pad + lp + g.px(4), dw, a.description,
+                       a.unlocked ? col::text : col::text_dim);
+        }
+        y += card_h + gap;
+    }
+
+    // More above or below: two markers at the bottom right that step the
+    // list, since a finger has no Up/Down. A tap anywhere else closes it.
+    const float mh = std::min(hint_h - g.px(4), lp + g.px(12)), mw = g.px(64);
+    const float my = H - mh - g.px(3);
+    auto marker = [&](float mx, bool up, int index, bool live) {
+        const SDL_FRect m{mx, my, mw, mh};
+        art::banner(g, m, mh * 0.3f, live ? col::magenta : col::locked_dark, col::ink, edge);
+        // An arrowhead, edged in black like everything else.
+        const float cx = m.x + mw * 0.5f, cy = m.y + mh * 0.5f, s = mh * 0.3f, d = up ? -1.0f : 1.0f;
+        const SDL_FPoint outer[3] = {{cx - s - edge, cy - d * (s * 0.6f + edge * 0.5f)},
+                                     {cx + s + edge, cy - d * (s * 0.6f + edge * 0.5f)},
+                                     {cx, cy + d * (s * 0.6f + edge)}};
+        const SDL_FPoint inner[3] = {{cx - s, cy - d * s * 0.6f}, {cx + s, cy - d * s * 0.6f}, {cx, cy + d * s * 0.6f}};
+        g.poly(outer, 3, col::ink);
+        g.poly(inner, 3, live ? col::gold : col::locked);
+        if (live) hits_.push_back({{m.x - g.px(6), m.y - g.px(14), m.w + g.px(12), m.h + g.px(14)}, index});
+    };
+    const bool more = lines > rows_;
+    if (more) {
+        marker(x + column - mw, false, kScrollDown, scroll_ + rows_ < lines);
+        marker(x + column - mw * 2 - g.px(8), true, kScrollUp, scroll_ > 0);
+    }
+    const float hint_w = column - (more ? mw * 2 + g.px(16) : 0.0f);
+    g.text_fit(Font::Small, x, H - g.line_height(Font::Small) - g.px(10), hint_w,
+               "Up/Down scroll    Enter or Esc back", faint());
 }
 
 } // namespace chaotix

@@ -427,6 +427,62 @@ void Ui::panel(const SDL_FRect& r, Color fill, Color border, float radius, float
     outline(r, border, radius, thickness);
 }
 
+void Ui::poly(const SDL_FPoint* pts, int n, Color c) {
+    if (n < 3) return;
+    const SDL_FColor col = to_fcolor(c);
+    std::vector<SDL_Vertex> verts;
+    verts.reserve(size_t(n));
+    for (int i = 0; i < n; ++i) verts.push_back({pts[i], col, {0, 0}});
+    std::vector<int> idx;
+    idx.reserve(size_t(n - 2) * 3);
+    for (int i = 1; i + 1 < n; ++i) {
+        idx.push_back(0);
+        idx.push_back(i);
+        idx.push_back(i + 1);
+    }
+    SDL_RenderGeometry(renderer_, nullptr, verts.data(), n, idx.data(), int(idx.size()));
+}
+
+namespace {
+// Enough segments that the edge looks round at the size it is drawn.
+int ellipse_steps(float rx, float ry) { return std::clamp(int(std::max(rx, ry) * 0.9f) + 12, 16, 96); }
+} // namespace
+
+void Ui::ellipse(float cx, float cy, float rx, float ry, Color c) {
+    if (rx <= 0 || ry <= 0) return;
+    const int n = ellipse_steps(rx, ry);
+    std::vector<SDL_FPoint> pts(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i) {
+        const float a = float(i) * 2.0f * SDL_PI_F / float(n);
+        pts[size_t(i)] = {cx + std::cos(a) * rx, cy + std::sin(a) * ry};
+    }
+    poly(pts.data(), n, c);
+}
+
+void Ui::ellipse_band(float cx, float cy, float rx, float ry, float thickness, Color c) {
+    if (rx <= 0 || ry <= 0 || thickness <= 0) return;
+    // Thicker than the ellipse is narrow: what is left is solid.
+    if (thickness >= std::min(rx, ry)) { ellipse(cx, cy, rx, ry, c); return; }
+    const int n = ellipse_steps(rx, ry);
+    const SDL_FColor col = to_fcolor(c);
+    std::vector<SDL_Vertex> verts;
+    verts.reserve(size_t(n) * 2);
+    for (int i = 0; i < n; ++i) {
+        const float a = float(i) * 2.0f * SDL_PI_F / float(n);
+        const float ca = std::cos(a), sa = std::sin(a);
+        verts.push_back({{cx + ca * rx, cy + sa * ry}, col, {0, 0}});
+        verts.push_back({{cx + ca * (rx - thickness), cy + sa * (ry - thickness)}, col, {0, 0}});
+    }
+    std::vector<int> idx;
+    idx.reserve(size_t(n) * 6);
+    for (int i = 0; i < n; ++i) {
+        const int a = i * 2, b = a + 1, c2 = ((i + 1) % n) * 2, d = c2 + 1;
+        idx.push_back(a); idx.push_back(b); idx.push_back(c2);
+        idx.push_back(b); idx.push_back(d); idx.push_back(c2);
+    }
+    SDL_RenderGeometry(renderer_, nullptr, verts.data(), int(verts.size()), idx.data(), int(idx.size()));
+}
+
 SDL_FRect Ui::pill(float x, float y, const std::string& label, Color fg, Color bg) {
     const float pad = px(7);
     const float w = text_width(Font::Small, label) + pad * 2;

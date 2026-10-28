@@ -41,6 +41,9 @@ add_executable(chaotix_tests
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
+# test_achievements checks the shipped definitions as well as the engine.
+target_compile_definitions(chaotix_tests PRIVATE
+    CHAOTIX_ACHIEVEMENTS_INI="${CMAKE_SOURCE_DIR}/assets/achievements.ini")
 
 # The in-game menu is part of the frontend, so its test only exists where SDL
 # is available. It drives the menu with key presses; nothing is drawn.
@@ -55,6 +58,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         test_time_attack.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/ui.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/award_art.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/backdrops.cpp
         ${CMAKE_SOURCE_DIR}/src/frontend/config.cpp
         ${CHAOTIX_EMBEDDED_SOURCES})
@@ -616,6 +620,94 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --press 2600:right:400)
     set_tests_properties(achievements_earned_by_playing PROPERTIES TIMEOUT 300
         PASS_REGULAR_EXPRESSION "unlocked")
+
+    # Issue #3: every award earned by the game itself, through the headless
+    # runner (docs/ACHIEVEMENTS.md). The recorded run (recordings/
+    # finished_run.txt) clears BOTANIC BASE 1 at night in 0'34"66 without a
+    # ring ever lost, reaching the goal with 40. Where a test needs more than
+    # the run did, a --poke gives the game the state it would have reached
+    # (and says so); everything after that is the game's own doing.
+    set(_ach --achievements ${CMAKE_SOURCE_DIR}/assets/achievements.ini)
+    set(_run --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run.txt)
+    add_test(NAME achievements_a_clean_quick_night_clear
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3500 ${_ach} ${_run})
+    set_tests_properties(achievements_a_clean_quick_night_clear PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION
+        "frame 2941: unlocked TIGHT GRIP.*frame 3423: unlocked THROUGH THE GOAL.*frame 3423: unlocked BEAT THE CLOCK.*frame 3423: unlocked NOT A SCRATCH.*frame 3423: unlocked NIGHT SHIFT"
+        FAIL_REGULAR_EXPRESSION "EARLY BIRD|GIANT RING FARE|A RING OF CHAOS|WEED KILLER|INTO THE TUBE|LAST STOP")
+    # The same run with its rings taken away halfway: a clear, not a clean one.
+    add_test(NAME achievements_a_lost_ring_spoils_the_clean_clear
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3500 ${_ach} ${_run} --poke 3000:E009:00)
+    set_tests_properties(achievements_a_lost_ring_spoils_the_clean_clear PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 3423: unlocked THROUGH THE GOAL"
+        FAIL_REGULAR_EXPRESSION "NOT A SCRATCH")
+    # Morning, by the time of day set just before the goal (the run itself
+    # plays differently in the morning: the time of day changes the level).
+    add_test(NAME achievements_a_morning_clear
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3500 ${_ach} ${_run} --poke 3420:DFF7:00)
+    set_tests_properties(achievements_a_morning_clear PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 3423: unlocked EARLY BIRD"
+        FAIL_REGULAR_EXPRESSION "NIGHT SHIFT")
+    # The level made the fifth (after the goal, before the level's end): the
+    # game's own level end ($890F86) moves Botanic Base's progress to 6.
+    add_test(NAME achievements_attraction_cleared
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4700 ${_ach} ${_run} --poke 4600:DFF5:05)
+    set_tests_properties(achievements_attraction_cleared PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 4639: unlocked WEED KILLER"
+        FAIL_REGULAR_EXPRESSION "END OF THE LINE|STANDING OVATION|TOP OF THE TOWER|HIGH TIDE")
+    # A Chaos Ring the way the game gives one: 50 rings by the time the goal
+    # comes on screen make it put a giant ring 0x60 px above the goal ($890666);
+    # the ring is moved down into the run's path, the run touches it, and the
+    # special stage begins in the level (mode 0x18). Its result is set to
+    # cleared as the results tests do, and the game counts the ring as it
+    # hands back to the lobby. With two or five already held (FFE01B), the
+    # same stage makes three, or all six.
+    set(_chaos --poke 3000:E009:32 --poke 3400:B795:68 --poke-sdram 4600:7DF0:03 --poke-fb 4800:5100:1FF:01)
+    add_test(NAME achievements_a_chaos_ring
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 5300 ${_ach} ${_run} ${_chaos})
+    set_tests_properties(achievements_a_chaos_ring PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 3001: unlocked GIANT RING FARE.*frame 5194: unlocked A RING OF CHAOS"
+        FAIL_REGULAR_EXPRESSION "HALF THE SET|EVERY COLOUR")
+    add_test(NAME achievements_three_chaos_rings
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 5300 ${_ach} ${_run} --poke 1000:E01B:02 ${_chaos})
+    set_tests_properties(achievements_three_chaos_rings PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 52[0-9][0-9]: unlocked HALF THE SET"
+        FAIL_REGULAR_EXPRESSION "EVERY COLOUR")
+    add_test(NAME achievements_all_six_chaos_rings
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 6000 ${_ach} ${_run} --poke 1000:E01B:05 ${_chaos})
+    set_tests_properties(achievements_all_six_chaos_rings PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 59[0-9][0-9]: unlocked EVERY COLOUR")
+    # The bonus stage: the level's second object made a giant ring on the
+    # player, with 50 rings (docs/ISSUE_38_BONUS_STAGE.md). It loads itself as
+    # WORLD ENTRANCE 3, which is not the third level of anything.
+    add_test(NAME achievements_bonus_stage
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1300 ${_ach} --stage 300:0:1:4:2:7:0
+                --poke 1000:8046:00 --poke 1000:8047:30 --poke 1000:8068:00 --poke 1000:8048:01
+                --poke 1000:8049:08 --poke 1000:804C:06 --poke 1000:804D:6C --poke 1000:E008:00 --poke 1000:E009:32)
+    set_tests_properties(achievements_bonus_stage PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 1034: unlocked INTO THE TUBE"
+        FAIL_REGULAR_EXPRESSION "HALFWAY THROUGH THE RIDE|THE LAST ATTRACTION")
+    # The final battle, WORLD ENTRANCE 2, by the stage select. (The app earns
+    # nothing during LEVEL SELECT; the runner does not ask.)
+    add_test(NAME achievements_final_battle
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 700 ${_ach} --level-select --stage 300:7:2:0:2:7:0)
+    set_tests_properties(achievements_final_battle PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 379: unlocked THE LAST ATTRACTION"
+        FAIL_REGULAR_EXPRESSION "INTO THE TUBE|HALFWAY")
+    # The Combi Catcher: Down on its box in WORLD ENTRANCE (the walk of
+    # lobby_shortcuts_off_leave_the_combi_catcher_as_it_was). Walking past it
+    # earns nothing.
+    add_test(NAME achievements_combi_catcher
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1400 ${_ach} --stage 300:7:0:0:2:7:0
+                --press 600:right:200 --press 1100:left:35 --press 1300:down:10)
+    set_tests_properties(achievements_combi_catcher PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 1302: unlocked CLAW GAME")
+    add_test(NAME achievements_combi_catcher_needs_the_claw
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1400 ${_ach} --stage 300:7:0:0:2:7:0
+                --press 600:right:200 --press 1100:left:35)
+    set_tests_properties(achievements_combi_catcher_needs_the_claw PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "ran 1400 frames"
+        FAIL_REGULAR_EXPRESSION "CLAW GAME")
 
     # TIME ATTACK: the front end asks for a stage and the game's own stage
     # select code starts it. The chosen place, level, characters and player
