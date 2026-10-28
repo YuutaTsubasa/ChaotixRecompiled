@@ -266,6 +266,11 @@ public:
     // render_line32x shows, with modded characters' entries substituted.
     // Output only: CRAM itself is never changed. Copies of a machine share it.
     std::shared_ptr<CharacterPalettes> characters;
+    // Output only: the palette render_line32x last encoded, for the priority
+    // bit in enc32x_pri (-1: none yet), and its encoded entries.
+    uint16_t enc32x_pal[256] = {};
+    uint32_t enc32x[256] = {};
+    int enc32x_pri = -1;
 
     // Components
     Rom rom;
@@ -350,16 +355,20 @@ public:
     // holds for the whole slice; `at` itself when it cannot tell.
     int32_t sh2_read_stable_to(int cpu, uint32_t a, int size, int32_t at) const;
     SliceInfo& sh2_slice_for_tests(int cpu) { return sh2_slice_[cpu]; }
+    // Renders a 32X line of kNativeWidth + 2 * extra pixels. With wide_src the
+    // margins come from the frame buffer bytes around the line (packed pixel
+    // mode; see patches.h), otherwise they are transparent. With md_top (the
+    // Mega Drive line as Vdp::render_line_indexed gives it, as wide) and its
+    // colours md_rgb, the pixels are written merged with it instead. Public
+    // for tests.
+    void render_line32x(int ln, uint32_t* out, int extra, bool wide_src, const uint8_t* md_top = nullptr,
+                        const uint32_t* md_rgb = nullptr);
 
 private:
     void run_slice(uint64_t end_mclk);
     void start_line();
     void end_line();
     void boot_hle_start_sh2();
-    // Renders a 32X line of vdp.width() + 2 * extra pixels. With wide_src the
-    // margins come from the frame buffer bytes around the line (packed pixel
-    // mode; see patches.h), otherwise they are transparent.
-    void render_line32x(int ln, uint32_t* out, int extra, bool wide_src);
     void render_output_line(int src_line, int dst_row);
 
     // 32X register helpers

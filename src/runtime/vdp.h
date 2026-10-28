@@ -100,10 +100,37 @@ public:
     // (used for 32X priority). Status flags set while rendering (sprite
     // overflow/collision) follow native-width rules regardless of `extra`.
     void render_line(int line, uint32_t* out_rgb, uint8_t* out_bg, int extra = 0);
+    // The same line, as CRAM indices where every pixel is a CRAM colour as it
+    // is (no shadow/highlight, no alt_cram): then top[x] is the index, with
+    // bit 6 set where it is the backdrop, the colours are palette_rgb(), and
+    // it returns true. Otherwise it renders out_rgb/out_bg as render_line and
+    // returns false.
+    bool render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t* out_bg, int extra = 0);
+    // CRAM as XRGB8888 (alpha 0xFF), as of the last line rendered.
+    const uint32_t* palette_rgb() const { return palrgb_; }
 
     static uint32_t cram_to_rgb(uint16_t c);
 
 private:
+    // Output only: CRAM as render_line last converted it, and the colours.
+    uint16_t palrgb_cram_[64] = {};
+    uint32_t palrgb_[64] = {};
+    bool palrgb_valid_ = false;
+    // Output only: the sprite list as render_line last walked it, in link
+    // order, from a copy of the attribute table it was walked in. Walked
+    // again whenever the table differs from the copy.
+    struct SatEntry {
+        uint16_t y, size, pattern, x;
+        uint8_t index;  // place in the table
+    };
+    uint8_t sat_bytes_[80 * 8] = {};
+    uint32_t sat_addr_ = 0;
+    int sat_max_ = 0;  // 0: not walked yet
+    int sat_len_ = 0;
+    SatEntry sat_list_[80] = {};
+    // The list in `table` (max_sprites entries) into out; returns its length.
+    static int walk_sprites(const uint8_t* table, int max_sprites, SatEntry* out);
+
     void do_dma_68k(uint32_t len);
     void do_dma_copy(uint32_t len);
     void do_dma_fill(uint16_t data, uint32_t len);

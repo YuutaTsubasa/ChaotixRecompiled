@@ -10,6 +10,7 @@ add_executable(chaotix_tests
     test_compositor.cpp
     test_widescreen_render.cpp
     test_vdp_widescreen.cpp
+    test_vdp_render.cpp
     test_setup.cpp
     test_achievements.cpp
     test_stage_select.cpp
