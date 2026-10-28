@@ -1742,12 +1742,14 @@ void Menu::set_picture(const SDL_FRect& image, int fb_width, int fb_height, int 
 
 SDL_FRect Menu::push_start_box(const SDL_FRect& image, int fb_width, int fb_height, int fb_extra) {
     // The title screen shows PUSH START in a lime-green frame under the
-    // logo: columns 99-221 and lines 62-97 of its 320x224 picture, measured
-    // on the program's own screenshots of it. The selected entry covers the
-    // inside of the frame's outer edge, columns 101-219 and lines 64-95, so
-    // the game's prompt does not show beside ours. The title screen is 4:3
-    // in every mode; a wide frame buffer has its extra columns either side.
-    constexpr float kX = 101, kY = 64, kW = 118, kH = 31;
+    // logo: columns 114-206 and lines 75-101 of its 320x224 picture once it
+    // has settled (from about frame 1520 after power-on; it zooms in before
+    // that), measured on the program's own screenshots of it. The selected
+    // entry covers the inside of the frame's outer edge, columns 115-205 and
+    // lines 76-100, so the game's prompt does not show beside ours. The title
+    // screen is 4:3 in every mode; a wide frame buffer has its extra columns
+    // either side.
+    constexpr float kX = 115, kY = 76, kW = 90, kH = 24;
     const float sx = image.w / float(std::max(1, fb_width)), sy = image.h / float(std::max(1, fb_height));
     return {image.x + (float(std::max(0, fb_extra)) + kX) * sx, image.y + kY * sy, kW * sx, kH * sy};
 }
@@ -1828,12 +1830,13 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
 // selected entry is on a purple plaque laid over the box the title shows PUSH
 // START in, with a spinning ring at each end -- the two rings of the game's
 // combi -- for the cursor, so the chosen entry is always where the player
-// looks for PUSH START. The entries after it, in the order Down reaches them
-// (round past the last to the first), are stacked under it on smaller
-// banners: over the characters in a landscape window, three of them, fading;
-// on a portrait one in the room under the picture, as many as fit. Nothing is
-// drawn above the box, so the logo and the line under it stay clear. The
-// intro and the attract demo run behind it the same way.
+// looks for PUSH START. In a landscape window the entries after it, in the
+// order Down reaches them (round past the last to the first), are stacked
+// under it on smaller banners over the characters, three of them, fading. In
+// a portrait one the whole menu is a column in the room under the picture, in
+// its own order, the selected entry's place marked. Nothing is drawn above the
+// box, so the logo and the line under it stay clear. The intro and the attract
+// demo run behind it the same way.
 void Menu::draw_front(ui::Ui& g) {
     namespace art = award_art;
     namespace col = award_art::color;
@@ -1892,7 +1895,9 @@ void Menu::draw_front(ui::Ui& g) {
     const SDL_FRect plaque{cx - plaque_w * 0.5f, cy - plaque_h * 0.5f, plaque_w, plaque_h};
 
     // The entries after it, all as wide as the longest.
-    const float pitch = lp + g.px(16) + extra;
+    // A portrait column is a little closer set, so that a phone holds all of
+    // it at LARGE.
+    const float pitch = lp + g.px(portrait ? 12.0f : 16.0f) + extra;
     const float row_h = lp + g.px(10) + extra * 0.5f;
     const float nlean = row_h * 0.4f;
     float nw = 0;
@@ -1903,21 +1908,44 @@ void Menu::draw_front(ui::Ui& g) {
     float list_y = plaque.y + plaque.h + gap;
     if (portrait) list_y = std::max(list_y, picture_rect(g).y + picture_rect(g).h + gap);
     const int room = int(std::max(0.0f, bottom - list_y) / pitch);
-    const int shown = std::min({int(n) - 1, portrait ? int(n) - 1 : 3, room});
-    for (int d = 1; d <= shown; ++d) {
-        const int i = (sel + d) % int(n);
-        // Landscape: fading out over the characters. Portrait: under the
-        // picture, over black, all but evenly.
-        const uint8_t a = portrait ? uint8_t(std::max(150, 240 - 12 * (d - 1)))
-                                   : uint8_t(d == 1 ? 235 : d == 2 ? 185 : 135);
-        const float slot_y = list_y + pitch * float(d - 1);
+    auto entry = [&](int i, float slot_y, uint8_t a, bool here) {
         const SDL_FRect slot{cx - nw * 0.5f, slot_y, nw, pitch};
         const SDL_FRect b{slot.x, slot_y + (pitch - row_h) * 0.5f, nw, row_h};
-        art::banner(g, b, nlean, col::night.alpha(a), col::ink.alpha(a), edge);
+        // The selected entry's own place in the column: purple edged in
+        // magenta, in full brightness, as the plaque is.
+        if (here) art::banner(g, b, nlean, col::magenta, col::magenta, 0);
+        art::banner(g, here ? SDL_FRect{b.x + edge, b.y + edge, b.w - edge * 2, b.h - edge * 2} : b, nlean,
+                    here ? col::purple : col::night.alpha(a), col::ink.alpha(a), edge);
         const std::string& l = items_[size_t(i)].label;
         const float w = std::min(g.text_width(Font::Pixel, l), text_room);
-        g.text_fit(Font::Pixel, cx - w * 0.5f, b.y + (row_h - lp) * 0.5f, text_room, l, col::text_dim.alpha(a));
+        g.text_fit(Font::Pixel, cx - w * 0.5f, b.y + (row_h - lp) * 0.5f, text_room, l,
+                   here ? ui::theme::text : col::text_dim.alpha(a));
         hits_.push_back({slot, i});
+    };
+    // Which entries the arrows beside the plaque need to stand in for.
+    bool before_shown = sel == 0, after_shown = sel == int(n) - 1;
+    if (portrait) {
+        // The whole menu in its own order, START GAME to QUIT, with the
+        // selected entry's place marked; a column too long for the room
+        // shows a window of it that keeps the entries either side of the
+        // selection in view.
+        const int fit = std::max(1, std::min(int(n), room));
+        const int first = std::clamp(sel - (fit - 1) / 2, 0, int(n) - fit);
+        for (int k = 0; k < fit; ++k) {
+            const int i = first + k;
+            entry(i, list_y + pitch * float(k), 235, i == sel);
+        }
+        before_shown = before_shown || sel - 1 >= first;
+        after_shown = after_shown || sel + 1 < first + fit;
+    } else {
+        // Landscape: the entries after it, in the order Down reaches them
+        // (round past the last to the first), fading out over the characters.
+        const int shown = std::min({int(n) - 1, 3, room});
+        for (int d = 1; d <= shown; ++d)
+            entry((sel + d) % int(n), list_y + pitch * float(d - 1), uint8_t(d == 1 ? 235 : d == 2 ? 185 : 135),
+                  false);
+        before_shown = before_shown || shown >= int(n) - 1;
+        after_shown = after_shown || shown > 0;
     }
 
     // The plaque, with a magenta stripe under it as under the AWARDS title.
@@ -1926,10 +1954,10 @@ void Menu::draw_front(ui::Ui& g) {
     art::banner(g, plaque, lean, col::purple, col::ink, edge);
 
     // Arrows that step the selection, since a finger has no Up/Down: up
-    // whenever the entry before this one is not among those shown under it
-    // (which a tap would reach), down when none are. Beside the plaque, or
-    // with no room beside it at its right-hand end in place of the ring.
-    const bool more_up = n > 1 && shown < int(n) - 1, more_down = n > 1 && shown == 0;
+    // whenever the entry before this one is not shown (where a tap would
+    // reach it), down likewise for the one after. Beside the plaque, or with
+    // no room beside it at its right-hand end in place of the ring.
+    const bool more_up = !before_shown, more_down = !after_shown;
     const float mh = std::min(plaque.h * 0.5f - g.px(3), lp + g.px(12)), mw = mh * 1.7f;
     const bool inside = plaque.x + plaque.w + g.px(8) + mw > W - g.px(4);
     const bool markers = more_up || more_down;

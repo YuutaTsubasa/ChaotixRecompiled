@@ -1826,19 +1826,37 @@ TEST(front_end, the_selected_entry_covers_push_start) {
                     if (win.h >= 480) CHECK(covers(plaque, box));
                     // Nor does it rise over the line above the box.
                     if (win.h >= 480) CHECK(plaque.y >= box.y - 0.5f);
-                    int others = 0;
+                    const bool portrait = win.h > win.w;
+                    const int sel = m.selected_index();
+                    int others = 0, last = -1;
+                    bool before = sel == 0, after = sel == 8, in_order = true;
                     for (const auto& [index, r] : m.drawn_rows()) {
-                        if (index == m.selected_index()) continue;
+                        if (portrait) {
+                            // The whole menu in its own order, top to bottom,
+                            // the selected entry's place among them; the
+                            // plaque's target comes last.
+                            if (!(index == sel && r.y < win.picture.y + win.picture.h)) {
+                                in_order = in_order && index > last;
+                                last = index;
+                                CHECK(r.y >= win.picture.y + win.picture.h - 0.5f);
+                            }
+                            before = before || index == sel - 1;
+                            after = after || index == sel + 1;
+                        }
+                        if (index == sel) continue;
                         ++others;
                         CHECK(r.y >= plaque.y + plaque.h - 0.5f);
                         CHECK(r.y >= box.y + box.h - 0.5f);
-                        if (win.h > win.w) CHECK(r.y >= win.picture.y + win.picture.h - 0.5f);
                     }
-                    // A portrait phone has the room for all of them up to
-                    // LARGE, a small portrait window at NORMAL; a larger
-                    // MENU SIZE there shows as many as fit.
-                    if (win.h > win.w && (z == 0 || (win.w >= 1000 && z == 1))) CHECK_EQ(others, 8);
-                    else if (win.h > win.w) CHECK(others >= 3);
+                    if (portrait) {
+                        CHECK(in_order);
+                        // A column too long for the room keeps the entries
+                        // either side of the selection in view...
+                        CHECK(before && after);
+                        // ...and a phone has the room for all of them up to
+                        // LARGE.
+                        if (win.w >= 1000 && z <= 1) CHECK_EQ(others, 8);
+                    }
                     m.on_key(SDLK_DOWN);
                 }
             }

@@ -263,10 +263,14 @@ A.I.R. builds its menus into the game. Since then:
   app tells the menu where the picture is each frame (`Menu::set_picture`).
   Nothing is laid over it but the entries and a small hint at the foot.
 - **The selected entry covers PUSH START.** The title screen shows PUSH START
-  in a lime-green frame under the logo, columns 99-221 and lines 62-97 of its
-  320x224 picture (measured on the program's own screenshots). The selected
-  entry is drawn on a purple plaque over the inside of that frame
-  (`Menu::push_start_box`: columns 101-219, lines 64-95), at least that large
+  in a lime-green frame under the logo, columns 114-206 and lines 75-101 of
+  its 320x224 picture once it has settled (measured on the program's own
+  screenshots). The title zooms in for its first moments (it is shown from
+  about frame 1400 after power-on and settles about frame 1520; the attract
+  demo follows about frame 1950), so a picture taken before then shows the
+  logo cut off at the top and the frame lower and larger. The selected entry
+  is drawn on a purple plaque over the inside of the settled frame
+  (`Menu::push_start_box`: columns 115-205, lines 76-100), at least that large
   at every window size and MENU SIZE, so the game's prompt and ours are never
   both on the screen. This is drawing only: the game still shows PUSH START
   underneath and runs exactly as it would without the menu, so lockstep and
@@ -281,10 +285,13 @@ A.I.R. builds its menus into the game. Since then:
 - **A portrait window** has the room under the picture: while the menu is
   over the title the picture goes to the top of the window
   (`Menu::title_picture_y`; the game goes back to the usual centring once it
-  is handed over), and the other entries are listed under it, over black, as
-  many as fit (all of them on a phone at NORMAL and LARGE). The plaque stays
-  on PUSH START, in the smaller letters if the large ones would make it much
-  taller than the box.
+  is handed over), and the whole menu is a column under it, over black, in
+  its own order (START GAME to QUIT, no wrapping), with the selected entry's
+  place marked: purple edged in magenta, in full brightness. A phone holds all
+  of it at NORMAL and LARGE; a column too long for the room shows a window of
+  it that keeps the entries either side of the selection in view. The plaque
+  stays on PUSH START, in the smaller letters if the large ones would make it
+  much taller than the box.
 - **The cursor** is a pair of spinning gold rings at the plaque's ends, a
   quarter turn apart: the two rings of the game's combi. Plaque, stripe and
   banners are `award_art`'s shapes (`banner`, `ring`, `heading`,
@@ -293,12 +300,13 @@ A.I.R. builds its menus into the game. Since then:
 - **The intro and the attract demo** still run behind the front end; the
   plaque stays where PUSH START will be.
 
-**Touch.** A tap on an entry under the plaque brings it into the box; a tap on
-the plaque acts on it (the first tap selects, the second acts, as on every
-list). While the entry before the selected one is not among those shown, a
-magenta arrow beside the plaque -- or at its right-hand end in place of the
-ring when there is no room beside it -- steps back; when none are shown (an
-800x360 window at EXTRA LARGE), a second one steps on.
+**Touch.** A tap on an entry brings it into the box; a tap on the plaque (or
+on the selected entry's place in the portrait column) acts on it (the first
+tap selects, the second acts, as on every list). While the entry before the
+selected one is not shown, a magenta arrow beside the plaque -- or at its
+right-hand end in place of the ring when there is no room beside it -- steps
+back; while the one after it is not shown (an 800x360 window at EXTRA LARGE),
+a second one steps on.
 
 **Sizes.** Everything is measured in the menu's letters, so MENU SIZE grows
 the plaque, the banners and their spacing.
@@ -326,8 +334,9 @@ is shown). The pause menu over a level is unchanged.
 `tests/test_menu.cpp` (`front_end.*`) checks that the selected entry covers
 the box for every entry, at every MENU SIZE, in 16:9, 4:3, phone, portrait and
 short windows and with both fonts; that nothing rises above the box; that the
-other entries are under the plaque (under the picture on a portrait window,
-all of them where there is the room); and that taps select and start.
+other entries are under the plaque; that on a portrait window the column is
+under the picture, in the menu's own order, with the selection's neighbours
+in view (all of it on a phone up to LARGE); and that taps select and start.
 `menu.the_settings_panel_is_plain_and_fits_its_rows` checks the panel shows
 no zone and is narrower than before; `menu_size.*` and
 `tests/test_menu_size.py` check the touch targets grow and stay on the screen.
