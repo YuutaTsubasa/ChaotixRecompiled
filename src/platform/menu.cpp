@@ -124,7 +124,10 @@ void Menu::leave_mods() {
     if (hooks_.reload_mods) hooks_.reload_mods();
 }
 
-void Menu::open_front() { set_page(Page::Front); }
+void Menu::open_front() {
+    revealed_ = false;  // before PUSH START, only the hint until a press
+    set_page(Page::Front);
+}
 
 void Menu::toggle() {
     if (open()) close(); else set_page(Page::Main);
@@ -133,7 +136,7 @@ void Menu::toggle() {
 void Menu::show_achievements() { set_page(Page::Achievements); }
 
 bool Menu::show_page(const std::string& name) {
-    if (name == "front") set_page(Page::Front);
+    if (name == "front") { revealed_ = true; set_page(Page::Front); }  // asked for: shown at once
     else if (name == "timeattack") set_page(Page::TimeAttack);
     else if (name == "levelselect") set_page(Page::LevelSelect);
     else if (name == "cheats") set_page(Page::Cheats);
@@ -1596,6 +1599,18 @@ bool Menu::on_key(SDL_Keycode key) {
         }
         return true;
     }
+    if (waiting_for_title()) {
+        // Before PUSH START: the keys that would drive the entries skip to
+        // the title instead; Escape closes the front end as it always does.
+        switch (key) {
+        case SDLK_LEFT: case SDLK_RIGHT: case SDLK_UP: case SDLK_DOWN:
+        case SDLK_RETURN: case SDLK_KP_ENTER: case SDLK_SPACE:
+            skip_intro();
+            return true;
+        default:
+            break;
+        }
+    }
     switch (key) {
     case SDLK_ESCAPE:
         back_out();
@@ -1654,6 +1669,17 @@ bool Menu::on_pad(Uint8 button) {
     if (cfg_ && SDL_GetGamepadButtonFromString(cfg_->menu_button.c_str()) == SDL_GamepadButton(button)) {
         back_out();
         return true;
+    }
+    if (waiting_for_title()) {
+        switch (button) {
+        case SDL_GAMEPAD_BUTTON_DPAD_LEFT: case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
+        case SDL_GAMEPAD_BUTTON_DPAD_UP: case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
+        case SDL_GAMEPAD_BUTTON_SOUTH:
+            skip_intro();
+            return true;
+        default:
+            break;
+        }
     }
     switch (button) {
     case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
@@ -1835,8 +1861,10 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
 // under it on smaller banners over the characters, three of them, fading. In
 // a portrait one the whole menu is a column in the room under the picture, in
 // its own order, the selected entry's place marked. Nothing is drawn above the
-// box, so the logo and the line under it stay clear. The intro and the attract
-// demo run behind it the same way.
+// box, so the logo and the line under it stay clear. Before PUSH START is up
+// only the hint is drawn (set_title_ready), and while the front end is open
+// the app keeps the title from giving way to the attract demo
+// (runtime/title_hold.h), so the plaque is only ever over the title.
 void Menu::draw_front(ui::Ui& g) {
     namespace art = award_art;
     namespace col = award_art::color;
@@ -1855,10 +1883,27 @@ void Menu::draw_front(ui::Ui& g) {
     auto clamp_to = [](float v, float lo, float hi) { return std::max(lo, std::min(v, hi)); };
 
     // The hint along the foot, on a dark strip of its own so that it reads
-    // over any part of the title or the demo; whole phrases only.
-    const char* hint = "Up/Down choose    Enter select    Esc close";
-    if (g.text_width(Font::Small, hint) + g.px(24) > W - margin * 2) hint = "Up/Down choose    Enter select";
+    // over any part of the title; whole phrases only. Before PUSH START is up
+    // (the boot screens, the intro and the logo's zoom) it is all there is:
+    // the plaque would float over the city and the road, and the first press
+    // skips to the title and brings the entries up (waiting_for_title).
+    const bool waiting = waiting_for_title();
+    const char* hint = waiting ? "Enter skip intro    Esc close" : "Up/Down choose    Enter select    Esc close";
+    if (g.text_width(Font::Small, hint) + g.px(24) > W - margin * 2)
+        hint = waiting ? "Enter skip intro" : "Up/Down choose    Enter select";
     const float hint_h = ls + g.px(12);
+    auto draw_hint = [&] {
+        const float hw = std::min(g.text_width(Font::Small, hint) + g.px(24), W - margin * 2);
+        const SDL_FRect hr{(W - hw) * 0.5f, H - hint_h - g.px(4), hw, hint_h};
+        g.rect(hr, col::ink.alpha(170), hint_h * 0.5f);
+        g.text_fit(Font::Small, hr.x + g.px(12), hr.y + (hint_h - ls) * 0.5f, hw - g.px(24), hint, col::text_dim);
+    };
+    if (waiting) {
+        // A tap anywhere skips too: a finger has no Enter.
+        hits_.push_back({{0, 0, W, H}, -1, 0, 0, [this] { skip_intro(); }});
+        draw_hint();
+        return;
+    }
     const float top = g.px(4), bottom = std::max(top + lp * 2, H - hint_h - g.px(8));
 
     // The plaque: at least the PUSH START box, larger if its letters need it.
@@ -1988,11 +2033,7 @@ void Menu::draw_front(ui::Ui& g) {
         if (more_down) marker(cy + g.px(3), false, kScrollDown);
     }
     hits_.push_back({plaque, sel});
-
-    const float hw = std::min(g.text_width(Font::Small, hint) + g.px(24), W - margin * 2);
-    const SDL_FRect hr{(W - hw) * 0.5f, H - hint_h - g.px(4), hw, hint_h};
-    g.rect(hr, col::ink.alpha(170), hint_h * 0.5f);
-    g.text_fit(Font::Small, hr.x + g.px(12), hr.y + (hint_h - ls) * 0.5f, hw - g.px(24), hint, col::text_dim);
+    draw_hint();
 }
 
 void Menu::draw_row_page(ui::Ui& g, const char* hint) {

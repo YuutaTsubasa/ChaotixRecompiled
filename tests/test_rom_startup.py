@@ -105,13 +105,15 @@ class RomStartup(unittest.TestCase):
         # Issue #26: Android ends an app that is swiped away without a quit
         # event, and settings were only written on a clean exit. Change one in
         # OPTIONS > VIDEO (the front end's fourth entry), close the menu, then kill
-        # the process the way Android does.
+        # the process the way Android does. The keys come during the boot screens,
+        # before PUSH START, where the first press only skips to the title and
+        # brings the entries up (issue #3, runtime/title_hold.h): hence four Downs.
         self.assertEqual(self.run_app("--install", self.good).returncode, 0)
         self.assertIn("Widescreen = true", self.config.read_text())
         env = dict(os.environ, SDL_VIDEO_DRIVER="dummy", SDL_AUDIO_DRIVER="dummy",
                    SDL_RENDER_DRIVER="software")
         app = subprocess.Popen([str(EXE), "--user-dir", str(self.store), "--keys",
-                                "60:Down,65:Down,70:Down,80:Return,100:Return,120:Right,140:Escape,160:Escape,180:Escape"],
+                                "55:Down,60:Down,65:Down,70:Down,80:Return,100:Return,120:Right,140:Escape,160:Escape,180:Escape"],
                                cwd=self.root, env=env, stdout=subprocess.DEVNULL,
                                stderr=subprocess.DEVNULL)
         try:

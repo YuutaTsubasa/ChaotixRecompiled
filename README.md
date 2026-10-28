@@ -130,6 +130,9 @@ the chosen one on a purple plaque between two spinning rings, the others under
 it (on a portrait screen, under the picture) (issue #3;
 [docs/MENU_ART.md](docs/MENU_ART.md)). The title is the
 game drawing its own screen, from your ROM, so nothing is extracted or shipped.
+While the menu is open the title stays, music and all, rather than giving way
+to the attract demo; before PUSH START is up (the intro) only a hint shows, and
+the first press skips to the title.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen, menu size),
 SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad), EXTRAS (cheats,
