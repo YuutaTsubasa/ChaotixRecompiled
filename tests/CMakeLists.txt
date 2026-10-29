@@ -36,6 +36,7 @@ add_executable(chaotix_tests
     test_jukebox.cpp
     test_speedrun.cpp
     test_fps_counter.cpp
+    test_toast_queue.cpp
     test_divide.cpp
     test_idle_skip.cpp
     test_netplay.cpp

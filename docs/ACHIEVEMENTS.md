@@ -229,8 +229,6 @@ are checked only against fake memory, by the same rule as Botanic Base's.
 
 ## How they look
 
-![An award earned in a level](images/issue-3-award-notification.png)
-
 Issue #3 asked for awards that look like part of the game. The notification
 is a slanted purple banner edged in black with a magenta strip, sliding in
 from the left: the award's emblem in a gold medallion over its end (a ring
@@ -239,6 +237,19 @@ letters, the description and the points. The AWARDS page (`F7`) is the same
 idea: a title banner, a ring-gold meter of the points, and a card for each
 award, greyed until it is earned. Two columns on a wide window, one on 4:3 or
 a phone, where the cards are taller (MENU SIZE).
+
+Earning several at once (a level that starts on the fifth level of a new
+attraction, a save loaded with Chaos Rings in it) no longer stacks a banner
+for each up the side of the screen (`src/platform/toast_queue.h`). At most
+two award banners show at a time; the next waits for a place, and while any
+wait, the ones up stay 2.5 seconds instead of 5. When two or more are still
+waiting beyond the free places they fold into one banner, "N MORE AWARDS",
+with their points added up and a star; the AWARDS page lists them. Other
+notifications (TIME ATTACK, NETPLAY, save states) answer something the
+player just did, so they never wait.
+
+![Two awards up, two more waiting](images/issue-3-award-notification.png)
+![The two that waited, folded](images/issue-3-award-folded.png)
 
 ![AWARDS, 16:9](images/issue-3-awards-16-9.png)
 ![AWARDS, 4:3](images/issue-3-awards-4-3.png)
