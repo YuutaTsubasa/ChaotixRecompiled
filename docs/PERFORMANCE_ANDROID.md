@@ -228,6 +228,96 @@ loaded, as the app always has one, BOTANIC BASE 1 is 0.158 ms of video.
 Video went from 42% of a BOTANIC BASE 1 frame to 22%; the SH-2s are now the
 largest parts again.
 
+### SH-2 (issue #62)
+
+The two SH-2s run the same instructions as before, cycle for cycle; what
+changed is the work around them. Where their time went, sampled with `perf`
+(WSL build of the headless runner, BOTANIC BASE 1): about a third in the
+generated code itself, the rest in checking that code was still valid, the
+interpreter, memory accesses that went through the general bus, and the
+frame buffer auto fill.
+
+* **Writes over code, per routine.** Generated code that runs from SDRAM is
+  checked against the ROM before it runs, again whenever code may have
+  changed, and running code hands over to the interpreter for the rest of its
+  block if its code changes under it (the special stage rewrites its own
+  routines). "Code may have changed" was one counter for all of SDRAM, moved
+  by any write over any recompiled byte. In a level the game keeps data at
+  `$06005310`-`$060053BD`, where the special stage's routines live while it
+  runs: about 370 such writes a frame, each sending every routine to be checked
+  again (memcmp against the ROM) and the running one to the interpreter.
+  Now each routine has its own count, moved only by a write that changes one
+  of *its* bytes (`Machine::sh2_fn_code_writes`); a write of the value already
+  there counts for nothing. Checks over 3,000 frames: BOTANIC BASE 1
+  4,049,824 -> 76, special stage 88,975 -> 139. Interpreted blocks in a
+  level: from about 2.5% of the frame's samples to none.
+* **The cache data array inline.** The slave keeps its sound mixer and its
+  working data in the SH-2's 4 KiB cache RAM (`$C0000000`), which went through
+  the general bus, a call per access: about 14,000 a frame. It is now read and
+  written in place like SDRAM, in 64-byte granules; a granule holding
+  recompiled code is still written through the bus, which notes the change.
+* **Memory accesses always inlined.** Generated functions are large, and the
+  compiler stopped inlining some accesses (and the block boundary check) once
+  the cache path was added; they are now forced inline, the fast part only.
+* **Auto fill in runs.** The 32X VDP's auto fill (the master clears the frame
+  buffer line by line with it; 4.6% of a level's samples) wrote one word at
+  a time with a widescreen check per word; without widescreen it is now at most
+  two runs of words (to the end of the 256-word line, then from its start).
+* **No division in the on-chip timers.** The FRT and WDT clock dividers are
+  powers of two: shifts and masks instead of a division and remainder per
+  slice and CPU, which on armeabi-v7a was a call to `__aeabi_uidivmod`, about
+  2,100 a frame. The armv7 build's SH-2 code and scheduler call no division
+  helper now (the remaining one in `onchip_advance` is the FRT's clear on
+  compare match, which the game does not use).
+
+Tests: `sh2_bus.cache_array_inline_as_the_bus` makes 400,000 random reads and
+writes of every size, through the inline accesses on one machine and the bus
+on another, and requires the same values, memory and code epochs;
+`idle_skip.code_writes_found_by_bits_as_by_ranges` checks every write around
+the edges of overlapping routines' code (including across 256-byte chunks)
+counts for exactly the routines it overlaps, and only when it changes a byte;
+`idle_skip.code_write_count_wrapping_checks_everything` the wrap of a count.
+
+Desktop (i9-14900KF, MinGW GCC 15), `chaotix_headless --frames 3000` (79
+frames to reach the stage included), best of two, before and after run
+alternately, ms per frame:
+
+| Scene | Before | After | |
+|---|---|---|---|
+| BOTANIC BASE 1 | 0.527 | 0.437 | 1.21x |
+| Lobby | 0.507 | 0.427 | 1.19x |
+| Special stage | 0.567 | 0.540 | 1.05x |
+| Title / attract | 0.483 | 0.433 | 1.12x |
+
+`--profile` (ms per frame; the timing itself adds about 0.2 ms), master /
+slave SH-2:
+
+| Scene | Before | After |
+|---|---|---|
+| BOTANIC BASE 1 | 0.157 / 0.112 | 0.096 / 0.092 |
+| Lobby | 0.164 / 0.113 | 0.100 / 0.091 |
+| Special stage | 0.202 / 0.121 | 0.195 / 0.095 |
+| Title / attract | 0.162 / 0.113 | 0.131 / 0.093 |
+
+The special stage's master gains least: its time is polygon drawing, and the
+routines at `$060052DE` hold other code there than the one recompiled, so
+about 1.4% of its blocks run in the interpreter, as before.
+
+Emulation is unchanged: the lockstep sweep (33 configurations) is
+bit-identical, as are the golden frame hashes and the full test suite; and
+since lockstep compares two runs of the same runtime, the machine-state and
+picture hashes every 10 frames of the 33 sweep configurations and the
+title/attract (3,000 frames each) were compared with the build before these
+changes: all the same.
+
+Not measured on an ARM CPU here. What is left of the SH-2s' time on the
+desktop: the generated code itself (mostly its memory accesses), about one
+dispatch per CPU per slice (2,100 a frame, 3,700 with interrupts and returns:
+looking the block up and checking its code is valid), and the frame buffer's
+overwrite image, which the sprites are drawn into and which has to go through
+the bus (zero bytes are transparent). Mapping the frame buffer itself in
+place was tried and gave nothing measurable, for that reason.
+
 Not measured on an ARM CPU here. The armv7 build now has no division call
 and no stack round trip in the plane loop, and its composition loop is NEON
 (clang vectorises it as on x86-64).

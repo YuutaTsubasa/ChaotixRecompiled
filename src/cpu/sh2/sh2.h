@@ -16,6 +16,16 @@ struct Bus {
     static constexpr int kPages = 0x08000000 >> kPageShift;
     const uint8_t* rpage[kPages] = {};
     uint8_t* wpage[kPages] = {};
+    // The cache data array as RAM (area 6, 0xC0000000-0xDFFFFFFF, mirrored
+    // every 4 KiB): reads from `cache`, writes to the 64-byte granules
+    // `cache_w` points at (null: the granule holds recompiled code, and the
+    // write goes through write8/16/32, which notes code changes).
+    static constexpr int kCacheGranuleShift = 6;
+    const uint8_t* cache = nullptr;
+    uint8_t* cache_w[4096 >> kCacheGranuleShift] = {};
+    // Per recompiled function, how often its code in SDRAM was changed
+    // (Machine::sh2_fn_code_writes; read by generated code).
+    const uint32_t* code_writes = nullptr;
     uint32_t (*read8)(void* user, uint32_t addr) = nullptr;
     uint32_t (*read16)(void* user, uint32_t addr) = nullptr;
     uint32_t (*read32)(void* user, uint32_t addr) = nullptr;
@@ -60,44 +70,58 @@ inline bool fast_area(uint32_t a) { return (a & 0xD8000000u) == 0; }
 inline uint32_t page_of(uint32_t a) { return (a >> Bus::kPageShift) & (Bus::kPages - 1); }
 inline uint32_t page_off(uint32_t a) { return a & Bus::kPageMask; }
 
-inline uint32_t rd8(State* c, uint32_t a) {
-    if (fast_area(a)) { const uint8_t* p = c->bus.rpage[page_of(a)]; if (p) return p[page_off(a)]; }
+#if defined(__GNUC__)
+#define SH2_ACCESS inline __attribute__((always_inline))
+#else
+#define SH2_ACCESS __forceinline
+#endif
+
+// The host address of an access the fast pages or the cache data array
+// serve directly, else null (the access goes through the bus callbacks).
+// Area 6 is only ever RAM here, as Machine::sh2_read and sh2_write treat
+// it; writes reach it directly only in granules without recompiled code.
+// Always inlined: generated code is made of these, in functions large enough
+// that the compiler would otherwise call some of them.
+SH2_ACCESS const uint8_t* rd_ptr(const State* c, uint32_t a) {
+    if (fast_area(a)) { const uint8_t* p = c->bus.rpage[page_of(a)]; return p ? p + page_off(a) : nullptr; }
+    if ((a >> 29) == 6 && c->bus.cache) return c->bus.cache + (a & 0xFFF);
+    return nullptr;
+}
+SH2_ACCESS uint8_t* wr_ptr(const State* c, uint32_t a) {
+    if (fast_area(a)) { uint8_t* p = c->bus.wpage[page_of(a)]; return p ? p + page_off(a) : nullptr; }
+    if ((a >> 29) == 6) {
+        uint8_t* g = c->bus.cache_w[(a & 0xFFF) >> Bus::kCacheGranuleShift];
+        return g ? g + (a & ((1u << Bus::kCacheGranuleShift) - 1)) : nullptr;
+    }
+    return nullptr;
+}
+
+SH2_ACCESS uint32_t rd8(State* c, uint32_t a) {
+    if (const uint8_t* p = rd_ptr(c, a)) return p[0];
     return c->bus.read8(c->bus.user, a) & 0xFF;
 }
-inline uint32_t rd16(State* c, uint32_t a) {
+SH2_ACCESS uint32_t rd16(State* c, uint32_t a) {
     a &= ~1u;
-    if (fast_area(a)) {
-        const uint8_t* p = c->bus.rpage[page_of(a)];
-        if (p) { p += page_off(a); return (uint32_t(p[0]) << 8) | p[1]; }
-    }
+    if (const uint8_t* p = rd_ptr(c, a)) return (uint32_t(p[0]) << 8) | p[1];
     return c->bus.read16(c->bus.user, a) & 0xFFFF;
 }
-inline uint32_t rd32(State* c, uint32_t a) {
+SH2_ACCESS uint32_t rd32(State* c, uint32_t a) {
     a &= ~3u;
-    if (fast_area(a)) {
-        const uint8_t* p = c->bus.rpage[page_of(a)];
-        if (p) { p += page_off(a); return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3]; }
-    }
+    if (const uint8_t* p = rd_ptr(c, a)) return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
     return c->bus.read32(c->bus.user, a);
 }
-inline void wr8(State* c, uint32_t a, uint32_t v) {
-    if (fast_area(a)) { uint8_t* p = c->bus.wpage[page_of(a)]; if (p) { p[page_off(a)] = uint8_t(v); return; } }
+SH2_ACCESS void wr8(State* c, uint32_t a, uint32_t v) {
+    if (uint8_t* p = wr_ptr(c, a)) { p[0] = uint8_t(v); return; }
     c->bus.write8(c->bus.user, a, v & 0xFF);
 }
-inline void wr16(State* c, uint32_t a, uint32_t v) {
+SH2_ACCESS void wr16(State* c, uint32_t a, uint32_t v) {
     a &= ~1u;
-    if (fast_area(a)) {
-        uint8_t* p = c->bus.wpage[page_of(a)];
-        if (p) { p += page_off(a); p[0] = uint8_t(v >> 8); p[1] = uint8_t(v); return; }
-    }
+    if (uint8_t* p = wr_ptr(c, a)) { p[0] = uint8_t(v >> 8); p[1] = uint8_t(v); return; }
     c->bus.write16(c->bus.user, a, v & 0xFFFF);
 }
-inline void wr32(State* c, uint32_t a, uint32_t v) {
+SH2_ACCESS void wr32(State* c, uint32_t a, uint32_t v) {
     a &= ~3u;
-    if (fast_area(a)) {
-        uint8_t* p = c->bus.wpage[page_of(a)];
-        if (p) { p += page_off(a); p[0] = uint8_t(v >> 24); p[1] = uint8_t(v >> 16); p[2] = uint8_t(v >> 8); p[3] = uint8_t(v); return; }
-    }
+    if (uint8_t* p = wr_ptr(c, a)) { p[0] = uint8_t(v >> 24); p[1] = uint8_t(v >> 16); p[2] = uint8_t(v >> 8); p[3] = uint8_t(v); return; }
     c->bus.write32(c->bus.user, a, v);
 }
 

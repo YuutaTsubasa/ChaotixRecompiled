@@ -66,33 +66,68 @@ TEST(idle_skip, vdp_status_stays_as_read_until_hblank_changes) {
     CHECK_EQ(bad, 0);
 }
 
-// Writes over recompiled code in SDRAM or the cache data array move the code
-// epoch on (the generated code is then checked again), found with one bit per
-// byte instead of scanning every range: exactly the writes that overlap a
-// range, at every offset and size around their edges.
+// Writes that change recompiled code in SDRAM count for each function whose
+// code they overlap (Machine::sh2_fn_code_writes: that function is then
+// checked again), and in the cache data array move its code epoch on; found
+// with one bit per byte instead of scanning every range: exactly the writes
+// that overlap a range, at every offset and size around their edges. A write
+// of what is already there changes no code and counts for nothing.
 TEST(idle_skip, code_writes_found_by_bits_as_by_ranges) {
     auto m = std::make_unique<Machine>();
-    m->sdram_code_ranges = {{0x100, 0x104}, {0x200, 0x2FF}, {0x3FFF0, 0x40000}};
+    // Function 1 overlaps function 0; function 2 spans 256-byte chunks.
+    const std::vector<Machine::CodeOwner> owners = {
+        {0x100, 0x104, 0}, {0x0F0, 0x1F9, 1}, {0x1F8, 0x310, 2}, {0x3FFF0, 0x40000, 3}};
+    for (const auto& o : owners) m->sdram_code_ranges.push_back({o.lo, o.hi});
     m->cache_code_ranges = {{0x0, 0x10}, {0xFFE, 0x1000}};
     m->code_ranges_changed();
+    m->set_sdram_code_owners(owners, 5);
     int bad = 0;
     for (int size : {1, 2, 4}) {
         for (uint32_t off = 0; off < 0x40000; off += (off < 0x400 || off >= 0x3FF00) ? 1 : 0x100) {
             if (off % uint32_t(size)) continue;
-            bool overlap = false;
-            for (const auto& r : m->sdram_code_ranges) overlap = overlap || (off < r.second && off + uint32_t(size) > r.first);
-            const uint32_t before = m->sdram_code_epoch;
-            m->sh2_write(0, 0x26000000 + off, 0, size);
-            if ((m->sdram_code_epoch != before) != overlap) ++bad;
+            const uint32_t a = 0x26000000 + off;
+            for (int same = 0; same < 2; ++same) {
+                const std::vector<uint32_t> before = m->sh2_fn_code_writes;
+                const uint32_t epoch = m->sdram_code_epoch;
+                const uint32_t now = m->sh2_read(0, a, size);
+                m->sh2_write(0, a, same ? now : ~now, size);
+                for (uint32_t f = 0; f < 5; ++f) {
+                    bool overlap = false;
+                    for (const auto& o : owners) overlap = overlap || (o.fn == f && off < o.hi && off + uint32_t(size) > o.lo);
+                    if (m->sh2_fn_code_writes[f] - before[f] != (overlap && !same ? 1u : 0u)) ++bad;
+                }
+                if (m->sdram_code_epoch != epoch) ++bad;
+            }
             if (off >= 0x1000) continue;
-            overlap = false;
+            bool overlap = false;
             for (const auto& r : m->cache_code_ranges) overlap = overlap || (off < r.second && off + uint32_t(size) > r.first);
-            const uint32_t cbefore = m->cache_code_epoch[1];
-            m->sh2_write(1, 0xC0000000 + off, 0, size);
-            if ((m->cache_code_epoch[1] != cbefore) != overlap) ++bad;
+            for (int same = 0; same < 2; ++same) {
+                const uint32_t cbefore = m->cache_code_epoch[1];
+                const uint32_t now = m->sh2_read(1, 0xC0000000 + off, size);
+                m->sh2_write(1, 0xC0000000 + off, same ? now : ~now, size);
+                if ((m->cache_code_epoch[1] != cbefore) != (overlap && !same)) ++bad;
+            }
         }
     }
     CHECK_EQ(bad, 0);
+}
+
+// A count that wraps round to a value a check may have been made at moves the
+// SDRAM code epoch on, so every function is checked again.
+TEST(idle_skip, code_write_count_wrapping_checks_everything) {
+    auto m = std::make_unique<Machine>();
+    const std::vector<Machine::CodeOwner> owners = {{0x100, 0x110, 0}};
+    m->sdram_code_ranges = {{0x100, 0x110}};
+    m->code_ranges_changed();
+    m->set_sdram_code_owners(owners, 1);
+    m->sh2_fn_code_writes[0] = 0xFFFFFFFEu;
+    const uint32_t epoch = m->sdram_code_epoch;
+    m->sh2_write(0, 0x06000100, 0x12, 1);
+    CHECK_EQ(m->sh2_fn_code_writes[0], 0xFFFFFFFFu);
+    CHECK_EQ(m->sdram_code_epoch, epoch);
+    m->sh2_write(0, 0x06000100, 0x34, 1);
+    CHECK_EQ(m->sh2_fn_code_writes[0], 0u);
+    CHECK_EQ(m->sdram_code_epoch, epoch + 1);
 }
 
 TEST(idle_skip, other_reads_are_stable_or_unknown) {

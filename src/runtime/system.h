@@ -57,7 +57,7 @@ struct Sh2OnChip {
     // Misc
     uint8_t ccr = 0, sbycr = 0;
     uint32_t bsc[8] = {};
-    uint8_t cache_data[4096];
+    uint8_t cache_data[4096] = {};  // zero before any reset() too (tests, tooling)
 };
 
 struct Pwm {
@@ -316,8 +316,24 @@ public:
     // checks the bytes it covers instead of every range (issue #62).
     std::vector<uint8_t> sdram_code_bits, cache_code_bits;
     void code_ranges_changed();
+    // Moved on when SDRAM may have changed under the recompiled code as a
+    // whole (a state loaded, the machine replaced; also when a count in
+    // sh2_fn_code_writes wraps): every function is checked again.
     uint32_t sdram_code_epoch = 1;
+    // Moved on by a write that changes a byte of cache-resident code.
     uint32_t cache_code_epoch[2] = {1, 1};
+    // Writes over SDRAM code, per recompiled function (issue #62). Each
+    // function's validation ranges in SDRAM ([lo, hi) offsets, `fn` its
+    // number) are its "owners"; a write that changes one of its bytes counts
+    // in sh2_fn_code_writes[fn]. A function only needs checking again, and
+    // running code only needs to hand over to the interpreter, when its own
+    // count moved: writing data next to another routine's code (the special
+    // stage's routines at $06005xxx hold data in a level) used to send every
+    // function to be checked again. The SH-2 buses point at the counts
+    // (sh2::Bus::code_writes) for the generated code.
+    struct CodeOwner { uint32_t lo, hi, fn; };
+    void set_sdram_code_owners(const std::vector<CodeOwner>& owners, size_t functions);
+    std::vector<uint32_t> sh2_fn_code_writes;
 
     // Timing
     uint64_t mclk = 0;        // current master clock
@@ -418,6 +434,13 @@ private:
     // machines can run side by side for lockstep validation).
     Sh2BusCtx sh2_ctx_[2] = {};
     SliceInfo m68k_slice_, sh2_slice_[2];
+
+    // The owners (above) by 256-byte chunk of SDRAM: chunk k's are
+    // code_owners_[code_owner_at_[k] .. code_owner_at_[k + 1]).
+    static constexpr int kCodeChunkShift = 8;
+    std::vector<CodeOwner> code_owners_;
+    std::vector<uint32_t> code_owner_at_;
+    void sdram_code_written(uint32_t off, int size);
 
     friend struct MachineAccess;
 };

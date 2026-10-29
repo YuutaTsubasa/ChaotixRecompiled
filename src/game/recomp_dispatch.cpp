@@ -111,8 +111,11 @@ EntryTable<recomp::M68kFn> g_m68k_map;
 
 struct Sh2FnState {
     recomp::Sh2Fn fn = nullptr;
+    uint32_t index = 0;  // its number (Sh2Entry::fn_index)
     uint32_t range_begin = 0, range_count = 0;
-    uint32_t sdram_epoch[2] = {0, 0}, cache_epoch[2] = {0, 0};
+    // What the last check per CPU was made at: the machine's code epochs and
+    // the count of writes over this function's code.
+    uint32_t sdram_epoch[2] = {0, 0}, writes[2] = {0, 0}, cache_epoch[2] = {0, 0};
     bool valid[2] = {false, false};
 };
 std::vector<Sh2FnState> g_sh2_fns;
@@ -132,8 +135,9 @@ inline recomp::M68kFn lookup_m68k(const m68k::State* c) {
 
 bool sh2_validate(Sh2FnState& s, int cpu) {
     if (s.range_count == 0) return true;
-    uint32_t se = g_m->sdram_code_epoch, ce = g_m->cache_code_epoch[cpu];
-    if (s.sdram_epoch[cpu] == se && s.cache_epoch[cpu] == ce) return s.valid[cpu];
+    const uint32_t se = g_m->sdram_code_epoch, ce = g_m->cache_code_epoch[cpu];
+    const uint32_t w = s.index < g_m->sh2_fn_code_writes.size() ? g_m->sh2_fn_code_writes[s.index] : 0;
+    if (s.sdram_epoch[cpu] == se && s.writes[cpu] == w && s.cache_epoch[cpu] == ce) return s.valid[cpu];
     ++g_stats.sh2_validations;
     bool ok = true;
     for (uint32_t i = 0; i < s.range_count && ok; ++i) {
@@ -148,6 +152,7 @@ bool sh2_validate(Sh2FnState& s, int cpu) {
     if (!ok) ++g_stats.sh2_invalid;
     s.valid[cpu] = ok;
     s.sdram_epoch[cpu] = se;
+    s.writes[cpu] = w;
     s.cache_epoch[cpu] = ce;
     return ok;
 }
@@ -236,9 +241,6 @@ int m68k_call_dynamic(m68k::State* c) {
 #endif
 }
 
-static const uint32_t g_no_epoch = 0;
-const uint32_t* g_sdram_code_epoch = &g_no_epoch;
-
 uint8_t sh2_code_byte(const sh2::State* c, uint32_t addr) {
     const uint8_t* p = chaotix::sh2_host_ptr(c->id, addr);
     return p ? *p : 0;
@@ -290,6 +292,21 @@ int sh2_call_dynamic(sh2::State* c) {
 
 namespace chaotix {
 
+#if CHAOTIX_HAVE_GENERATED
+// Each function's validation ranges in SDRAM, for the counts of writes over
+// its code (Machine::set_sdram_code_owners).
+static void set_code_owners(Machine& m) {
+    std::vector<Machine::CodeOwner> owners;
+    for (const Sh2FnState& s : g_sh2_fns)
+        for (uint32_t i = 0; i < s.range_count; ++i) {
+            const recomp::CodeRange& r = recomp::g_sh2_ranges[s.range_begin + i];
+            if ((r.addr >> 29) <= 1 && ((r.addr & 0x1FFFFFFF) >> 24) == 0x06)
+                owners.push_back({r.addr & 0x3FFFF, (r.addr & 0x3FFFF) + r.len, s.index});
+        }
+    m.set_sdram_code_owners(owners, g_sh2_fns.size());
+}
+#endif
+
 RecompStatus install_recompiled_code(Machine& m, bool enable) {
     RecompStatus st;
     g_m = &m;
@@ -308,24 +325,22 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
     }
     g_m68k_map.clear();
     for (size_t i = 0; i < recomp::g_m68k_entry_count; ++i) g_m68k_map.set(recomp::g_m68k_entries[i].key, recomp::g_m68k_entries[i].fn);
-    g_sh2_fns.clear();
+    // Functions by number (Sh2Entry::fn_index), which their generated code
+    // also uses for its count of writes over its code.
+    g_sh2_fns.assign(recomp::g_sh2_function_count, Sh2FnState{});
     g_sh2_map.clear();
-    std::map<recomp::Sh2Fn, uint32_t> index;
-    m.sdram_code_ranges.clear();
-    m.cache_code_ranges.clear();
     for (size_t i = 0; i < recomp::g_sh2_entry_count; ++i) {
         const recomp::Sh2Entry& e = recomp::g_sh2_entries[i];
-        auto it = index.find(e.fn);
-        if (it == index.end()) {
-            Sh2FnState s;
-            s.fn = e.fn;
-            s.range_begin = e.range_begin;
-            s.range_count = e.range_count;
-            it = index.emplace(e.fn, uint32_t(g_sh2_fns.size())).first;
-            g_sh2_fns.push_back(s);
-        }
-        g_sh2_map.set(e.pc, it->second);
+        if (e.fn_index >= g_sh2_fns.size()) continue;
+        Sh2FnState& s = g_sh2_fns[e.fn_index];
+        s.fn = e.fn;
+        s.index = e.fn_index;
+        s.range_begin = e.range_begin;
+        s.range_count = e.range_count;
+        g_sh2_map.set(e.pc, e.fn_index);
     }
+    m.sdram_code_ranges.clear();
+    m.cache_code_ranges.clear();
     for (size_t i = 0; i < recomp::g_sh2_range_count; ++i) {
         const recomp::CodeRange& r = recomp::g_sh2_ranges[i];
         uint32_t area = r.addr >> 29;
@@ -333,6 +348,7 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
         else if (area == 6) m.cache_code_ranges.push_back({r.addr & 0xFFF, (r.addr & 0xFFF) + r.len});
     }
     m.code_ranges_changed();
+    set_code_owners(m);
     m.remap_sh2();
     // A ROM patch over code that runs straight from ROM (or literals folded
     // from it) would be ignored by the generated code: that CPU interprets.
@@ -343,7 +359,6 @@ RecompStatus install_recompiled_code(Machine& m, bool enable) {
             if (rc.len && off < rc.rom_off + rc.len && rc.rom_off < off + len) patched_code[rc.cpu & 1] = true;
         }
     if (!patched_code[0]) m.exec.m68k_block = m68k_exec;
-    recomp::g_sdram_code_epoch = &m.sdram_code_epoch;
     if (!patched_code[1]) m.exec.sh2_block = sh2_exec;
     st.active = true;
     g_installed = true;
@@ -364,7 +379,11 @@ Machine* bind_recompiled_code(Machine& m) {
     Machine* before = g_m;
     g_m = &m;
 #if CHAOTIX_HAVE_GENERATED
-    recomp::g_sdram_code_epoch = &m.sdram_code_epoch;
+    // Generated code reads the machine's counts of writes over its code.
+    if (m.sh2_fn_code_writes.size() != g_sh2_fns.size()) {
+        set_code_owners(m);
+        m.remap_sh2();
+    }
     // A machine's code epochs start at 1, so 0 matches none: every function
     // is checked again against this machine's memory before it next runs.
     for (Sh2FnState& s : g_sh2_fns) {
