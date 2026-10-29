@@ -130,6 +130,13 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_idle_skip.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(idle_skip_changes_nothing PROPERTIES TIMEOUT 900)
+        # Issue #77: the title's horizon goes on in the widescreen margins
+        # (the mirror of the other side, the 4:3 edge carried on, the centre
+        # unchanged); the SEGA logo and the city keep their bars.
+        add_test(NAME widescreen_title_horizon
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_wide_title.py"
+                    $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
+        set_tests_properties(widescreen_title_horizon PROPERTIES TIMEOUT 600)
         # Mega Drive tile replacement: the level's own tiles as a pack change nothing.
         add_test(NAME tile_pack
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_tile_pack.py"

@@ -222,6 +222,29 @@ TEST(widescreen_render, world_entrance_is_widened_but_not_the_ending) {
     CHECK(!m->wide_active);
 }
 
+TEST(widescreen_render, the_title_shows_its_margins_without_patching_the_game) {
+    // Issue #77: the title (mode $08) shows the horizon the game already draws
+    // in its planes' margins; it is not a widened scene, so nothing the game
+    // sees changes: no level margins, the SH-2's clip and rectangles native.
+    auto m = level_machine();
+    m->wide_enabled = true;
+    m->level_seen_frame = ~0ull;
+    auto mode = [&](uint16_t v) { m->wram[patches::kGameMode] = uint8_t(v >> 8); m->wram[patches::kGameMode + 1] = uint8_t(v); };
+    const uint16_t modes[] = {0x00, 0x04, 0x0C, 0x10, 0x14, 0x08, 0x18, 0x38, 0x58, 0x60};
+    for (uint16_t v : modes) {
+        mode(v);
+        CHECK_EQ(patches::title_margins(*m), v == 0x08);
+    }
+    mode(0x08);
+    uint8_t sdram[0x40];
+    std::memcpy(sdram, m->sdram + patches::kClipRectSdram, sizeof sdram);
+    for (int i = 0; i < 3; ++i) patches::begin_frame(*m);
+    CHECK(!m->wide_active);
+    CHECK(!m->wide_special);
+    CHECK(!m->clip_overridden);
+    CHECK(std::memcmp(sdram, m->sdram + patches::kClipRectSdram, sizeof sdram) == 0);
+}
+
 TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {
     // Issue #61: the stage select room holds the camera at 2816..2816; its
     // margins would show the corridor beside it and, as it scrolls down,

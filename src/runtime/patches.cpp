@@ -3,6 +3,7 @@
 #include "runtime/lobby.h"
 #include "runtime/system.h"
 #include "runtime/tether.h"
+#include "runtime/title_hold.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -588,6 +589,8 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt_x0 = left ? 0 : kNativeWidth + 2 * e - right;
     m.lobby_alt_x1 = left ? left : kNativeWidth + 2 * e;
 }
+
+bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
 
 bool wide_zone(const Machine& m) {
     if (wram16(m, kSceneZone) != kWorldEntrance) return true;
