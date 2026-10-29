@@ -132,6 +132,11 @@ write to a page that holds code. It is now one bit per byte
 (`Machine::code_ranges_changed`), giving the same answer for every write
 (`idle_skip.code_writes_found_by_bits_as_by_ranges`).
 
+Later (also #62) such a write stopped moving one counter for all of SDRAM:
+each recompiled routine has its own count of writes that change its bytes,
+so only that routine is checked again, or handed to the interpreter while it
+runs. See "SH-2 (issue #62)" in [PERFORMANCE_ANDROID.md](PERFORMANCE_ANDROID.md).
+
 ## Results
 
 Desktop (i9-14900KF, Windows, MinGW GCC 15, Release), `chaotix_headless
