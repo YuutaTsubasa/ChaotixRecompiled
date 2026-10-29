@@ -61,7 +61,7 @@ extern uint64_t g_idle_skipped[3];
 inline bool m68k_ok(const m68k::State* c) {
     return c->cycles > 0 && !c->stopped && !(c->irq_level && (c->irq_level > c->imask || c->irq_level == 7));
 }
-inline bool sh2_ok(const sh2::State* c) {
+SH2_INLINE bool sh2_ok(const sh2::State* c) {
     return c->cycles > 0 && !c->sleeping && !(c->irq_level > ((c->sr >> 4) & 15));
 }
 
