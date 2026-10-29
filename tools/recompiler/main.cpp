@@ -90,10 +90,11 @@ int main(int argc, char** argv) {
     t += "};\nconst size_t g_m68k_entry_count = sizeof(g_m68k_entries) / sizeof(g_m68k_entries[0]);\n\n";
     t += "const Sh2Entry g_sh2_entries[] = {\n";
     for (const auto& e : rs.table) {
-        std::snprintf(buf, sizeof buf, "  {0x%08Xu, %s, %u, %u},\n", e.key, e.fn.c_str(), e.range_begin, e.range_count);
+        std::snprintf(buf, sizeof buf, "  {0x%08Xu, %s, %u, %u, %u},\n", e.key, e.fn.c_str(), e.range_begin, e.range_count, e.fn_index);
         t += buf;
     }
-    t += "};\nconst size_t g_sh2_entry_count = sizeof(g_sh2_entries) / sizeof(g_sh2_entries[0]);\n\n";
+    t += "};\nconst size_t g_sh2_entry_count = sizeof(g_sh2_entries) / sizeof(g_sh2_entries[0]);\n";
+    t += "const size_t g_sh2_function_count = " + std::to_string(rs.functions) + ";\n\n";
     t += "const CodeRange g_sh2_ranges[] = {\n";
     for (const auto& r : rs.ranges) { std::snprintf(buf, sizeof buf, "  {0x%08Xu, %u, 0x%06Xu},\n", r[0], r[1], r[2]); t += buf; }
     if (rs.ranges.empty()) t += "  {0, 0, 0},\n";

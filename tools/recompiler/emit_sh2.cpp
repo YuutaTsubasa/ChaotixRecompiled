@@ -352,11 +352,13 @@ void emit_sh2(const Program& p, const EmitOptions& opt, EmitResult& out) {
             // its own routines, e.g. the ADD at $06005A64): native code was
             // validated on entry and kept running what it was compiled from.
             // After anything that may have written code -- a store, a call --
-            // it now checks the SDRAM code epoch and, if code changed, hands
+            // it now checks whether its own code changed (the count of writes
+            // over it, Machine::sdram_code_written) and, if so, hands
             // over to the interpreter at the same boundary the interpreter
             // would reach, so lockstep holds.
             x.smc = ram && in_sdram(key_addr(f.entry));
-            if (x.smc) x.o.f("  [[maybe_unused]] const uint32_t e0_ = *::recomp::g_sdram_code_epoch;\n");
+            if (x.smc)
+                x.o.f("  constexpr uint32_t fn_ = %zuu;\n  [[maybe_unused]] const uint32_t e0_ = c->bus.code_writes[fn_];\n", i);
             x.o.f("  switch (c->pc) {\n");
             for (uint64_t b : f.blocks) x.o.f("  case 0x%08Xu: goto %s;\n", key_addr(b), label(key_addr(b)).c_str());
             x.o.f("  default: return 1;\n  }\n");
@@ -451,7 +453,8 @@ void emit_sh2(const Program& p, const EmitOptions& opt, EmitResult& out) {
     }
     for (const auto& [bk, fk] : owner) {
         auto r = fn_ranges[fk];
-        out.table.push_back({key_addr(bk), fn_name(Cpu::SH2, fk), r.first, r.second});
+        const uint32_t fi = uint32_t(std::find(fkeys.begin(), fkeys.end(), fk) - fkeys.begin());
+        out.table.push_back({key_addr(bk), fn_name(Cpu::SH2, fk), r.first, r.second, fi});
     }
 }
 

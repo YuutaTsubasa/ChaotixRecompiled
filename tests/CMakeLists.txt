@@ -39,6 +39,7 @@ add_executable(chaotix_tests
     test_toast_queue.cpp
     test_divide.cpp
     test_idle_skip.cpp
+    test_sh2_bus.cpp
     test_netplay.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread

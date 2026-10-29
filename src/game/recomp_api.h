@@ -43,6 +43,7 @@ struct Sh2Entry {
     uint32_t pc;
     Sh2Fn fn;
     uint32_t range_begin, range_count;  // validation ranges (RAM-resident code)
+    uint32_t fn_index;                  // the function's number, 0 .. g_sh2_function_count - 1
 };
 
 // Native call depth guard: guest calls become native calls; past this depth
@@ -122,6 +123,7 @@ extern const M68kEntry g_m68k_entries[];
 extern const size_t g_m68k_entry_count;
 extern const Sh2Entry g_sh2_entries[];
 extern const size_t g_sh2_entry_count;
+extern const size_t g_sh2_function_count;
 extern const CodeRange g_sh2_ranges[];
 extern const size_t g_sh2_range_count;
 extern const char g_rom_sha1[];
@@ -131,12 +133,15 @@ extern const size_t g_rom_code_count;
 } // namespace recomp
 
 #define M68K_BOUNDARY() do { if (!::recomp::m68k_ok(c)) return 0; } while (0)
-// Self-modifying code in SDRAM (see the emitter): the current code epoch,
-// and what generated code does when it changed since the function began.
-// Mid-block, the rest of the block is interpreted, so that the scheduler
-// regains control at the boundary the interpreter would have reached.
-namespace recomp { extern const uint32_t* g_sdram_code_epoch; }
+// Self-modifying code in SDRAM (see the emitter): what generated code does
+// when its own code was written since the function began (c->bus.code_writes,
+// Machine::sdram_code_written; fn_ is the function's number, e0_ the count
+// on entry). Mid-block, the rest of the block is interpreted, so that the
+// scheduler regains control at the boundary the interpreter would have
+// reached. Writes over other functions' code leave this one's code, and so
+// what it does, unchanged; they are checked where those functions are
+// entered (issue #62).
 #define SH2_CODE_CHANGED(next) \
-    do { if (*::recomp::g_sdram_code_epoch != e0_) { c->pc = (next); ::sh2::interp_block(c); return 1; } } while (0)
-#define SH2_CODE_CHANGED_AT_BOUNDARY() do { if (*::recomp::g_sdram_code_epoch != e0_) return 1; } while (0)
+    do { if (c->bus.code_writes[fn_] != e0_) { c->pc = (next); ::sh2::interp_block(c); return 1; } } while (0)
+#define SH2_CODE_CHANGED_AT_BOUNDARY() do { if (c->bus.code_writes[fn_] != e0_) return 1; } while (0)
 #define SH2_BOUNDARY() do { if (!::recomp::sh2_ok(c)) return 0; } while (0)

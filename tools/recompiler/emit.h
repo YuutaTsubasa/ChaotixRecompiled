@@ -21,6 +21,7 @@ struct TableEntry {
     uint32_t key;         // 68K: pc | (bank+1)<<24 ; SH-2: pc
     std::string fn;
     uint32_t range_begin = 0, range_count = 0;
+    uint32_t fn_index = 0;  // SH-2: the function's number (Sh2Entry::fn_index)
 };
 
 struct EmitResult {
