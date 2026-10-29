@@ -204,13 +204,15 @@ void Machine::onchip_write(int cpu, uint32_t a, uint32_t v, int size) {
 void Machine::onchip_advance(int cpu, uint32_t cycles) {
     Sh2OnChip& o = onchip[cpu];
     bool changed = false;
+    // The clock dividers are powers of two: shifts and masks, not divisions
+    // (a library call per slice on armeabi-v7a, which has no divide; #62).
     // FRT: clock select in TCR bits 1-0: /8, /32, /128, external.
     if ((o.frt_tcr & 3) != 3) {
-        static const uint32_t div[3] = {8, 32, 128};
+        static const uint8_t shift[3] = {3, 5, 7};
         o.frt_accum += cycles;
-        uint32_t d = div[o.frt_tcr & 3];
-        uint32_t ticks = o.frt_accum / d;
-        o.frt_accum %= d;
+        const uint32_t sh = shift[o.frt_tcr & 3];
+        uint32_t ticks = o.frt_accum >> sh;
+        o.frt_accum &= (1u << sh) - 1;
         if (ticks) {
             uint32_t old = o.frc;
             uint32_t now = old + ticks;
@@ -232,11 +234,11 @@ void Machine::onchip_advance(int cpu, uint32_t cycles) {
     }
     // WDT in interval timer mode (TME set, WT/IT clear).
     if (o.wtcsr & 0x20) {
-        static const uint32_t div[8] = {2, 64, 128, 256, 512, 1024, 4096, 8192};
-        uint32_t d = div[o.wtcsr & 7];
+        static const uint8_t shift[8] = {1, 6, 7, 8, 9, 10, 12, 13};  // /2, /64 ... /8192
+        const uint32_t sh = shift[o.wtcsr & 7];
         o.wdt_accum += cycles;
-        uint32_t ticks = o.wdt_accum / d;
-        o.wdt_accum %= d;
+        uint32_t ticks = o.wdt_accum >> sh;
+        o.wdt_accum &= (1u << sh) - 1;
         if (ticks) {
             uint32_t now = o.wtcnt + ticks;
             if (now > 0xFF) { o.wtcsr |= 0x80; changed = true; }

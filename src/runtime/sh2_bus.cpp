@@ -327,6 +327,21 @@ void Machine::vdp32x_write(uint32_t off, uint32_t v, int size) {
             mars.fill_addr = uint16_t(addr);
             break;
         }
+        if (!wide_active) {
+            // The same words as the loop below, as at most two runs: from
+            // the start address to the end of its 256-word line, then from
+            // the line's start (the address wraps inside the line).
+            const uint32_t n = mars.fill_len + 1u, base = addr & 0xFF00, lo = addr & 0xFF;
+            const uint32_t first = n < 256 - lo ? n : 256 - lo;
+            const uint8_t hi8 = uint8_t(mars.fill_data >> 8), lo8 = uint8_t(mars.fill_data);
+            auto run = [&](uint8_t* p, uint32_t words) {
+                for (uint32_t i = 0; i < words; ++i, p += 2) { p[0] = hi8; p[1] = lo8; }
+            };
+            run(fb + (base | lo) * 2, first);
+            run(fb + base * 2, n - first);
+            mars.fill_addr = uint16_t(base | ((lo + n) & 0xFF));
+            break;
+        }
         for (uint32_t i = 0; i <= mars.fill_len; ++i) {
             uint32_t o = (addr & 0xFFFF) * 2;
             fb[o] = uint8_t(mars.fill_data >> 8);
