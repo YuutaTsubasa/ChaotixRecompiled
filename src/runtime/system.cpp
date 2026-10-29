@@ -309,11 +309,16 @@ void Machine::audio_advance(uint64_t end_mclk) {
     if (!audio_enabled) { ym.tick_timers(n); return; }
     size_t base = audio_out.size();
     ym.generate(n, audio_out);
+    // The three sources are mixed at PicoDrive's levels (docs/AUDIO_MIX.md):
+    // an FM channel reaches +-8191, a PSG tone +-2304, and PWM the full
+    // +-32768; the sum is then taken down by 1/8 before it is clipped.
     // PWM: 12-bit pulse widths centred on cycle/2; LMD/RMD route the FIFOs.
+    // A width past the cycle is a pulse that never ends: full scale.
     auto pwm_level = [&](int sel) -> int32_t {
         if (pwm.cycle <= 1) return 0;
         int32_t v = sel == 1 ? pwm.out_l : sel == 2 ? pwm.out_r : int32_t(pwm.cycle / 2);
-        return (v - int32_t(pwm.cycle / 2)) * 16384 / int32_t(pwm.cycle);
+        v = std::min(v, int32_t(pwm.cycle));
+        return (v - int32_t(pwm.cycle / 2)) * 65536 / int32_t(pwm.cycle);
     };
     // Confirmed stereo routes: 0x05 keeps L/R independent; 0x0a swaps them.
     // Preserve other modes pending hardware verification: reference emulators
@@ -326,11 +331,14 @@ void Machine::audio_advance(uint64_t end_mclk) {
         psg_frac += kMclkPerAudioSample;
         int clocks = psg_frac / 15;
         psg_frac -= clocks * 15;
-        int32_t p = psg.run(clocks) / 2;
-        const int32_t in[2] = {audio_out[base + size_t(i) * 2] + p + pl, audio_out[base + size_t(i) * 2 + 1] + p + pr};
+        // Ym2612::generate gives a channel +-3072 (its 9-bit DAC x 12) and
+        // Sn76489::run a tone +-4096: scaled here to the levels above.
+        int32_t p = psg.run(clocks) * 9 / 16;
+        const int32_t in[2] = {audio_out[base + size_t(i) * 2] * 8 / 3 + p + pl,
+                               audio_out[base + size_t(i) * 2 + 1] * 8 / 3 + p + pr};
         for (int ch = 0; ch < 2; ++ch) {
             // One-pole DC blocker (~17 Hz corner at 53 kHz).
-            float x = float(in[ch]);
+            float x = float(in[ch]) * 0.875f;
             float y = x - dc_x[ch] + 0.998f * dc_y[ch];
             dc_x[ch] = x;
             dc_y[ch] = y;

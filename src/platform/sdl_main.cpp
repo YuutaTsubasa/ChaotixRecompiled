@@ -1053,7 +1053,7 @@ void netplay_begin(App& app, bool host) {
             app.m->audio_out.resize(std::min(app.m->audio_out.size(), app.net.first_sample));
             app.m->music_events.clear();
         } else {
-            app.music.set_volume(app.cfg.mod_music_volume * app.cfg.music_volume / 100);
+            app.music.set_volume(audio::mixed_percent(app.cfg.mod_music_volume, app.cfg.music_volume));
             app.music.after_frame(*app.m, app.net.first_sample);
         }
     };
@@ -2981,7 +2981,7 @@ int main(int argc, char** argv) {
             if (app.jukebox_open) {
                 // The music player's frame instead of the game's.
                 app.jukebox.set_levels(float(app.cfg.music_volume) / 100.0f, float(app.cfg.effects_volume) / 100.0f,
-                                       app.cfg.mod_music_volume * app.cfg.music_volume / 100);
+                                       audio::mixed_percent(app.cfg.mod_music_volume, app.cfg.music_volume));
                 app.jukebox.run_frames(1, app.jukebox_audio);
                 ++app.held_frames;
                 // Scripted keys go on counting the frame periods meanwhile
@@ -3059,7 +3059,7 @@ int main(int argc, char** argv) {
                 app.ghost_next = ghost::Ghost{};
             }
             // Replacement music is music too.
-            app.music.set_volume(app.cfg.mod_music_volume * app.cfg.music_volume / 100);
+            app.music.set_volume(audio::mixed_percent(app.cfg.mod_music_volume, app.cfg.music_volume));
             app.music.after_frame(*app.m, first_sample);
             follow_time_attack(app);
             follow_level_select(app);

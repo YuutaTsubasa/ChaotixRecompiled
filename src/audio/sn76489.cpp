@@ -51,7 +51,9 @@ int16_t Sn76489::run(int clocks) {
             const int32_t v = out_[c] ? kVolume[vol_[c]] : -kVolume[vol_[c]];
             s += gain[c] == 1.0f ? v : int32_t(float(v) * gain[c]);
         }
-        const int32_t noise = out_[3] ? kVolume[vol_[3]] : 0;
+        // Swinging both ways like the tones, so noise and a tone at the same
+        // volume are as loud as each other (as in PicoDrive: docs/AUDIO_MIX.md).
+        const int32_t noise = out_[3] ? kVolume[vol_[3]] : -kVolume[vol_[3]];
         s += gain[3] == 1.0f ? noise : int32_t(float(noise) * gain[3]);
         acc += s;
         ++n;
