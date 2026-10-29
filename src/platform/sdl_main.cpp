@@ -29,6 +29,7 @@
 #include "platform/frame_pacing.h"
 #include "platform/menu.h"
 #include "platform/award_art.h"
+#include "platform/toast_queue.h"
 #include "platform/ui.h"
 #include "game/achievements.h"
 #include "game/cheats.h"
@@ -283,18 +284,10 @@ struct App {
     fps_counter::Stats fps_stats;
     std::vector<fps_counter::Box> overlay_boxes;
     fps_counter::Box fps_box;
-    // Notifications: unlocks, time attack results, save states. `caption` is
-    // the small line above the title.
-    struct Toast {
-        Toast(std::string t, std::string d, Uint64 until, std::string c = "AWARD GET!")
-            : title(std::move(t)), description(std::move(d)), until_ms(until), caption(std::move(c)) {}
-        std::string title, description;
-        Uint64 until_ms = 0;
-        std::string caption = "AWARD GET!";
-        int points = 0;        // an award's points: drawn with its emblem when > 0
-        std::string icon;      // the award's emblem (achievements.h)
-        Uint64 shown_ms = 0;   // when it was first drawn, for sliding in
-    };
+    // Notifications: unlocks, time attack results, save states, and how they
+    // take turns (platform/toast_queue.h). `caption` is the small line above
+    // the title.
+    using Toast = toast_queue::Toast;
     std::vector<Toast> toasts;
     // Rewind (issue #40): a snapshot every kRewindInterval frames of play,
     // with the replacement music's place at each (the game does not ask for
@@ -582,10 +575,10 @@ void draw_toasts(App& app) {
         app.achievement_tap = {r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2};
     }
 
-    app.toasts.erase(std::remove_if(app.toasts.begin(), app.toasts.end(),
-                                    [&](const App::Toast& t) { return now >= t.until_ms; }),
-                     app.toasts.end());
-    if (app.toasts.empty()) return;
+    toast_queue::tick(app.toasts, now);
+    const auto shown = std::count_if(app.toasts.begin(), app.toasts.end(),
+                                     [](const App::Toast& t) { return t.shown_ms != 0; });
+    if (shown == 0) return;
     // Notifications are banners in the game's manner (issue #3): slanted,
     // purple, edged in black, the award's emblem in a medallion over the left
     // end and its title in the game's own letters. They slide in from the
@@ -597,9 +590,9 @@ void draw_toasts(App& app) {
     const float lean = toast_h * 0.28f;
     const float medal = toast_h * 0.5f + g.px(4);
     const float toast_w = std::min(g.width() - g.px(28), g.px(500));
-    float ty = g.height() - g.px(14) - (toast_h + g.px(10)) * float(app.toasts.size());
+    float ty = g.height() - g.px(14) - (toast_h + g.px(10)) * float(shown);
     for (auto& t : app.toasts) {
-        if (!t.shown_ms) t.shown_ms = now;
+        if (!t.shown_ms) continue;  // waiting its turn
         // In over a fifth of a second, out over a quarter, eased.
         const float in = std::min(1.0f, float(now - t.shown_ms) / 220.0f);
         const float out = std::min(1.0f, float(t.until_ms - std::min(now, t.until_ms)) / 250.0f);
