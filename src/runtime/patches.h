@@ -383,11 +383,26 @@ bool bonus_tunnel(const Machine& m, uint8_t* lut);
 // once it has stopped, until another scene redraws the planes: a pause stops
 // the engine with the level still on screen, and the ring keeps the level's
 // tiles until something else claims it. Other
-// scenes (title, menus) stay 4:3 with black side bars; the special stage has
+// scenes (menus) stay 4:3 with black side bars, the title shows its horizon
+// (title_margins); the special stage has
 // its own support (special_stage_active, above). The
 // scripted Eggman encounter in INTRODUCTION level 0 also stays native while
 // C21C bit2 is set: its actors wait just outside the original viewport.
 bool wide_scene_active(const Machine& m);
+
+// The title screen (issue #77): game mode $08, from the intro (the city, then
+// the road, Metal Sonic) to the logo with PUSH START. Its horizon, the road
+// and the bands of floor, is the Mega Drive's planes, and the game fills all
+// 64 columns of them, wider than the screen: in the margins the floor goes on
+// as the game drew it (measured: the left margin is the exact mirror of the
+// right on every title frame of the 36000-frame attract run, and black while
+// the planes are empty). The city, Metal Sonic, the logo, the characters and
+// the girders are one 32X picture made for the 4:3 screen, which the margins
+// do not extend; beside it they show the sky (the black backdrop) and the
+// floor, which is what lies there. Nothing is patched, so the game runs as
+// ever; only the side bars go. The SEGA logo and the boot screens (other
+// modes) are all 32X and keep their bars.
+bool title_margins(const Machine& m);
 
 // WORLD ENTRANCE, zone 7: the lobby (levels 0 and 1), the final boss (2) and
 // the ending's scenes (3-6). It was kept 4:3 (issues #13, #56); it is

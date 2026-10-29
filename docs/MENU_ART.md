@@ -258,8 +258,9 @@ rather than an emulator's list beside a picture of it, in the way Sonic 3
 A.I.R. builds its menus into the game. Since then:
 
 - **The title fills the window**, exactly as the game does in play: the
-  ASPECT RATIO, SCALING and WIDESCREEN settings place it (the title screen is
-  4:3 in every mode; the attract demo goes wide when WIDESCREEN is on). The
+  ASPECT RATIO, SCALING and WIDESCREEN settings place it (with WIDESCREEN on
+  the title's horizon fills the sides, issue #77, and the attract demo goes
+  wide). The
   app tells the menu where the picture is each frame (`Menu::set_picture`).
   Nothing is laid over it but the entries and a small hint at the foot.
 - **The selected entry covers PUSH START.** The title screen shows PUSH START

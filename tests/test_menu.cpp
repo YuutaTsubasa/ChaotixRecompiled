@@ -1765,9 +1765,10 @@ bool covers(const SDL_FRect& outer, const SDL_FRect& inner) {
 } // namespace
 
 TEST(front_end, the_box_is_where_the_title_screen_shows_push_start) {
-    // The title screen is 320x224 and 4:3 in every mode; its PUSH START frame
-    // is centred, under the logo. A wide frame buffer has its extra columns
-    // either side, so the box is where it was in the 4:3 picture.
+    // The title screen's PUSH START frame is centred in its 320x224 picture,
+    // under the logo. A wide frame buffer (the title's horizon in the margins,
+    // issue #77) has its extra columns either side, so the box is where it
+    // was in the 4:3 picture.
     const SDL_FRect b = Menu::push_start_box({160, 0, 960, 720}, 320, 224, 0);
     CHECK(std::fabs(b.x + b.w * 0.5f - 640.0f) < 1.0f);
     CHECK(b.y > 720 * 0.25f && b.y + b.h < 720 * 0.5f);

@@ -1772,9 +1772,9 @@ SDL_FRect Menu::push_start_box(const SDL_FRect& image, int fb_width, int fb_heig
     // has settled (from about frame 1520 after power-on; it zooms in before
     // that), measured on the program's own screenshots of it. The selected
     // entry covers the inside of the frame's outer edge, columns 115-205 and
-    // lines 76-100, so the game's prompt does not show beside ours. The title
-    // screen is 4:3 in every mode; a wide frame buffer has its extra columns
-    // either side.
+    // lines 76-100, so the game's prompt does not show beside ours. A wide
+    // frame buffer has its extra columns either side (the title's horizon
+    // goes on there since issue #77), so the box moves with the margin.
     constexpr float kX = 115, kY = 76, kW = 90, kH = 24;
     const float sx = image.w / float(std::max(1, fb_width)), sy = image.h / float(std::max(1, fb_height));
     return {image.x + (float(std::max(0, fb_extra)) + kX) * sx, image.y + kY * sy, kW * sx, kH * sy};

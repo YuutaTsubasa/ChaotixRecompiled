@@ -427,13 +427,17 @@ void Machine::render_output_line(int src_line, int dst_row) {
     }
     if (extra) {
         // Scenes without widescreen support: black side bars. In a level,
-        // black out margin columns outside the level's camera range.
+        // black out margin columns outside the level's camera range. The
+        // title shows its horizon in them (patches::title_margins).
         patches::MarginCut cut{extra, extra};
         // The special stage's frame: black above and below its rectangle.
         if (wide_special && !stage) cut = patches::MarginCut{};
         else if (wide_special) cut = src_line < patches::kSpecialRect[2] || src_line > patches::kSpecialRect[3]
                                     ? patches::MarginCut{extra, extra} : patches::MarginCut{};
         else if (wide_active) cut = patches::margin_cut(*this, extra);
+        // The title's horizon (issue #77): the game draws it wider than the
+        // screen, so its margins are shown as they are.
+        else if (wide_enabled && patches::title_margins(*this)) cut = patches::MarginCut{};
         for (int x = 0; x < cut.left; ++x) row[x] = 0xFF000000u;
         for (int x = 0; x < cut.right; ++x) row[n - 1 - x] = 0xFF000000u;
     }

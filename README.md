@@ -23,7 +23,9 @@ work; the levels are playable, with sound (Z80 driver, YM2612, PSG and PWM).
 draw real tiles, objects and sprites in the extra area, rather than stretching
 or cropping a 4:3 image. Anything from 1.24:1 (320×240) to 2:1 (480×224) is
 filled — 426×224 at 16:9 — and the centre 320 pixels stay bit-identical to the
-unmodified game, which is checked by a test. Scenes outside levels stay 4:3.
+unmodified game, which is checked by a test. The title screen's horizon fills
+the sides too ([issue #77](docs/ISSUE_77_WIDE_TITLE.md)); other scenes outside
+levels stay 4:3.
 
 | Platform | State |
 |---|---|
