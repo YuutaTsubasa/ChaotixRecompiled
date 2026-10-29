@@ -1531,8 +1531,12 @@ void handle_pad_button(App& app, Uint8 button) {
     if (SDL_GamepadButton(button) == menu_pad_button(app)) menu_back(app);
 }
 
-void handle_key(App& app, const SDL_KeyboardEvent& k) {
-    if (k.repeat) return;
+void handle_key(App& app, const SDL_KeyboardEvent& key_event) {
+    if (key_event.repeat) return;
+    // A phone's back button or gesture (issue #72) is Escape: it opens the
+    // menu in play and steps back out of it.
+    SDL_KeyboardEvent k = key_event;
+    if (k.key == SDLK_AC_BACK) k.key = SDLK_ESCAPE;
     // An open menu owns the keyboard, so the function keys below cannot be
     // triggered from underneath it.
     if (app.menu.on_key(k.key)) return;
@@ -1667,6 +1671,7 @@ void load_touch_skin(App& app, const std::string& dir, const std::vector<std::st
                        "  stick.bmp and knob.bmp for the joystick (OPTIONS > INPUT > TOUCH STICK).\n"
                        "  ff.bmp for fast-forward (OPTIONS > INPUT > TOUCH FAST FORWARD).\n"
                        "  rew.bmp for rewind (OPTIONS > INPUT > TOUCH REWIND).\n"
+                       "  menu.bmp for the menu button.\n"
                        "  button.bmp is used for any face button without its own file.\n"
                        "  <name>_pressed.bmp is drawn while that button is held.\n"
                        "Each image is stretched to the button's square; a missing one is drawn as before.\n",
@@ -1675,7 +1680,7 @@ void load_touch_skin(App& app, const std::string& dir, const std::vector<std::st
         }
     }
     int loaded = 0;
-    for (const char* name : {"dpad", "stick", "knob", "a", "b", "c", "x", "y", "z", "start", "ff", "rew", "button"}) {
+    for (const char* name : {"dpad", "stick", "knob", "a", "b", "c", "x", "y", "z", "start", "ff", "rew", "menu", "button"}) {
         for (int pressed = 0; pressed < 2; ++pressed) {
             SDL_Surface* s = nullptr;
             for (auto it = dirs.rbegin(); it != dirs.rend() && !s; ++it) {
@@ -2053,7 +2058,7 @@ void apply_rom_patches(App& app) {
 SDL_Texture* touch_image(const App& app, const TouchButton& b, bool on) {
     std::string name = b.is_dpad ? "dpad" : b.label;
     std::transform(name.begin(), name.end(), name.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
-    for (const std::string& n : {name, std::string(b.is_dpad || name == "start" || name == "ff" || name == "rew" ? "" : "button")}) {
+    for (const std::string& n : {name, std::string(b.is_dpad || name == "start" || name == "ff" || name == "rew" || name == "menu" ? "" : "button")}) {
         auto it = app.touch_skin.find(n);
         if (n.empty() || it == app.touch_skin.end()) continue;
         if (on && it->second[1]) return it->second[1];
@@ -2192,6 +2197,14 @@ void draw_touch_controls(App& app, uint16_t held) {
             const float s = b.r * 0.32f;
             fill_arrow(app.renderer, b.cx + s, b.cy, -1, 0, s, colour(1, 1, 1, on, 255));
             fill_arrow(app.renderer, b.cx - s * 0.6f, b.cy, -1, 0, s, colour(1, 1, 1, on, 255));
+        } else if (b.mask == TOUCH_MENU) {
+            // Three bars, the usual menu sign.
+            SDL_SetRenderDrawColor(app.renderer, 255, 255, 255, touch_alpha(app, on, 255));
+            const float bw = b.r * 0.9f, bh = std::max(2.0f, b.r * 0.14f), gap = b.r * 0.32f;
+            for (int i = -1; i <= 1; ++i) {
+                const SDL_FRect bar{b.cx - bw * 0.5f, b.cy + float(i) * gap - bh * 0.5f, bw, bh};
+                SDL_RenderFillRect(app.renderer, &bar);
+            }
         } else if (app.ui.ready()) {
             const ui::Font f = ui::Font::Pixel;
             const std::string label = b.label;
@@ -2210,6 +2223,9 @@ int main(int argc, char** argv) {
     App app;
     // The game image is 4:3 or wider: ask mobile platforms for landscape.
     SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
+    // Android's back button or gesture comes to us as a key (issue #72) rather
+    // than closing the app: it opens and closes the menu, which has QUIT.
+    SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
         std::fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return 1;
@@ -2825,6 +2841,12 @@ int main(int argc, char** argv) {
                     if (e.type == SDL_EVENT_FINGER_DOWN) app.menu.on_touch_down(tx, ty);
                     break;
                 }
+                // The on-screen menu button (issue #72) opens the menu, as
+                // Escape does; the touch goes no further.
+                if (e.type == SDL_EVENT_FINGER_DOWN && (app.touch.hit(tx, ty) & TOUCH_MENU)) {
+                    menu_back(app);
+                    break;
+                }
                 if (e.type == SDL_EVENT_FINGER_DOWN && app.achievements_on) {
                     const SDL_FRect& r = app.achievement_tap;
                     if (r.w > 0 && tx >= r.x && tx <= r.x + r.w && ty >= r.y && ty <= r.y + r.h) {
@@ -2893,7 +2915,7 @@ int main(int argc, char** argv) {
             app.save_button_was = save_down;
             app.load_button_was = load_down;
         }
-        touch_held &= uint16_t(~(TOUCH_FAST_FORWARD | TOUCH_REWIND));  // not the game's
+        touch_held &= uint16_t(~(TOUCH_FAST_FORWARD | TOUCH_REWIND | TOUCH_MENU));  // not the game's
         uint16_t raw = 0, raw2 = 0;
         // Emulated frames advance in batches, so a window of frame numbers can
         // be stepped straight over: arm on reaching the frame, then hold for a
