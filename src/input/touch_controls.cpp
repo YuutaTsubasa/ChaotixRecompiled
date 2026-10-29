@@ -31,6 +31,10 @@ void TouchControls::layout(int w, int h, bool stick, bool sonic_cd, bool fast_fo
         const float fx = margin + fr + (rewind ? fr * 2.8f : 0.0f);
         buttons_.push_back({TOUCH_FAST_FORWARD, fx, margin + fr, fr, "FF", false});
     }
+    // The menu button (issue #72) in that row after them, so neither moves;
+    // last in the list, after the game's own buttons.
+    const TouchButton menu{TOUCH_MENU, margin + fr + fr * 2.8f * float(int(rewind) + int(fast_forward)), margin + fr,
+                           fr, "MENU", false};
     if (sonic_cd) {
         const float jump_r = unit * 0.13f;
         const float jx = float(w) - margin - jump_r, jy = float(h) - margin - jump_r;
@@ -38,6 +42,7 @@ void TouchControls::layout(int w, int h, bool stick, bool sonic_cd, bool fast_fo
         buttons_.push_back({PAD_B, jx - jump_r * 1.25f, jy - jump_r * 1.55f, btn_r * 0.75f, "B", false});
         buttons_.push_back({PAD_A, jx + jump_r * 0.15f, jy - jump_r * 1.95f, btn_r * 0.75f, "A", false});
         buttons_.push_back({PAD_START, float(w) * 0.5f, margin + btn_r * 0.6f, btn_r * 0.6f, "START", false});
+        buttons_.push_back(menu);
         return;
     }
     // A B C bottom-right in an arc, X Y Z above
@@ -49,6 +54,7 @@ void TouchControls::layout(int w, int h, bool stick, bool sonic_cd, bool fast_fo
     buttons_.push_back({PAD_X, bx - btn_r * 4.6f, by - btn_r * 2.2f, btn_r * 0.7f, "X", false});
     // Start top-centre
     buttons_.push_back({PAD_START, float(w) * 0.5f, margin + btn_r * 0.6f, btn_r * 0.6f, "START", false});
+    buttons_.push_back(menu);
 }
 
 uint16_t TouchControls::hit(float x, float y) const {

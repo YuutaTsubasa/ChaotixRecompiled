@@ -315,7 +315,10 @@ LB/North/RB = X/Y/Z, Back = Mode (the game itself only uses three of those --
 see CONTROLS). Every other button belongs to the emulated
 6-button pad, so the menu is on one of the spare buttons (see MENU BUTTON
 above); East/B backs out of it too. On touch devices virtual controls appear
-over the game, and the unlock counter in the top corner opens the menu.
+over the game, with a menu button (three bars) in the top-left corner that
+opens the menu -- RESUME, OPTIONS, BACK TO TITLE and the rest -- as Escape
+does (issue #72); a phone's back button or gesture does the same, and steps
+back out of it. The unlock counter in the other top corner opens AWARDS.
 
 ## Achievements
 
@@ -430,7 +433,7 @@ effects take over some of the music's channels while they play, and those
 channels follow EFFECTS for that time; see `src/audio/volumes.h`.
 
 Touch controls can be reskinned: BMP images named after the buttons
-(`dpad.bmp`, `a.bmp` ... `start.bmp`, `ff.bmp`, `button.bmp` for all face buttons,
+(`dpad.bmp`, `a.bmp` ... `start.bmp`, `ff.bmp`, `menu.bmp`, `button.bmp` for all face buttons,
 `<name>_pressed.bmp` while held) in `Mods/Touch`. The folder holds a
 README.txt that lists them.
 

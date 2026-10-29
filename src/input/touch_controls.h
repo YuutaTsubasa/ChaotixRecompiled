@@ -11,6 +11,10 @@ namespace chaotix {
 constexpr uint16_t TOUCH_FAST_FORWARD = 1 << 15;
 // Likewise the on-screen rewind button (issue #40), held to step back.
 constexpr uint16_t TOUCH_REWIND = 1 << 14;
+// And the on-screen menu button (issue #72): it opens the menu as Escape or
+// the pad's MENU BUTTON do -- the pause menu in play, with BACK TO TITLE --
+// so a phone with no controller can get back to LEVEL SELECT.
+constexpr uint16_t TOUCH_MENU = 1 << 13;
 
 struct TouchButton {
     uint16_t mask;       // PAD_* bits produced while held
@@ -29,7 +33,8 @@ public:
     // right of the screen jumping where nothing else is. With fast_forward, a
     // small fast-forward button (TOUCH_FAST_FORWARD) in the top-left corner,
     // which both layouts leave empty (issue #45). With rewind, a rewind
-    // button (TOUCH_REWIND) there too, left of fast-forward (issue #40).
+    // button (TOUCH_REWIND) there too, left of fast-forward (issue #40). The
+    // menu button (TOUCH_MENU) is always there, in that row after them.
     void layout(int w, int h, bool stick = false, bool sonic_cd = false, bool fast_forward = false,
                 bool rewind = false);
     // Buttons pressed by a touch at (x, y) in output pixels.
