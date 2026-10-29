@@ -57,7 +57,7 @@ struct Sh2OnChip {
     // Misc
     uint8_t ccr = 0, sbycr = 0;
     uint32_t bsc[8] = {};
-    uint8_t cache_data[4096];
+    uint8_t cache_data[4096] = {};  // zero before any reset() too (tests, tooling)
 };
 
 struct Pwm {
