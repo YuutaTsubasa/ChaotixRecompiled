@@ -130,6 +130,13 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     case tether::kBothObjects[3].pc: case tether::kBothObjects[4].pc: case tether::kBothObjects[5].pc:
         tether::on_both_object(*m, c, pc);
         return;
+    case kObjectScreenXY: {
+        if (!m->hud_shift) return;
+        const uint32_t map = m68k::rd32(c, c->a[0] + 0x10);
+        for (uint32_t h : kHudIntroMaps)
+            if (map == h) set_low_word(c->d[2], c->d[2] - uint32_t(m->hud_shift));
+        return;
+    }
     case kRingCullLo:
     case kRingCullHi:
     case kRingCullDone:
@@ -281,6 +288,7 @@ static void set_bonus_centre(Machine& m, int shift) {
 
 // Puts the HUD's base X at kHudX - shift (see kHudBaseX).
 void set_hud_shift(Machine& m, int shift) {
+    m.hud_shift = shift;
     const uint16_t mov = uint16_t(0xE100 | uint8_t(int8_t(kHudX - shift)));
     for (const HudBase& h : kHudBaseX) {
         const uint16_t w = sdram16(m, h.sdram);

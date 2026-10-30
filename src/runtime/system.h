@@ -172,6 +172,9 @@ public:
     // Widened levels draw the HUD at the picture's left edge rather than at
     // its 4:3 place (issue #28; runtime/patches.h, kHudBaseX).
     bool wide_hud_edges = false;
+    // How far left the HUD is drawn this frame (0: its 4:3 place). Set by
+    // patches::begin_frame every frame before the game runs, so not saved.
+    int hud_shift = 0;
     int debug_layer = 0;  // output only: 1 = the Mega Drive layer alone, 2 = the 32X layer alone
     int plane_shift = 0;               // W latched by the plane streaming patch
     uint64_t level_seen_frame = ~0ull; // last frame the level engine ran (patches.cpp)
