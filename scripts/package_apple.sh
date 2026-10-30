@@ -89,7 +89,7 @@ copy_licences() {
 
 copy_documents() {
     local dir=$1
-    for f in README.md LEGAL.md LICENSE THIRD_PARTY.md CREDITS.md; do cp "$ROOT/$f" "$dir/"; done
+    for f in README.md LEGAL.md LICENSE THIRD_PARTY.md; do cp "$ROOT/$f" "$dir/"; done
     copy_licences "$dir/licenses"
 }
 
