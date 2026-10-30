@@ -69,7 +69,7 @@ what changed.
 ChaotixRecompiled-VERSION-macos-arm64/
   ChaotixRecompiled.app        signed ad hoc; Contents/Resources/AppIcon.icns
   READ-ME-FIRST.txt            first start (Gatekeeper), where the files are
-  README.md LEGAL.md LICENSE THIRD_PARTY.md CREDITS.md
+  README.md LEGAL.md LICENSE THIRD_PARTY.md
   licenses/                    SDL3, SDL_ttf, FreeType, HarfBuzz, plutosvg, plutovg, the fonts' OFL
 ```
 
