@@ -477,6 +477,8 @@ int main(int argc, char** argv) {
     int break_cpu = -1;
     uint64_t trace_from = 0, trace_to = 0;
     uint32_t break_pc = 0;
+    bool clean_opposites = false;
+    OppositeDirections opposite[2];
     // --stage FRAME:PLACE:LEVEL:TIME:PLAYER:COMBI:PLAYERS -- ask the game to
     // start a stage the way the front end's TIME ATTACK does.
     uint64_t stage_frame = 0;
@@ -749,6 +751,9 @@ int main(int argc, char** argv) {
             break_cpu = std::atoi(parts[0].c_str());
             break_pc = uint32_t(std::strtoul(parts[1].c_str(), nullptr, 16));
         }
+        // The frontend's rule for opposite directions held together (issue
+        // #93); off by default, so scripts and recordings play as written.
+        else if (a == "--clean-opposites") clean_opposites = true;
         else if (a == "--six-button") six_button = 1;
         else if (a == "--three-button") six_button = 0;
         else if (a == "--audio") { want_audio = true; }
@@ -1385,6 +1390,10 @@ int main(int argc, char** argv) {
             m->wide_extra = wide_at;
             m->wide_extra_bottom = wide_at_bottom;
             if (ref) { ref->wide_extra = wide_at; ref->wide_extra_bottom = wide_at_bottom; }
+        }
+        if (clean_opposites) {
+            btn = opposite[0].clean(btn);
+            btn2 = opposite[1].clean(btn2);
         }
         m->input.pad[0] = btn;
         m->input.pad[1] = btn2;

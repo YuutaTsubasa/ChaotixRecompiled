@@ -41,6 +41,7 @@ add_executable(chaotix_tests
     test_idle_skip.cpp
     test_sh2_bus.cpp
     test_netplay.cpp
+    test_input.cpp
 )
 find_package(Threads REQUIRED)  # test_game_font plays beside a backdrop thread
 target_link_libraries(chaotix_tests PRIVATE chaotix_game chaotix_runtime Threads::Threads)
@@ -447,6 +448,18 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600)
     set_tests_properties(lockstep_widescreen_hud_flies_in PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "lockstep: 2460 frames bit-identical")
+
+    # Knuckles glides right in BOTANIC BASE 1, then turns round by pressing
+    # left with right still held, as a keyboard lets anyone do. The game sees
+    # both and ends the glide, dropping him (issue #93). With the frontend's
+    # rule the newer direction wins, so the run must match, frame for frame,
+    # the same turn made by letting right go first (the hash, frame 1600).
+    add_test(NAME a_glide_turns_with_both_directions_held
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1601 --stage 600:0:1:0:2:7:0 --clean-opposites
+                --press 1400:right:300 --press 1500:c:6 --press 1516:c:140 --press 1560:left:60
+                --expect-hash 1600:2da821568e3187d7)
+    set_tests_properties(a_glide_turns_with_both_directions_held PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
 
     # The special stage is drawn by its own SH-2 polygon code, not the level
     # engine, and stayed 4:3 (issue #18). Its tube is now projected further
