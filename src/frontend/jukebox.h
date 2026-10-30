@@ -72,6 +72,24 @@ struct Status {
     double seconds = 0;       // since it started
 };
 
+// What the music is playing, frame by frame, for the keyboards the game's
+// own SOUND TEST shows (issue #102): a key for each FM and PSG channel and a
+// pad for each PWM sample. Read from the music player's machine after each
+// of its frames: the sound chips' registers, and the PWM notes the 68K passes
+// to the 32X.
+struct Keys {
+    struct Key {
+        int note = -1;      // MIDI note number (60 = middle C), -1 when silent
+        float level = 0;    // 0 .. 1
+    };
+    Key fm[6], psg[3];
+    static constexpr int kPwmSamples = 32;
+    uint8_t pwm[kPwmSamples] = {};      // brightness, 255 when struck, fading
+    uint8_t pwm_voice[kPwmSamples] = {};  // the PWM voice (0-3) that struck it last
+};
+// The MIDI note nearest a frequency, or -1 for none.
+int note_of(double hz);
+
 class Player {
 public:
     Player();
@@ -112,6 +130,7 @@ public:
     void run_frames(int n, std::vector<int16_t>& audio);
 
     Status status() const;
+    const Keys& keys() const { return keys_; }
     Machine* machine() { return m_.get(); }
     bool replaced(uint8_t id) const { return music_.has(id); }
     bool recompiled() const { return recompiled_; }
@@ -123,6 +142,7 @@ private:
     void request(uint8_t id);      // queued until the machine is ready
     void send(uint8_t id);         // what $8F6E76 does
     void track_ended();
+    void read_keys();
 
     std::unique_ptr<Machine> m_;
     audio::MusicMods music_;
@@ -142,6 +162,8 @@ private:
     uint64_t fade_at_ = 0;
     float music_level_ = 1, effects_level_ = 1;
     uint64_t boot_frames_ = 0;
+    Keys keys_;
+    uint32_t pwm_writes_ = 0;
 };
 
 } // namespace jukebox

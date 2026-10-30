@@ -560,6 +560,14 @@ void Machine::mars_write(int who, uint32_t addr, uint32_t v, int size) {
     if (woff >= 0x20 && woff < 0x30) {
         uint16_t& c = mars.comm[(woff - 0x20) >> 1];
         c = merge16(c);
+        if (who < 0 && woff >= 0x28) {
+            // The PWM notes the 68K passes on ($8F6EFA), kept for the music
+            // player's keyboards (issue #102): the SH-2 takes them at once.
+            const uint32_t at = (woff - 0x28) & ~1u;
+            pwm_notes[at] = uint8_t(c >> 8);
+            pwm_notes[at + 1] = uint8_t(c);
+            ++pwm_note_writes;
+        }
         return;
     }
     switch (woff) {

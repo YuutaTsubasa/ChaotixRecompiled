@@ -898,9 +898,13 @@ void rewind_push(App& app) {
 // of Start gets past its animation, another leaves it. So Start is tapped
 // until the request is taken -- without this the stage waits out the whole
 // title screen, about eight seconds of PUSH START.
+// The game's OPTIONS and its SOUND TEST sub-mode (frontend/jukebox.cpp).
+constexpr int kModeOptions = 0x40;
+constexpr int kSubSoundTest = 4;
+
 uint16_t stage_kick_button(App& app) {
     if (app.stage_kick < 0) return 0;
-    if (!app.m->stage_pending) {
+    if (!app.m->stage_pending && app.m->mode_request < 0) {
         app.stage_kick = -1;   // taken: stop at once, or Start would pause the level
         return 0;
     }
@@ -2418,6 +2422,23 @@ int main(int argc, char** argv) {
             app.handed_over = true;
             app.inject_start = 8;
         };
+        hooks.game_sound_test = [&app] {
+            if (app.net.on) { notice(app, "NETPLAY", "NOT DURING NETPLAY", "DISCONNECT FIRST."); return; }
+            // As a stage is started: from the title screen, the scene asked
+            // for at the game's mode dispatcher, Start tapped until it is
+            // taken. OPTIONS ($40), its sub-mode 4: the SOUND TEST. Its B
+            // goes back to OPTIONS and on to the title, as in the game.
+            if (app.handed_over) return_to_title(app);
+            if (!app.title_snapshot) app.title_snapshot = std::make_unique<Machine>();
+            *app.title_snapshot = *app.m;
+            app.m->mode_request = kModeOptions;
+            app.m->submode_request = kSubSoundTest;
+            app.handed_over = true;
+            app.rewind.clear();
+            app.rewind_music.clear();
+            app.inject_start = 0;
+            app.stage_kick = 0;
+        };
         hooks.start_stage = [&app](const stage_select::Request& r) {
             if (app.net.on) { notice(app, "NETPLAY", "NOT DURING NETPLAY", "DISCONNECT FIRST."); return; }
             // Same hand-over as START GAME, but from the title screen rather
@@ -2577,6 +2598,9 @@ int main(int argc, char** argv) {
         hooks.netplay_status = [&app] { return netplay_status(app); };
         hooks.netplay_active = [&app] { return app.net.on; };
         hooks.music_status = [&app] { return app.jukebox.status(); };
+        hooks.music_keys = [&app]() -> const jukebox::Keys* {
+            return app.jukebox_open && app.jukebox.status().ready ? &app.jukebox.keys() : nullptr;
+        };
         // TIME ATTACK and LEVEL SELECT (issue #53): the stage's picture, made
         // on demand by the backdrop worker and cached with the others, and
         // the characters standing.

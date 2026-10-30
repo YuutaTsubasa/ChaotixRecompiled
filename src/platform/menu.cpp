@@ -1504,6 +1504,14 @@ void Menu::build_music() {
                           },
                           "once and all"});
     }
+    // The game's own SOUND TEST (issue #102), with its keyboards and level
+    // meters: the game itself is taken there, as START GAME hands it over.
+    if (hooks_.game_sound_test)
+        items_.push_back({"GAME'S SOUND TEST", {}, [this](int) {
+                              close();
+                              hooks_.game_sound_test();
+                          },
+                          "the original screen"});
     for (const jukebox::Track& t : tracks) {
         const uint8_t id = t.id;
         Item it{jukebox::track_label(t),
@@ -2143,7 +2151,14 @@ void Menu::draw_options(ui::Ui& g) {
                          (g.line_height(ui::Font::PixelBig) + g.px(18)) * 0.9f + g.px(40)});
     need = std::ceil(need / g.px(40)) * g.px(40);
     const float column = std::min(widest, need);
-    const float x = (g.width() - column) * 0.5f;
+    float x = (g.width() - column) * 0.5f;
+    // The music player's keyboards (issue #102) go to the right of its list
+    // when the window has room for both; the pair is centred together.
+    const jukebox::Keys* keys = page_ == Page::Music && hooks_.music_keys ? hooks_.music_keys() : nullptr;
+    const float keys_gap = g.px(24);
+    const float keys_w = std::min(g.px(560), g.width() - (column + pad * 2) - keys_gap - g.px(32));
+    const bool show_keys = keys && keys_w >= g.px(300);
+    if (show_keys) x = (g.width() - (column + pad * 2 + keys_gap + keys_w)) * 0.5f + pad;
     // A larger MENU SIZE (issue #49) spaces the rows a little more as well,
     // so a finger has more to land on than the letters alone would give it.
     const float extra = g.px(4.0f * float(g.zoom()));
@@ -2244,6 +2259,7 @@ void Menu::draw_options(ui::Ui& g) {
     // over the dimmed title -- no zone's picture inside it, which made two
     // pictures one over the other.
     g.panel(panel, award_art::color::ink.alpha(235), award_art::color::magenta, g.px(4), g.px(3));
+    if (show_keys) draw_music_keys(g, {panel.x + panel.w + keys_gap, panel.y, keys_w, panel.h}, *keys);
 
     // The page's name on the AWARDS title's slanted banner (issue #3), so
     // every page reached from the title screen wears the same header.
@@ -2339,6 +2355,80 @@ void Menu::draw_options(ui::Ui& g) {
         const float mw = g.text_width(ui::Font::Pixel, "v");
         g.text(ui::Font::Pixel, x + column - mw, y + g.px(2), "v", award_art::color::magenta);
         hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), hint_h + g.px(20)}, kScrollDown});
+    }
+}
+
+// Issue #102: the keyboards of the game's own SOUND TEST, beside MUSIC
+// PLAYER's list. A row for each FM channel and each PSG tone, the key being
+// played lit (FM red, PSG green, brighter as it is louder), a level bar at
+// the row's end, and a pad for each PWM sample, lit when struck and fading,
+// in its voice's colour. Seven octaves, C1 to B7, which every song keeps to.
+void Menu::draw_music_keys(ui::Ui& g, const SDL_FRect& area, const jukebox::Keys& k) {
+    namespace col = award_art::color;
+    constexpr int kLow = 24, kOctaves = 7, kWhite = kOctaves * 7;
+    const float m = g.px(14);
+    const float label_w = g.text_width(ui::Font::Pixel, "PSG3") + g.px(10);
+    const float meter_w = g.px(10);
+    const float pads_h = g.px(46);
+    // As tall as its rows, centred beside the list.
+    const float row_h = std::min(g.px(36), (area.h - 2 * m - pads_h - g.px(10)) / 9.0f);
+    const float content_h = 2 * m + row_h * 9.0f + g.px(6) + pads_h;
+    const SDL_FRect r{area.x, area.y + (area.h - content_h) * 0.5f, area.w, content_h};
+    g.panel(r, col::ink.alpha(235), col::magenta, g.px(4), g.px(3));
+    const float kx = r.x + m + label_w;
+    const float kw = r.w - 2 * m - label_w - meter_w - g.px(8);
+    const float rows_top = r.y + m;
+    const float white_w = kw / float(kWhite);
+    const ui::Color white{214, 210, 228}, black{24, 18, 40};
+    static const int kWhiteOf[12] = {0, -1, 1, -1, 2, 3, -1, 4, -1, 5, -1, 6};  // white key index in the octave
+    auto mix = [](ui::Color a, ui::Color b, float t) {
+        auto f = [t](uint8_t x, uint8_t y) { return uint8_t(float(x) + (float(y) - float(x)) * t); };
+        return ui::Color{f(a.r, b.r), f(a.g, b.g), f(a.b, b.b)};
+    };
+    for (int row = 0; row < 9; ++row) {
+        const bool fm = row < 6;
+        const jukebox::Keys::Key key = fm ? k.fm[row] : k.psg[row - 6];
+        const ui::Color lit = fm ? ui::Color{236, 40, 40} : ui::Color{60, 220, 90};
+        const float y = rows_top + row_h * float(row);
+        const float h = row_h - g.px(4);
+        const std::string name = fm ? "FM" + std::to_string(row + 1) : "PSG" + std::to_string(row - 5);
+        g.text(ui::Font::Pixel, r.x + m, y + (h - g.line_height(ui::Font::Pixel)) * 0.5f, name, col::gold);
+        const int note = key.note - kLow;
+        const bool on = key.note >= 0 && note >= 0 && note < kOctaves * 12;
+        const ui::Color hot = mix(white, lit, 0.45f + 0.55f * key.level);
+        for (int w = 0; w < kWhite; ++w) {
+            const bool this_key = on && kWhiteOf[note % 12] >= 0 && note / 12 * 7 + kWhiteOf[note % 12] == w;
+            g.rect({kx + white_w * float(w), y, std::max(1.0f, white_w - g.px(1)), h}, this_key ? hot : white);
+        }
+        for (int o = 0; o < kOctaves; ++o)
+            for (int s = 0; s < 12; ++s) {
+                if (kWhiteOf[s] >= 0) continue;
+                const bool this_key = on && note == o * 12 + s;
+                const float bx = kx + white_w * float(o * 7 + kWhiteOf[s - 1] + 1) - white_w * 0.3f;
+                g.rect({bx, y, white_w * 0.6f, h * 0.6f}, this_key ? hot : black);
+            }
+        // The channel's level.
+        const float mx = kx + kw + g.px(8);
+        g.rect({mx, y, meter_w, h}, col::night);
+        const float lh = h * (on ? key.level : 0.0f);
+        g.rect({mx, y + h - lh, meter_w, lh}, lit);
+    }
+    // PWM: a pad for each sample, two staggered rows.
+    const float py = rows_top + row_h * 9.0f + g.px(6);
+    g.text(ui::Font::Pixel, r.x + m, py + (pads_h - g.line_height(ui::Font::Pixel)) * 0.5f, "PWM", col::gold);
+    static const ui::Color kVoice[4] = {{255, 210, 40}, {236, 40, 40}, {200, 60, 230}, {60, 220, 90}};
+    constexpr int kPads = jukebox::Keys::kPwmSamples / 2;
+    const float pw = std::min(kw / (float(kPads) + 0.5f), pads_h * 0.6f);
+    for (int i = 0; i < jukebox::Keys::kPwmSamples; ++i) {
+        const int rr = i / kPads, c = i % kPads;
+        const float cx = kx + pw * (float(c) + 0.5f + 0.5f * float(rr));
+        const float cy = py + pads_h * (rr ? 0.72f : 0.28f);
+        const float t = float(k.pwm[i]) / 255.0f;
+        const ui::Color fill = t > 0 ? mix(white, kVoice[k.pwm_voice[i] & 3], 0.3f + 0.7f * t) : white;
+        const float rx = pw * 0.48f, ry = pads_h * 0.24f;
+        const SDL_FPoint hex[6] = {{cx - rx, cy}, {cx - rx * 0.5f, cy - ry}, {cx + rx * 0.5f, cy - ry},
+                                   {cx + rx, cy}, {cx + rx * 0.5f, cy + ry}, {cx - rx * 0.5f, cy + ry}};
+        g.poly(hex, 6, fill);
     }
 }
 

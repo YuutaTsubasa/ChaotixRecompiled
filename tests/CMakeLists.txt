@@ -212,6 +212,13 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_music_player.py"
                     $<TARGET_FILE:chaotix_headless> "${CHAOTIX_ROM}")
         set_tests_properties(music_player PROPERTIES TIMEOUT 900)  # fails by its exit code
+        # Its keyboards (issue #102): SPEED OF SOUND played for 600 frames
+        # sounds FM and PSG notes almost throughout (598 and 597 frames, all
+        # but the first) and strikes PWM samples (118 times).
+        add_test(NAME music_player_keyboards
+            COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --jukebox 3:600 --jukebox-keys 600)
+        set_tests_properties(music_player_keyboards PROPERTIES TIMEOUT 600
+            PASS_REGULAR_EXPRESSION "keys: FM notes on 598 frames, PSG notes on 597, 118 PWM strikes")
         # Netplay over real UDP (issue #46): two processes on this machine,
         # host and client, end a stretch of a 2P level with the same state as
         # each other and as one machine fed the confirmed pads.

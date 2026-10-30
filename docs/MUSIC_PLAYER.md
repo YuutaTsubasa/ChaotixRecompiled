@@ -154,3 +154,47 @@ FRAMES frames on the music player's machine instead of running the game, and
 mod's file played it. `--jukebox-at` opens the music player in the middle of
 a run, at that frame, and carries on afterwards: with `--hash-every` and
 `--state-hash-every` that shows the game untouched.
+
+## Keyboards (issue #102)
+
+The game's own SOUND TEST shows a keyboard for each channel, with the key
+being played lit. MUSIC PLAYER does the same, in a panel beside the list when
+the window has room for both (`Menu::draw_music_keys`):
+
+- **FM 1-6 and PSG 1-3:** one keyboard each, seven octaves (C1 to B7). The
+  key being played is lit, FM red and PSG green, brighter when louder, with
+  a level bar at the end of the row.
+- **PWM:** a pad for each of 32 samples, in two staggered rows. A pad lights
+  in its voice's colour when that sample is struck, and fades over about a
+  quarter of a second.
+
+Where the notes come from, after each of the music player machine's frames
+(`jukebox::Player::read_keys`):
+
+- FM: each channel's F-number and block give its pitch. It counts as playing
+  while any operator is keyed on, and its level is the loudest carrier's
+  envelope plus total level (`Ym2612::voice`). Channel 6 in DAC mode shows
+  nothing.
+- PSG: each tone's period gives its pitch, and its attenuation its level
+  (`Sn76489::tone_hz`, `tone_level`).
+- PWM: once a frame, the 68K routine at `$8F6EFA` takes the driver's notes
+  from Z80 RAM `$1BF7`: four voices of two bytes each, the second byte the
+  sample. It writes them to COMM4-7, and the slave SH-2 reads and clears them
+  straight away. So the machine keeps a copy of the 68K's writes to COMM4-7
+  (`Machine::pwm_notes`), for display only. The game never reads it, and save
+  states leave it out.
+
+A track that a music mod replaces plays a file, not the driver, so its
+keyboards stay dark.
+
+`chaotix_headless --jukebox TRACK:FRAMES --jukebox-keys N` prints each
+channel's note every N frames, and at the end how many frames had FM and PSG
+notes and how many PWM samples were struck (`music_player_keyboards`).
+
+### The game's own SOUND TEST
+
+**GAME'S SOUND TEST** on the page takes the game itself to OPTIONS > SOUND
+TEST (game mode `$40`, sub-mode 4). It goes from the title screen, the way
+TIME ATTACK takes it to a stage: the request is taken at the game's mode
+dispatcher, with Start tapped until it is. B goes back to OPTIONS and on to
+the title, as in the game. It is not available during netplay.
