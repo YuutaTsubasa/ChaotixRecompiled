@@ -29,6 +29,13 @@ public:
     // What is applied this sample: eased towards gain (audio/gain_ramp.h).
     float gain_now[6] = {1, 1, 1, 1, 1, 1};
 
+    // What a channel is sounding, for display (the music player's keyboards,
+    // issue #102). `on` while any operator is keyed on and it is not the DAC;
+    // `hz` from its F-number and block; `level` 0 (silent) .. 1 from its
+    // loudest carrier's envelope and total level. Reads only.
+    struct Voice { bool on = false; double hz = 0; float level = 0; };
+    Voice voice(int ch) const;
+
     // Save states (runtime/save_state.h): every field of the chip's state, in
     // a fixed order, through the archive `a`. Not gain, the host's.
     template <class A> void state_io(A& a) {

@@ -294,6 +294,11 @@ public:
     Sn76489 psg;
     uint16_t z80_busreq = 0, z80_reset = 0;
     uint32_t z80_bank = 0;
+    // The last PWM notes the 68K wrote to COMM4-7, and how many writes so
+    // far: host-only, for the music player's keyboards (issue #102). Not
+    // saved; the game never reads them.
+    uint8_t pwm_notes[8] = {};
+    uint32_t pwm_note_writes = 0;
     // Audio output: interleaved stereo int16 at kAudioRate, drained by the
     // frontend. Synthesis only runs when audio_enabled (timers always run).
     bool audio_enabled = false;

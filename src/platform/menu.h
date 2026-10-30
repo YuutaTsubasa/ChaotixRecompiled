@@ -30,6 +30,9 @@ public:
         // Hands control to the game's own front end, as pressing Start on the
         // title screen would have done.
         std::function<void()> start_game;
+        // Takes the game to its own OPTIONS > SOUND TEST (issue #102), from
+        // the title screen, the way TIME ATTACK takes it to a stage.
+        std::function<void()> game_sound_test;
         // Puts the title screen back and returns the front end to us.
         std::function<void()> back_to_title;
         // How many gamepads are plugged in, so the controls page can offer
@@ -93,6 +96,9 @@ public:
         std::function<void(int delta)> music_step;
         std::function<jukebox::Status()> music_status;
         std::function<bool(uint8_t id)> music_replaced;
+        // What the music is playing, for the keyboards beside the list (issue
+        // #102); null when there is nothing to show.
+        std::function<const jukebox::Keys*()> music_keys;
         // Speedrun tools (issue #47, OPTIONS > EXTRAS > SPEEDRUN): start a
         // run now, or reset the one going.
         std::function<void()> speedrun_start;
@@ -315,6 +321,8 @@ private:
     void draw_front(ui::Ui& g);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);
+    // The music player's keyboards (issue #102), in r.
+    void draw_music_keys(ui::Ui& g, const SDL_FRect& r, const jukebox::Keys& k);
     std::vector<std::string> device_choices() const;
     void draw_achievements(ui::Ui& g, achievements::Tracker& ach);
     bool backdrop_on() const;

@@ -2,6 +2,7 @@
 #include "frontend/jukebox.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -272,6 +273,36 @@ void Player::track_ended() {
     }
 }
 
+int note_of(double hz) {
+    if (!(hz > 8.0) || hz > 20000.0) return -1;
+    return int(std::lround(69.0 + 12.0 * std::log2(hz / 440.0)));
+}
+
+void Player::read_keys() {
+    const Machine& m = *m_;
+    for (int c = 0; c < 6; ++c) {
+        const Ym2612::Voice v = m.ym.voice(c);
+        keys_.fm[c] = v.on && v.level > 0 ? Keys::Key{note_of(v.hz), v.level} : Keys::Key{};
+    }
+    for (int c = 0; c < 3; ++c) {
+        const float level = m.psg.tone_level(c);
+        keys_.psg[c] = level > 0 ? Keys::Key{note_of(m.psg.tone_hz(c)), level} : Keys::Key{};
+    }
+    // A struck pad fades out over about a quarter of a second.
+    for (uint8_t& b : keys_.pwm) b = uint8_t(b > 16 ? b - 16 : 0);
+    // The 68K writes the four voices' notes ($8F6EFA: two bytes each, the
+    // second the sample) once a frame; zero is no new note.
+    if (m.pwm_note_writes != pwm_writes_) {
+        pwm_writes_ = m.pwm_note_writes;
+        for (int v = 0; v < 4; ++v) {
+            const uint8_t sample = m.pwm_notes[2 * v + 1];
+            if (!m.pwm_notes[2 * v] && !sample) continue;
+            keys_.pwm[sample % Keys::kPwmSamples] = 255;
+            keys_.pwm_voice[sample % Keys::kPwmSamples] = uint8_t(v);
+        }
+    }
+}
+
 void Player::run_one(std::vector<int16_t>* audio) {
     Machine& m = *m_;
     uint16_t pad = 0;
@@ -297,6 +328,7 @@ void Player::run_one(std::vector<int16_t>* audio) {
     for (size_t i = first; i < m.audio_out.size(); ++i) peak = std::max(peak, std::abs(int(m.audio_out[i])));
     if (audio) audio->insert(audio->end(), m.audio_out.begin() + long(first), m.audio_out.end());
     m.audio_out.clear();
+    read_keys();
 
     if (!ready_ || !id_) return;
     if (peak > kSilence) {

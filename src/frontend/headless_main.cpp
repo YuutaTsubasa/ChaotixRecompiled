@@ -469,6 +469,7 @@ int main(int argc, char** argv) {
     // (--wav keeps its sound); --jukebox-at FRAME:TRACK:FRAMES does it in the
     // middle of the run, which must carry on as if it had not happened.
     int jukebox_track = -1;
+    int jukebox_keys = 0;  // print the keyboards every N frames (issue #102)
     uint64_t jukebox_frames = 0, jukebox_at = 0;
     bool jukebox_mid_run = false, jukebox_list = false, jukebox_interp = false;
     std::string jukebox_repeat = "loop";
@@ -728,6 +729,7 @@ int main(int argc, char** argv) {
             jukebox_frames = std::strtoull(parts[k].c_str(), nullptr, 10);
             jukebox_mid_run = mid;
         }
+        else if (a == "--jukebox-keys") jukebox_keys = std::atoi(next().c_str());
         else if (a == "--jukebox-list") jukebox_list = true;
         else if (a == "--jukebox-interp") jukebox_interp = true;
         else if (a == "--jukebox-repeat") jukebox_repeat = next();   // loop | once | all
@@ -1125,10 +1127,32 @@ int main(int argc, char** argv) {
         double worst = 0;
         const auto t1 = std::chrono::steady_clock::now();
         uint8_t last_id = uint8_t(jukebox_track);
+        uint64_t keys_fm = 0, keys_psg = 0, keys_pwm = 0;  // --jukebox-keys
         for (uint64_t i = 0; i < jukebox_frames; ++i) {
             const auto f0 = std::chrono::steady_clock::now();
             jb.run_frames(1, sound);
             worst = std::max(worst, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - f0).count());
+            if (jukebox_keys) {
+                const jukebox::Keys& k = jb.keys();
+                bool fm = false, psg = false;
+                for (const auto& v : k.fm) fm = fm || v.note >= 0;
+                for (const auto& v : k.psg) psg = psg || v.note >= 0;
+                keys_fm += fm;
+                keys_psg += psg;
+                for (uint8_t b : k.pwm) keys_pwm += b == 255;
+            }
+            if (jukebox_keys && (i + 1) % uint64_t(jukebox_keys) == 0) {
+                // What the keyboards show (issue #102): each channel's note.
+                const jukebox::Keys& k = jb.keys();
+                std::printf("keys %llu FM", (unsigned long long)(i + 1));
+                for (const auto& v : k.fm) std::printf(" %d", v.note);
+                std::printf(" PSG");
+                for (const auto& v : k.psg) std::printf(" %d", v.note);
+                std::printf(" PWM");
+                for (int p = 0; p < jukebox::Keys::kPwmSamples; ++p)
+                    if (k.pwm[p] == 255) std::printf(" %d/%d", p, int(k.pwm_voice[p]));
+                std::printf("\n");
+            }
             const jukebox::Status st = jb.status();
             if (st.id != last_id) {
                 std::printf("jukebox: frame %llu now %02d%s\n", (unsigned long long)i, int(st.id), st.id ? "" : " (stopped)");
@@ -1136,6 +1160,9 @@ int main(int argc, char** argv) {
             }
         }
         const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
+        if (jukebox_keys)
+            std::printf("keys: FM notes on %llu frames, PSG notes on %llu, %llu PWM strikes\n",
+                        (unsigned long long)keys_fm, (unsigned long long)keys_psg, (unsigned long long)keys_pwm);
         double sum = 0;
         int peak = 0;
         for (int16_t v : sound) {

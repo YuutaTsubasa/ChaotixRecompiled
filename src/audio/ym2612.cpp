@@ -82,6 +82,23 @@ void Ym2612::reset() {
 
 uint8_t Ym2612::read_status() const { return status_ & 3; }
 
+Ym2612::Voice Ym2612::voice(int ch) const {
+    Voice v;
+    const Ch& c = ch_[ch];
+    if (ch == 5 && dac_en_) return v;
+    // The operators the algorithm sends to the output, bit i for op[i].
+    static const uint8_t kCarriers[8] = {0x8, 0x8, 0x8, 0x8, 0xA, 0xE, 0xE, 0xF};
+    int quietest = 0x3FF;
+    for (int i = 0; i < 4; ++i) {
+        v.on = v.on || c.op[i].key;
+        if (kCarriers[c.alg & 7] & (1 << i)) quietest = std::min(quietest, std::min(0x3FF, c.op[i].env + (c.op[i].tl << 3)));
+    }
+    // F = fnum x (YM clock / 144) x 2^(block - 1) / 2^20.
+    v.hz = double(c.fnum) * (7670453.0 / 144.0) * std::ldexp(1.0, int(c.block) - 1) / 1048576.0;
+    v.level = v.on ? 1.0f - float(quietest) / 1023.0f : 0.0f;
+    return v;
+}
+
 void Ym2612::write(int port, int addr_or_data, uint8_t v) {
     port &= 1;
     if (addr_or_data == 0) { addr_[port] = v; return; }
