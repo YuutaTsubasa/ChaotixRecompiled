@@ -178,6 +178,7 @@ public:
     uint64_t full_redraw_frame = ~0ull; // last frame a scene redrew both planes
     uint64_t level_scene = 0;          // scene the level engine last ran in (patches.cpp)
     bool wide_active = false;          // margins show game content this frame
+    bool special_entry = false;        // the way into the special stage (patches::special_stage_entry)
     bool clip_overridden = false;      // 32X clip rect widened by the patch
     // A scene drawn by the special stage's polygon code is the widescreen
     // scene this frame (wide_active is then also set): the stage, its results
