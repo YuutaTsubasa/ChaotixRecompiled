@@ -87,6 +87,13 @@ people below. Thank you all: every report here led to a fix or a feature.
   ([#21](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/21),
   [#52](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/52),
   [#56](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/56)).
+- **[ToastedSquidBread](https://www.youtube.com/watch?v=dXHWI-o2v1I)**: a video
+  review that found the HUD jumping at the start of a level, black bars on the
+  way into the special stage, and Knuckles dropping out of a glide when
+  turning round on a keyboard
+  ([#91](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/91),
+  [#92](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/92),
+  [#93](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/93)).
 
 ## Thanks also to
 
