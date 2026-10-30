@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta property="og:title" content="Recompiled Handbook: how Knuckles' Chaotix Recompiled was made">
+<meta property="og:description" content="A step-by-step guide to building a static recompilation, in Traditional Chinese and English, with links to the code and commits behind each step.">
+<meta property="og:type" content="article">
+<title>Recompiled Handbook</title>
+<meta name="description" content="How Knuckles' Chaotix Recompiled was made, step by step: a hands-on guide to building a static recompilation, with the real numbers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: a single reading column with full-width illustration bands; a sticky top bar carries the language switch and a step index. */
+:root{
+  --bg:#f3f2f8; --panel:#ffffff; --ink:#191630; --muted:#5b5775; --line:#d9d6e8;
+  --violet:#6b2bd9; --magenta:#d1267d; --lime:#3c9a12; --gold:#b98200; --cyan:#0a7f9c;
+  --chip:#ece9f7; --code:#efecf9;
+  --display:"Chakra Petch","Noto Sans TC",system-ui,sans-serif;
+  --body:"Noto Sans TC","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f0d1c; --panel:#18152b; --ink:#ece9fb; --muted:#a6a1c4; --line:#2e2a4a;
+  --violet:#a47bff; --magenta:#ff5aa8; --lime:#8be04e; --gold:#ffc83d; --cyan:#4fd2f2;
+  --chip:#231f3d; --code:#1f1b36; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f0d1c; --panel:#18152b; --ink:#ece9fb; --muted:#a6a1c4; --line:#2e2a4a;
+  --violet:#a47bff; --magenta:#ff5aa8; --lime:#8be04e; --gold:#ffc83d; --cyan:#4fd2f2;
+  --chip:#231f3d; --code:#1f1b36; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.75;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+a{color:var(--violet)}
+code,.mono{font-family:var(--mono);font-size:.88em}
+code{background:var(--code);padding:.1em .35em;border-radius:4px}
+.wrap{max-width:860px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+/* language switch */
+html[data-lang="en"] .zh{display:none!important}
+html:not([data-lang="en"]) .en{display:none!important}
+
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.bar .wrap{display:flex;align-items:center;gap:12px;padding-block:10px;max-width:1100px}
+.brand{font-family:var(--display);font-weight:700;letter-spacing:.04em;font-size:15px;white-space:nowrap}
+.brand b{color:var(--magenta)}
+.steps-nav{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0;scrollbar-width:none}
+.steps-nav a{font-family:var(--mono);font-size:12px;text-decoration:none;color:var(--muted);padding:3px 7px;border-radius:5px;white-space:nowrap}
+.steps-nav a:hover,.steps-nav a:focus-visible{background:var(--chip);color:var(--ink)}
+.lang{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;flex:none}
+.lang button{font:600 13px var(--body);background:none;border:0;color:var(--muted);padding:5px 12px;cursor:pointer}
+.lang button[aria-pressed="true"]{background:var(--violet);color:#fff}
+button:focus-visible,a:focus-visible{outline:2px solid var(--magenta);outline-offset:2px}
+
+/* hero */
+.hero{padding-block:56px 32px}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--magenta)}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(34px,6vw,58px);line-height:1.12;margin:.3em 0 .35em;text-wrap:balance}
+h1 .zh{font-family:"Noto Sans TC",var(--display);font-weight:900}
+.lede{font-size:19px;color:var(--muted);max-width:40em}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:28px}
+.fact{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.fact b{display:block;font-family:var(--display);font-size:26px;line-height:1.2;font-variant-numeric:tabular-nums}
+.fact span{font-size:13px;color:var(--muted)}
+
+/* bytes -> code hero animation */
+.morph{margin-top:34px;display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:10px}
+.morph .col{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:12px;line-height:1.6;height:150px;overflow:hidden;position:relative;min-width:0}
+.morph .col h4{margin:0 0 6px;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.morph .scroll{animation:scrollup 9s linear infinite}
+.morph .arrow{font-family:var(--display);font-size:22px;color:var(--magenta);animation:nudge 1.6s ease-in-out infinite}
+.hex{color:var(--violet)} .asm{color:var(--cyan)} .cpp{color:var(--lime)}
+@keyframes scrollup{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+@keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+
+/* sections */
+section.step{padding-block:44px;border-top:1px solid var(--line)}
+.num{font-family:var(--display);font-weight:700;font-size:14px;color:var(--magenta);letter-spacing:.08em}
+h2{font-family:var(--display);font-size:clamp(25px,3.6vw,34px);line-height:1.25;margin:.15em 0 .5em;text-wrap:balance}
+h2 .zh{font-family:"Noto Sans TC",var(--display);font-weight:900}
+h3{font-size:16px;margin:1.4em 0 .3em;color:var(--violet);letter-spacing:.02em}
+p{margin:.55em 0}
+ul{padding-left:1.25em;margin:.4em 0} li{margin:.25em 0}
+.why{background:var(--panel);border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 16px;margin:16px 0}
+.check{background:var(--panel);border-left:4px solid var(--lime);border-radius:0 8px 8px 0;padding:10px 16px;margin:16px 0}
+.check b,.why b{font-family:var(--display);letter-spacing:.04em}
+.trap{background:var(--panel);border-left:4px solid var(--magenta);border-radius:0 8px 8px 0;padding:10px 16px;margin:16px 0}
+.fig{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:22px 0;overflow-x:auto}
+.fig svg{display:block;width:100%;height:auto;min-width:520px}
+.fig figcaption{font-size:13px;color:var(--muted);margin-top:8px}
+.tbl{overflow-x:auto;margin:14px 0}
+table{border-collapse:collapse;width:100%;font-size:15px;min-width:460px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:13px;color:var(--muted);font-weight:600}
+td.n{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* svg shared */
+.s-ink{fill:var(--ink)} .s-muted{fill:var(--muted)} .s-panel{fill:var(--panel)} .s-bg{fill:var(--bg)} .s-chip{fill:var(--chip)}
+.s-line{stroke:var(--line)} .s-violet{fill:var(--violet)} .s-magenta{fill:var(--magenta)} .s-lime{fill:var(--lime)} .s-gold{fill:var(--gold)} .s-cyan{fill:var(--cyan)}
+.st-violet{stroke:var(--violet)} .st-magenta{stroke:var(--magenta)} .st-lime{stroke:var(--lime)} .st-gold{stroke:var(--gold)} .st-cyan{stroke:var(--cyan)} .st-muted{stroke:var(--muted)}
+svg text{font-family:var(--mono);font-size:12px}
+svg .lbl{font-family:var(--body);font-size:13px}
+.flow{stroke-dasharray:6 8;animation:dash 1.2s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-28}}
+.pulse{animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+.blink{animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* lockstep ticker */
+.lock{display:grid;grid-template-columns:1fr 1fr;gap:12px;font-family:var(--mono);font-size:12.5px}
+.lock .pane{background:var(--code);border-radius:8px;padding:10px 12px;height:180px;overflow:hidden;min-width:0}
+.lock .pane h4{margin:0 0 6px;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.lock .row{display:flex;justify-content:space-between;gap:8px;white-space:nowrap}
+.lock .ok{color:var(--lime)}
+.lock .feed{animation:scrollup 14s linear infinite}
+
+/* bar chart */
+.bars{display:grid;gap:10px;margin:8px 0}
+.bars .b{display:grid;grid-template-columns:120px 1fr 64px;align-items:center;gap:10px;font-size:14px}
+.bars .track{height:16px;background:var(--chip);border-radius:4px;overflow:hidden}
+.bars .fill{height:100%;background:linear-gradient(90deg,var(--violet),var(--magenta));border-radius:4px;transform-origin:left;animation:grow 1.4s cubic-bezier(.2,.8,.2,1) both}
+.bars .fill.ref{background:var(--gold)}
+.bars .v{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+@keyframes grow{from{transform:scaleX(.08)}to{transform:scaleX(1)}}
+
+/* widescreen */
+.wide{position:relative;aspect-ratio:426/224;max-width:100%;border-radius:8px;overflow:hidden;background:linear-gradient(180deg,#2a1b6b,#5a2a9a 55%,#1d6b3a 56%,#2f8d4a)}
+.wide .tiles{position:absolute;inset:auto 0 0 0;height:30%;background:repeating-linear-gradient(90deg,#3cae5a 0 18px,#2d8f47 18px 36px)}
+.wide .center{position:absolute;top:0;bottom:0;left:12.4%;width:75.2%;border:2px dashed #ffd84d;box-shadow:0 0 0 9999px rgba(15,13,28,.0);animation:reveal 6s ease-in-out infinite}
+.wide .sidecap{position:absolute;top:8px;font:600 11px var(--mono);color:#fff;background:rgba(0,0,0,.45);padding:2px 6px;border-radius:4px}
+.wide .ring{position:absolute;width:3.4%;aspect-ratio:1;border:3px solid #ffd84d;border-radius:50%;top:46%;animation:spin 1.2s linear infinite}
+.wide .hero-sprite{position:absolute;width:5.5%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 35% 35%,#ff7ab8,#d1267d 60%,#7a0f45);bottom:30%;animation:run 6s linear infinite}
+@keyframes run{from{left:2%}to{left:93%}}
+@keyframes spin{from{transform:scaleX(1)}50%{transform:scaleX(.2)}to{transform:scaleX(1)}}
+@keyframes reveal{0%,100%{box-shadow:0 0 0 9999px rgba(15,13,28,.55)}45%,55%{box-shadow:0 0 0 9999px rgba(15,13,28,0)}}
+
+/* loop */
+.loop text.lbl{font-size:12.5px}
+
+/* spectrum */
+.spec{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;height:170px;margin-top:10px}
+.spec .g{display:flex;gap:3px;align-items:end;height:100%}
+.spec .g i{flex:1;border-radius:3px 3px 0 0;animation:rise 1.4s cubic-bezier(.2,.8,.2,1) both}
+.spec .p{background:var(--gold)} .spec .o{background:var(--muted);opacity:.55} .spec .nw{background:var(--magenta)}
+.spec-x{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;font:11px var(--mono);color:var(--muted);text-align:center;margin-top:4px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--muted);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+@keyframes rise{from{transform:scaleY(.05);transform-origin:bottom}to{transform:scaleY(1);transform-origin:bottom}}
+
+.ai{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-top:10px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.split>div{min-width:0}
+.tag{display:inline-block;font:600 11px var(--mono);letter-spacing:.08em;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--violet);text-transform:uppercase}
+
+.code{margin:22px 0 4px;border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.code-h{font:600 12px var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--cyan);padding:8px 14px;border-bottom:1px solid var(--line);background:var(--code)}
+.code-h.sub{border-top:1px solid var(--line)}
+.code ul{list-style:none;margin:0;padding:6px 0}
+.code li{display:grid;grid-template-columns:minmax(0,auto) 1fr;gap:4px 14px;padding:6px 14px;margin:0;font-size:14.5px;align-items:baseline}
+.code li a{text-decoration:none;min-width:0;overflow-wrap:anywhere}
+.code li a code{background:none;padding:0;color:var(--violet)}
+.code li a:hover code{text-decoration:underline}
+.code li>span{color:var(--muted);min-width:0}
+.code .date{font-family:var(--mono);font-size:12.5px;color:var(--gold);margin-right:4px}
+@media (max-width:640px){.code li{grid-template-columns:1fr}}
+footer{padding-block:40px 70px;border-top:1px solid var(--line);color:var(--muted);font-size:14px}
+
+@media (max-width:640px){
+  body{font-size:16px}
+  .morph{grid-template-columns:1fr;}
+  .morph .arrow{transform:rotate(90deg);justify-self:center;animation:none}
+  .split{grid-template-columns:1fr}
+  .lock{grid-template-columns:1fr}
+  .bars .b{grid-template-columns:92px 1fr 54px;font-size:13px}
+  .steps-nav{display:none}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important}
+}
+</style>
+</head>
+<body>
+
+
+<div class="bar">
+  <div class="wrap">
+    <div class="brand">RECOMPILED <b>HANDBOOK</b></div>
+    <nav class="steps-nav" aria-label="Steps">
+      <a href="#s0">00</a><a href="#s1">01</a><a href="#s2">02</a><a href="#s3">03</a><a href="#s4">04</a><a href="#s5">05</a><a href="#s6">06</a><a href="#s7">07</a><a href="#s8">08</a><a href="#s9">09</a><a href="#s10">10</a><a href="#s11">11</a><a href="#s12">12</a><a href="#s13">13</a><a href="#ai">AI</a><a href="#code">CODE</a>
+    </nav>
+    <div class="lang" role="group" aria-label="Language">
+      <button type="button" id="btn-zh" data-set="zh" aria-pressed="true">繁中</button>
+      <button type="button" id="btn-en" data-set="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</div>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Knuckles' Chaotix Recompiled · 2026-09-19 → 2026-10-30</div>
+    <h1><span class="zh">把一款 32X 遊戲翻譯成原生程式：手把手製作流程</span><span class="en">Turning a 32X game into a native program, step by step</span></h1>
+    <p class="lede zh">這份文件用這個專案實際走過的路，一步一步說明：如果你要自己做一個「Recompiled」移植，該從哪裡開始、每一步做什麼、怎麼知道自己做對了。裡面的數字都來自專案的 git 紀錄、測試和量測，可以自己去查。</p>
+    <p class="lede en">This page walks through how a "Recompiled" port is made, using the path this project actually took: where to start, what each step is, and how you know a step is right. Every number here comes from the project's git history, tests and measurements, and you can check them yourself.</p>
+    <div class="facts">
+      <div class="fact"><b>50</b><span class="zh">個正式版本（0.1.0 → 0.15.12）</span><span class="en">releases (0.1.0 → 0.15.12)</span></div>
+      <div class="fact"><b>139</b><span class="zh">項自動測試，每版全過</span><span class="en">automated tests, all passing each release</span></div>
+      <div class="fact"><b>33/33</b><span class="zh">組隨機輸入逐格比對完全一致</span><span class="en">random-input runs bit-identical, frame by frame</span></div>
+      <div class="fact"><b>6</b><span class="zh">個平台：Windows、Linux、macOS、iOS、Android ×2</span><span class="en">packages: Windows, Linux, macOS, iOS, Android ×2</span></div>
+    </div>
+    <div class="morph" aria-hidden="true">
+      <div class="col"><h4>ROM bytes</h4><div class="scroll hex">
+        4E B9 00 FF E1 A4 30 39<br>00 A1 51 20 0C 40 00 01<br>66 F6 41 F9 00 FF 02 00<br>D2 03 71 01 40 0B 00 09<br>A0 0F 00 09 60 13 88 01<br>8B FC 2F E6 6E 43 7F FC<br>4E B9 00 FF E1 A4 30 39<br>00 A1 51 20 0C 40 00 01<br>66 F6 41 F9 00 FF 02 00<br>D2 03 71 01 40 0B 00 09<br>A0 0F 00 09 60 13 88 01<br>8B FC 2F E6 6E 43 7F FC
+      </div></div>
+      <div class="arrow">→</div>
+      <div class="col"><h4>Instructions</h4><div class="scroll asm">
+        jsr ($FFE1A4).l<br>move.w ($A15120),d0<br>cmpi.w #1,d0<br>bne.s -10<br>bsrf r1<br>mov #1,r0<br>jsr ($FFE1A4).l<br>move.w ($A15120),d0<br>cmpi.w #1,d0<br>bne.s -10<br>bsrf r1<br>mov #1,r0
+      </div></div>
+      <div class="arrow">→</div>
+      <div class="col"><h4>C++</h4><div class="scroll cpp">
+        c-&gt;cycles -= 2;<br>t_ = branch_target(c, I);<br>exec_simple(c, I);<br>c-&gt;pc = t_;<br>SH2_BOUNDARY();<br>goto L_060008DC;<br>c-&gt;cycles -= 2;<br>t_ = branch_target(c, I);<br>exec_simple(c, I);<br>c-&gt;pc = t_;<br>SH2_BOUNDARY();<br>goto L_060008DC;
+      </div></div>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- 00 -->
+<section class="step" id="s0"><div class="wrap">
+  <div class="num">STEP 00</div>
+  <h2><span class="zh">先搞懂：Recompiled 和模擬器差在哪</span><span class="en">First: how a recompilation differs from an emulator</span></h2>
+  <div class="zh">
+    <p>模擬器像<b>同步口譯</b>：遊戲每執行一條機器指令，模擬器當下才去看懂它、照做一次。看一條、做一條，一秒要做幾千萬次。</p>
+    <p>Recompiled 像<b>事先把整本書翻好</b>：在你玩之前，就把遊戲的機器碼一段一段翻成 C++ 程式碼，再交給電腦自己的編譯器編成原生程式。玩的時候不用再「看懂」，直接執行翻好的版本。</p>
+    <p>但遊戲不只是程式，還有畫面晶片、音效晶片、計時器、中斷。這些<b>硬體行為</b>沒辦法「翻譯」，必須另外寫一層程式把它們重現出來。所以一個 Recompiled 移植其實是兩半：翻好的遊戲程式，加上一層硬體相容層。</p>
+  </div>
+  <div class="en">
+    <p>An emulator is like a <b>live interpreter</b>: each time the game runs a machine instruction, the emulator reads it and carries it out, one at a time, tens of millions of times a second.</p>
+    <p>A recompilation is like <b>translating the whole book in advance</b>: before you play, the game's machine code is translated piece by piece into C++, which your computer's own compiler turns into a native program. While you play, nothing has to be read and understood again.</p>
+    <p>But a game is more than code. It talks to a video chip, sound chips, timers and interrupts. That <b>hardware behaviour</b> can't be translated; it has to be reproduced by a separate layer. So a recompiled port is two halves: the translated game code, and a hardware compatibility layer.</p>
+  </div>
+  <figure class="fig">
+    <svg viewBox="0 0 720 210" role="img" aria-label="Emulator versus recompilation">
+      <rect x="10" y="10" width="340" height="190" rx="10" class="s-bg"/>
+      <text x="26" y="36" class="s-muted">EMULATOR</text>
+      <rect x="26" y="52" width="88" height="40" rx="6" class="s-chip"/><text x="38" y="77" class="s-ink">ROM</text>
+      <rect x="140" y="52" width="110" height="40" rx="6" class="s-chip"/><text x="150" y="77" class="s-ink">decode</text>
+      <rect x="140" y="112" width="110" height="40" rx="6" class="s-chip"/><text x="150" y="137" class="s-ink">execute</text>
+      <path d="M114 72 H140" class="st-violet flow" stroke-width="3" fill="none"/>
+      <path d="M195 92 V112" class="st-violet flow" stroke-width="3" fill="none"/>
+      <path d="M250 132 Q300 132 300 72 Q300 52 250 66" class="st-magenta flow" stroke-width="3" fill="none"/>
+      <text x="268" y="180" class="s-magenta">× 30,000,000 / s</text>
+      <rect x="370" y="10" width="340" height="190" rx="10" class="s-bg"/>
+      <text x="386" y="36" class="s-muted">RECOMPILED</text>
+      <rect x="386" y="52" width="70" height="40" rx="6" class="s-chip"/><text x="396" y="77" class="s-ink">ROM</text>
+      <rect x="476" y="52" width="92" height="40" rx="6" class="s-chip"/><text x="486" y="77" class="s-ink">C++ ×1</text>
+      <rect x="588" y="52" width="106" height="40" rx="6" class="s-chip"/><text x="598" y="77" class="s-ink">native .exe</text>
+      <path d="M456 72 H476" class="st-lime" stroke-width="3" fill="none"/>
+      <path d="M568 72 H588" class="st-lime" stroke-width="3" fill="none"/>
+      <rect x="476" y="122" width="218" height="40" rx="6" class="s-chip"/><text x="486" y="147" class="s-ink">hardware layer (VDP, sound…)</text>
+      <path d="M641 92 V122" class="st-cyan flow" stroke-width="3" fill="none"/>
+      <text x="386" y="186" class="s-lime">translated once, before play</text>
+    </svg>
+    <figcaption><span class="zh">左：模擬器每條指令都要當場解讀。右：Recompiled 事先翻好一次，執行時只剩硬體層需要「模擬」。</span><span class="en">Left: an emulator decodes each instruction as it runs. Right: the code is translated once, and only the hardware layer is simulated at run time.</span></figcaption>
+  </figure>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/README.md" target="_blank" rel="noopener"><code>README.md</code></a><span class="zh">專案說明：它是什麼、怎麼建置</span><span class="en">What it is and how to build it</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/ARCHITECTURE.md" target="_blank" rel="noopener"><code>ARCHITECTURE.md</code></a><span class="zh">架構文件（繁中）：每個元件採用什麼策略、為什麼</span><span class="en">Architecture (in Traditional Chinese): the strategy for each part and why</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5835d4ad1310aaa01a752b6c02c1109980926a9d" target="_blank" rel="noopener"><code>5835d4a</code></a><span><span class="date">2026-09-19</span> Knuckles&#x27; Chaotix static recompilation: toolchain, runtime and SDL3 frontend</span></li></ul></div>
+</div></section>
+
+<!-- 01 -->
+<section class="step" id="s1"><div class="wrap">
+  <div class="num">STEP 01</div>
+  <h2><span class="zh">劃清法律界線，再寫第一行程式</span><span class="en">Draw the legal line before the first line of code</span></h2>
+  <div class="zh">
+    <p>Recompiled 專案能公開，前提是<b>不散布任何遊戲本身的東西</b>。這一步要在一開始就定好，因為它會決定之後所有工具怎麼設計。</p>
+    <ul>
+      <li>玩家自己提供合法取得的 ROM。程式會先檢查 SHA-1（這裡是 <code>0c2fff7b…7ced7</code>），不符就不使用翻好的程式碼。</li>
+      <li>ROM、從 ROM 翻出來的程式碼（<code>generated/</code>）、截圖，全部列在 <code>.gitignore</code>，永遠不進 git，也不上傳任何雲端。</li>
+      <li>CI（GitHub 上的自動測試）<b>拿不到遊戲檔</b>，所以 CI 只測不需要遊戲的部分，例如指令語意、各個元件；需要遊戲的測試在開發者自己的電腦上跑。</li>
+      <li>不需要 32X 的 BIOS：開機過程用程式重現（HLE），使用者不必另找 BIOS 檔。</li>
+    </ul>
+  </div>
+  <div class="en">
+    <p>A recompilation can be public only if it <b>ships nothing from the game itself</b>. Decide this on day one, because it shapes how every tool is designed.</p>
+    <ul>
+      <li>Players supply their own legally obtained ROM. The program checks its SHA-1 (here <code>0c2fff7b…7ced7</code>) and won't use the translated code with anything else.</li>
+      <li>The ROM, the code generated from it (<code>generated/</code>) and screenshots are all in <code>.gitignore</code>. They never go into git or any cloud service.</li>
+      <li>CI (the automatic tests on GitHub) <b>never has the game</b>, so it tests what doesn't need it: instruction semantics, individual components. Tests that need the game run on the developer's own machine.</li>
+      <li>No 32X BIOS is needed: the boot sequence is reproduced in code (HLE), so players don't have to find a BIOS file.</li>
+    </ul>
+  </div>
+  <div class="check"><b>✓</b> <span class="zh">怎麼確認：CI 有一項叫「No game data」的檢查，專門確保 repo 裡沒有遊戲資料；另外任何超過 512 KB 的檔案都會被擋下。</span><span class="en">How you know: CI has a "No game data" job that checks the repo holds no game data, and it rejects any tracked file over 512 KB.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/LEGAL.md" target="_blank" rel="noopener"><code>LEGAL.md</code></a><span class="zh">法律界線</span><span class="en">The legal boundaries</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/.gitignore#L10" target="_blank" rel="noopener"><code>.gitignore</code></a><span class="zh">ROM 與 generated/ 永遠不進 git</span><span class="en">The ROM and generated/ never go into git</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/rom.cpp#L103" target="_blank" rel="noopener"><code>src/runtime/rom.cpp</code></a><span class="zh">載入 ROM 時計算 SHA-1</span><span class="en">SHA-1 computed when the ROM loads</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/.github/workflows/ci.yml#L83" target="_blank" rel="noopener"><code>.github/workflows/ci.yml</code></a><span class="zh">CI 的 No game data 檢查（含 512 KB 上限）</span><span class="en">CI&#x27;s No game data job (with the 512 KB limit)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/system.cpp#L198" target="_blank" rel="noopener"><code>src/runtime/system.cpp</code></a><span class="zh">不需要 BIOS：開機流程的 HLE</span><span class="en">No BIOS needed: the boot HLE</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/e18ae20a083adbac19b9de0d268cfd9055adf02b" target="_blank" rel="noopener"><code>e18ae20</code></a><span><span class="date">2026-09-24</span> Prepare the repository for publication</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/03bcf0c414af6e5e88e5335232b371960cb39871" target="_blank" rel="noopener"><code>03bcf0c</code></a><span><span class="date">2026-09-24</span> Ship recompiled builds, and say plainly what that means</span></li></ul></div>
+</div></section>
+
+<!-- 02 -->
+<section class="step" id="s2"><div class="wrap">
+  <div class="num">STEP 02</div>
+  <h2><span class="zh">把機器摸透：這台主機裡有什麼</span><span class="en">Know the machine: what's inside a 32X</span></h2>
+  <div class="zh">
+    <p>翻譯之前要先知道原文的「文法」。32X 是接在 Mega Drive 上的擴充裝置，所以一台 32X 遊戲機裡同時有<b>四顆處理器</b>在跑，彼此透過共用的暫存器溝通：</p>
+  </div>
+  <div class="en">
+    <p>Before translating, learn the grammar of the original. The 32X plugs into a Mega Drive, so a 32X game has <b>four processors</b> running at once, talking through shared registers:</p>
+  </div>
+  <figure class="fig">
+    <svg viewBox="0 0 720 270" role="img" aria-label="32X hardware map">
+      <rect x="10" y="10" width="700" height="250" rx="12" class="s-bg"/>
+      <text x="26" y="34" class="s-muted">MEGA DRIVE</text>
+      <text x="400" y="34" class="s-muted">32X</text>
+      <line x1="380" y1="20" x2="380" y2="250" class="s-line" stroke-width="2" stroke-dasharray="4 4"/>
+      <g class="pulse"><rect x="30" y="52" width="150" height="58" rx="8" class="s-panel st-violet" stroke-width="2"/>
+      <text x="44" y="76" class="s-violet" font-weight="600">68000</text><text x="44" y="96" class="s-muted">7.67 MHz</text></g>
+      <rect x="200" y="52" width="160" height="58" rx="8" class="s-panel st-cyan" stroke-width="2"/>
+      <text x="214" y="76" class="s-cyan" font-weight="600">Z80</text><text x="214" y="96" class="s-muted">3.58 MHz · sound</text>
+      <rect x="30" y="150" width="100" height="44" rx="8" class="s-chip"/><text x="42" y="177" class="s-ink">MD VDP</text>
+      <rect x="140" y="150" width="105" height="44" rx="8" class="s-chip"/><text x="152" y="177" class="s-ink">YM2612 FM</text>
+      <rect x="255" y="150" width="105" height="44" rx="8" class="s-chip"/><text x="267" y="177" class="s-ink">SN76489 PSG</text>
+      <g class="pulse" style="animation-delay:.6s"><rect x="400" y="52" width="140" height="58" rx="8" class="s-panel st-magenta" stroke-width="2"/>
+      <text x="414" y="76" class="s-magenta" font-weight="600">SH-2 master</text><text x="414" y="96" class="s-muted">23.01 MHz</text></g>
+      <g class="pulse" style="animation-delay:1.2s"><rect x="555" y="52" width="140" height="58" rx="8" class="s-panel st-magenta" stroke-width="2"/>
+      <text x="569" y="76" class="s-magenta" font-weight="600">SH-2 slave</text><text x="569" y="96" class="s-muted">23.01 MHz</text></g>
+      <rect x="400" y="150" width="140" height="44" rx="8" class="s-chip"/><text x="412" y="177" class="s-ink">32X VDP · FB</text>
+      <rect x="555" y="150" width="140" height="44" rx="8" class="s-chip"/><text x="567" y="177" class="s-ink">PWM sound</text>
+      <path d="M180 81 H200" class="st-cyan flow" stroke-width="3" fill="none"/>
+      <path d="M105 110 V150" class="st-violet flow" stroke-width="3" fill="none"/>
+      <path d="M280 110 V150" class="st-cyan flow" stroke-width="3" fill="none"/>
+      <path d="M180 66 C 290 30, 300 30, 400 66" class="st-gold flow" stroke-width="3" fill="none"/>
+      <text x="240" y="44" class="s-gold">COMM ports</text>
+      <path d="M470 110 V150" class="st-magenta flow" stroke-width="3" fill="none"/>
+      <path d="M625 110 V150" class="st-magenta flow" stroke-width="3" fill="none"/>
+      <path d="M540 81 H555" class="st-gold" stroke-width="3" fill="none"/>
+      <text x="26" y="232" class="s-muted">MCLK 53.693175 MHz · 262 lines/frame · 59.9227 Hz</text>
+    </svg>
+    <figcaption><span class="zh">四顆處理器、兩組畫面晶片、三種音源（FM、PSG、PWM）。中間金色的是兩邊交換訊息用的 COMM 暫存器。</span><span class="en">Four processors, two video chips, three sound sources (FM, PSG, PWM). The gold path is the COMM registers both sides use to pass messages.</span></figcaption>
+  </figure>
+  <div class="zh">
+    <p>這一步的產出是一份<b>架構文件</b>：每顆處理器的時脈、記憶體地圖（哪個位址是 ROM、RAM、哪個是硬體暫存器）、這款遊戲實際用到哪些硬體。這個專案的 <code>ARCHITECTURE.md</code> 就是這樣開始的，而且每個說法都標了「已驗證」或「待驗證」。</p>
+  </div>
+  <div class="en">
+    <p>The output of this step is an <b>architecture document</b>: each processor's clock, the memory map (which addresses are ROM, RAM, hardware registers), and which hardware this particular game actually uses. This project's <code>ARCHITECTURE.md</code> started that way, and every claim in it is marked verified or still to verify.</p>
+  </div>
+  <div class="trap"><b>!</b> <span class="zh">這款遊戲的坑：副 SH-2 把自己的程式複製到 CPU 內部的快取記憶體裡執行，堆疊也放在那裡。一般模擬器常常不用處理這種情況，但這款遊戲少了它就不會動。</span><span class="en">This game's trap: the slave SH-2 copies its own code into the CPU's cache memory and runs it from there, with its stack there too. Many emulators never need this; without it this game doesn't run.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/runtime/md_bus.cpp" target="_blank" rel="noopener"><code>src/runtime/md_bus.cpp</code></a><span class="zh">68000 這一側的位址空間</span><span class="en">The 68000 side&#x27;s address space</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/runtime/sh2_bus.cpp" target="_blank" rel="noopener"><code>src/runtime/sh2_bus.cpp</code></a><span class="zh">SH-2 位址空間與 32X 暫存器</span><span class="en">The SH-2 address space and 32X registers</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/runtime/sh2_onchip.cpp" target="_blank" rel="noopener"><code>src/runtime/sh2_onchip.cpp</code></a><span class="zh">SH-2 內建的計時器、除法器、DMA、中斷</span><span class="en">The SH-2&#x27;s on-chip timers, divider, DMA, interrupts</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main/tools/rom_analyzer" target="_blank" rel="noopener"><code>tools/rom_analyzer/</code></a><span class="zh">找出遊戲實際用到哪些硬體（MMIO 報表）</span><span class="en">Finds which hardware the game really touches (MMIO report)</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5835d4ad1310aaa01a752b6c02c1109980926a9d" target="_blank" rel="noopener"><code>5835d4a</code></a><span><span class="date">2026-09-19</span> Knuckles&#x27; Chaotix static recompilation: toolchain, runtime and SDL3 frontend</span></li></ul></div>
+</div></section>
+
+<!-- 03 -->
+<section class="step" id="s3"><div class="wrap">
+  <div class="num">STEP 03</div>
+  <h2><span class="zh">先寫「標準答案」：參考直譯器</span><span class="en">Write the answer key first: a reference interpreter</span></h2>
+  <div class="zh">
+    <p>聽起來繞遠路，但這是整個專案最重要的決定：<b>在寫翻譯器之前，先寫一個一條一條執行指令的直譯器</b>（也就是一個小模擬器）。68000、SH-2、Z80 各一個。</p>
+    <p>它慢沒關係，它的工作是當<b>標準答案</b>。之後翻好的程式碼跑出來的結果，每一格都要跟它一模一樣。</p>
+    <p>關鍵技巧：每條指令「做什麼」只寫一次，寫在共用的語意檔（<code>m68k_ops.h</code>、<code>sh2_ops.h</code>）裡。直譯器用它，翻譯出來的 C++ 也呼叫同一份。這樣兩邊不會各自寫錯成不同的樣子。</p>
+  </div>
+  <div class="en">
+    <p>It sounds like a detour, but it's the most important decision in the project: <b>before writing the translator, write an interpreter that runs instructions one at a time</b> (a small emulator). One each for the 68000, the SH-2 and the Z80.</p>
+    <p>It can be slow. Its job is to be the <b>answer key</b>: later, the translated code has to produce exactly the same result, every frame.</p>
+    <p>The key trick: what each instruction does is written once, in shared semantics headers (<code>m68k_ops.h</code>, <code>sh2_ops.h</code>). The interpreter uses them, and the generated C++ calls the very same code, so the two can't drift apart.</p>
+  </div>
+  <div class="check"><b>✓</b> <span class="zh">怎麼確認：拿處理器手冊上已知答案的例子寫單元測試，例如旗標、BCD、乘除法、SH-2 的 delay slot 順序。專案一開始就有 33 項這種測試。</span><span class="en">How you know: unit tests built from known answers in the CPU manuals: flags, BCD, multiply and divide, the SH-2 delay-slot order. The project started with 33 of them.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/cpu/m68k/m68k_ops.h" target="_blank" rel="noopener"><code>src/cpu/m68k/m68k_ops.h</code></a><span class="zh">68000 指令語意（直譯器和翻好的程式共用）</span><span class="en">68000 instruction semantics, shared by interpreter and generated code</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/cpu/m68k/m68k_interp.cpp" target="_blank" rel="noopener"><code>src/cpu/m68k/m68k_interp.cpp</code></a><span class="zh">68000 參考直譯器</span><span class="en">68000 reference interpreter</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/cpu/sh2/sh2_ops.h" target="_blank" rel="noopener"><code>src/cpu/sh2/sh2_ops.h</code></a><span class="zh">SH-2 指令語意</span><span class="en">SH-2 instruction semantics</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/cpu/sh2/sh2_interp.cpp" target="_blank" rel="noopener"><code>src/cpu/sh2/sh2_interp.cpp</code></a><span class="zh">SH-2 參考直譯器</span><span class="en">SH-2 reference interpreter</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/cpu/z80/z80.cpp" target="_blank" rel="noopener"><code>src/cpu/z80/z80.cpp</code></a><span class="zh">Z80（音效處理器）直譯器</span><span class="en">Z80 (sound CPU) interpreter</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tests/test_m68k.cpp" target="_blank" rel="noopener"><code>tests/test_m68k.cpp</code></a><span class="zh">用手冊答案寫的指令測試（另有 tests/test_sh2.cpp）</span><span class="en">Instruction tests from manual answers (also tests/test_sh2.cpp)</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5835d4ad1310aaa01a752b6c02c1109980926a9d" target="_blank" rel="noopener"><code>5835d4a</code></a><span><span class="date">2026-09-19</span> Knuckles&#x27; Chaotix static recompilation: toolchain, runtime and SDL3 frontend</span></li></ul></div>
+</div></section>
+
+<!-- 04 -->
+<section class="step" id="s4"><div class="wrap">
+  <div class="num">STEP 04</div>
+  <h2><span class="zh">找出 ROM 裡哪些是程式：ROM 分析器</span><span class="en">Find which bytes are code: the ROM analyzer</span></h2>
+  <div class="zh">
+    <p>ROM 是一大串數字，裡面混著程式、圖、聲音、文字。翻譯器只能翻程式，所以要先畫出<b>地圖</b>：</p>
+    <ul>
+      <li>從已知的入口（開機位址、中斷向量）開始，沿著每個跳躍、呼叫往下走，標出所有走得到的程式（控制流程圖、函式表）。</li>
+      <li>遇到「跳到表格裡某個位址」的間接跳躍時，要解析那張表。</li>
+      <li>有些入口靜態看不出來，就<b>實際玩一遍，記錄執行過的位址</b>（coverage 檔，只存位址，不含 ROM 內容），再回饋給分析器。</li>
+    </ul>
+  </div>
+  <div class="en">
+    <p>A ROM is a long run of numbers mixing code, graphics, sound and text. The translator can only translate code, so first you draw a <b>map</b>:</p>
+    <ul>
+      <li>Start from the known entry points (the reset address, interrupt vectors), follow every jump and call, and mark all reachable code (a control-flow graph, a function list).</li>
+      <li>When a jump goes through a table of addresses, decode the table.</li>
+      <li>Some entry points can't be found statically, so <b>play the game and record which addresses run</b> (a coverage file holding only addresses, no ROM content), then feed that back to the analyzer.</li>
+    </ul>
+  </div>
+  <div class="check"><b>✓</b> <span class="zh">怎麼確認：用「沒拿來產生 coverage 的另一段遊玩」去跑，看有多少程式是翻好的版本在執行。這個專案：68000 有 99.7–100%、SH-2 有 100% 的程式區塊直接跑翻好的原生碼。</span><span class="en">How you know: play a stretch that wasn't used to make the coverage, and count how much runs as translated code. Here, 99.7–100% of 68000 blocks and 100% of SH-2 blocks run as native code.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tools/rom_analyzer/analysis.cpp" target="_blank" rel="noopener"><code>tools/rom_analyzer/analysis.cpp</code></a><span class="zh">控制流程、函式、跳躍表的分析</span><span class="en">Control flow, functions, jump tables</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tools/coverage/record_sessions.py" target="_blank" rel="noopener"><code>tools/coverage/record_sessions.py</code></a><span class="zh">錄下實際執行過的位址</span><span class="en">Records which addresses actually ran</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main/coverage" target="_blank" rel="noopener"><code>coverage/</code></a><span class="zh">coverage 檔（只有位址，沒有 ROM 內容）</span><span class="en">The coverage files (addresses only, no ROM content)</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/aad3747eef041cf47e751a1be370ee6472c6f84e" target="_blank" rel="noopener"><code>aad3747</code></a><span><span class="date">2026-09-20</span> Milestone 3: coverage harness, static jump-table recovery, performance</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/a48a25170b77bcb27aef5f324b98da14bffbeb2c" target="_blank" rel="noopener"><code>a48a251</code></a><span><span class="date">2026-10-20</span> Special stage recompiled instead of interpreted (issue #31)</span></li></ul></div>
+</div></section>
+
+<!-- 05 -->
+<section class="step" id="s5"><div class="wrap">
+  <div class="num">STEP 05</div>
+  <h2><span class="zh">真正的翻譯：重編譯器</span><span class="en">The translation itself: the recompiler</span></h2>
+  <div class="zh">
+    <p>重編譯器把地圖上的每個程式區塊，翻成一段 C++。翻出來的程式碼每行都附上原本的組合語言當註解，可以直接下中斷點除錯。</p>
+    <p>為什麼翻成 C++ 而不是更底層的 LLVM IR？因為 C++ 在每個平台都有現成的編譯器（MSVC、GCC、Clang、Android NDK、Xcode），翻一次就能到處編。</p>
+  </div>
+  <div class="en">
+    <p>The recompiler turns each block on the map into a piece of C++. Every generated line carries the original assembly as a comment, and you can set breakpoints in it.</p>
+    <p>Why C++ and not lower-level LLVM IR? Every platform already has a C++ compiler (MSVC, GCC, Clang, the Android NDK, Xcode), so one translation builds everywhere.</p>
+  </div>
+  <figure class="fig">
+    <svg viewBox="0 0 720 200" role="img" aria-label="Recompilation pipeline">
+      <g font-size="12">
+      <rect x="10" y="70" width="90" height="56" rx="8" class="s-chip"/><text x="22" y="96" class="s-ink">your ROM</text><text x="22" y="114" class="s-muted">SHA-1 ✓</text>
+      <rect x="130" y="70" width="110" height="56" rx="8" class="s-chip"/><text x="142" y="96" class="s-ink">analyzer</text><text x="142" y="114" class="s-muted">CFG + coverage</text>
+      <rect x="270" y="70" width="110" height="56" rx="8" class="s-chip"/><text x="282" y="96" class="s-ink">recompiler</text><text x="282" y="114" class="s-muted">68K + SH-2</text>
+      <rect x="410" y="70" width="110" height="56" rx="8" class="s-chip"/><text x="422" y="96" class="s-ink">generated/</text><text x="422" y="114" class="s-muted">C++ (local only)</text>
+      <rect x="550" y="70" width="160" height="56" rx="8" class="s-panel st-lime" stroke-width="2"/><text x="562" y="96" class="s-lime" font-weight="600">native program</text><text x="562" y="114" class="s-muted">+ runtime + SDL3</text>
+      </g>
+      <path d="M100 98 H130 M240 98 H270 M380 98 H410 M520 98 H550" class="st-violet flow" stroke-width="3" fill="none"/>
+      <circle r="5" class="s-magenta"><animateMotion dur="4s" repeatCount="indefinite" path="M40 98 H660"/></circle>
+      <rect x="270" y="150" width="250" height="36" rx="8" class="s-bg st-gold" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="282" y="173" class="s-gold">unknown code → interpreter (slower, never wrong)</text>
+      <path d="M325 126 V150" class="st-gold" stroke-width="2" fill="none" stroke-dasharray="3 3"/>
+    </svg>
+    <figcaption><span class="zh">整條流程在使用者自己的電腦上跑，產生的 C++ 只留在本機。</span><span class="en">The whole pipeline runs on the player's or developer's own machine; the generated C++ stays local.</span></figcaption>
+  </figure>
+  <h3><span class="zh">三個一定會遇到的難題</span><span class="en">Three problems you will hit</span></h3>
+  <div class="tbl"><table>
+    <thead><tr><th><span class="zh">難題</span><span class="en">Problem</span></th><th><span class="zh">這款遊戲裡的實例</span><span class="en">In this game</span></th><th><span class="zh">怎麼處理</span><span class="en">What was done</span></th></tr></thead>
+    <tbody>
+      <tr><td><span class="zh">遊戲在執行中產生的程式</span><span class="en">Code made at run time</span></td><td><span class="zh">68000 在 RAM 裡寫一個跳板，每關改跳的目標</span><span class="en">The 68000 writes a jump trampoline into RAM and retargets it each level</span></td><td><span class="zh">交給直譯器執行那一條，再接回翻好的程式</span><span class="en">The interpreter runs that one jump, then hands back to native code</span></td></tr>
+      <tr><td><span class="zh">程式被改寫</span><span class="en">Code that gets overwritten</span></td><td><span class="zh">SH-2 的程式放在 RAM，關卡中每格有數百次寫入落在旁邊</span><span class="en">SH-2 code lives in RAM, and hundreds of writes a frame land right next to it</span></td><td><span class="zh">每個函式記錄自己的程式是否被真的改過，改了才重新檢查或改用直譯器</span><span class="en">Each function tracks whether its own bytes really changed, and is re-checked (or interpreted) only then</span></td></tr>
+      <tr><td><span class="zh">中斷可能在任何時刻發生</span><span class="en">Interrupts can come at any moment</span></td><td><span class="zh">V-blank、H-blank、PWM、指令中斷</span><span class="en">V-blank, H-blank, PWM, command interrupts</span></td><td><span class="zh">直譯器和翻好的程式用同一條規則：只在區塊邊界接受中斷，所以兩邊能逐格比對</span><span class="en">Interpreter and native code share one rule: interrupts are taken only at block boundaries, so the two can be compared frame by frame</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="why"><b>?</b> <span class="zh">設計原則：遇到翻譯器處理不了的程式，就退回直譯器。這樣只會變慢，不會出錯。</span><span class="en">Design rule: anything the translator can't handle falls back to the interpreter. That can only make things slower, never wrong.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tools/recompiler/emit_m68k.cpp" target="_blank" rel="noopener"><code>tools/recompiler/emit_m68k.cpp</code></a><span class="zh">把 68000 程式區塊翻成 C++</span><span class="en">Turns 68000 blocks into C++</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tools/recompiler/emit_sh2.cpp" target="_blank" rel="noopener"><code>tools/recompiler/emit_sh2.cpp</code></a><span class="zh">把 SH-2 程式區塊翻成 C++（含 delay slot）</span><span class="en">Turns SH-2 blocks into C++ (delay slots included)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/game/recomp_dispatch.cpp#L167" target="_blank" rel="noopener"><code>src/game/recomp_dispatch.cpp</code></a><span class="zh">RAM 跳板交給直譯器，再接回原生碼</span><span class="en">RAM trampolines go to the interpreter, then back to native code</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/sh2_bus.cpp#L78" target="_blank" rel="noopener"><code>src/runtime/sh2_bus.cpp</code></a><span class="zh">程式真的被改寫時，才通知對應的函式</span><span class="en">Tells a function only when its own code really changed</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/cmake/ChaotixGenerated.cmake" target="_blank" rel="noopener"><code>cmake/ChaotixGenerated.cmake</code></a><span class="zh">建置時在本機產生並編譯 C++</span><span class="en">Generates and compiles the C++ locally at build time</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5835d4ad1310aaa01a752b6c02c1109980926a9d" target="_blank" rel="noopener"><code>5835d4a</code></a><span><span class="date">2026-09-19</span> Knuckles&#x27; Chaotix static recompilation: toolchain, runtime and SDL3 frontend</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/aad3747eef041cf47e751a1be370ee6472c6f84e" target="_blank" rel="noopener"><code>aad3747</code></a><span><span class="date">2026-09-20</span> Milestone 3: coverage harness, static jump-table recovery, performance</span></li></ul></div>
+</div></section>
+
+<!-- 06 -->
+<section class="step" id="s6"><div class="wrap">
+  <div class="num">STEP 06</div>
+  <h2><span class="zh">補上硬體：相容層與時間</span><span class="en">Fill in the hardware: the compatibility layer and timing</span></h2>
+  <div class="zh">
+    <p>翻好的程式會去讀寫硬體暫存器，這些要由相容層接住：兩組畫面晶片（逐條掃描線合成）、DMA、計時器、除法器、COMM 暫存器、FM／PSG／PWM 音源，以及開機流程。</p>
+    <p>最需要想清楚的是<b>時間</b>。四顆處理器在真機上是同時跑的，程式裡只能輪流跑。這個專案把每條掃描線切成 4 段固定時間片，每段依序跑 68000 → Z80 → 主 SH-2 → 副 SH-2。整個模型是<b>確定性</b>的：同樣的輸入，永遠得到同樣的結果，不受電腦快慢影響。</p>
+  </div>
+  <div class="en">
+    <p>The translated code reads and writes hardware registers, and the compatibility layer answers: both video chips (composited line by line), DMA, timers, the divider, the COMM registers, the FM/PSG/PWM sound, and the boot sequence.</p>
+    <p>The part that needs the most thought is <b>time</b>. On the real console the four processors run at once; in a program they take turns. This project cuts each scanline into 4 fixed slices and runs 68000 → Z80 → master SH-2 → slave SH-2 in each. The whole model is <b>deterministic</b>: the same input always gives the same result, however fast the computer is.</p>
+  </div>
+  <figure class="fig">
+    <svg viewBox="0 0 720 150" role="img" aria-label="Time slices per scanline">
+      <text x="10" y="22" class="s-muted">1 scanline = 3420 MCLK = 4 slices</text>
+      <g transform="translate(10,36)">
+        <g><rect x="0" y="0" width="170" height="40" rx="5" class="s-chip"/><rect x="0" y="0" width="42" height="40" rx="5" class="s-violet" opacity=".85"/><rect x="42" y="0" width="38" height="40" class="s-cyan" opacity=".85"/><rect x="80" y="0" width="45" height="40" class="s-magenta" opacity=".85"/><rect x="125" y="0" width="45" height="40" class="s-magenta" opacity=".55"/></g>
+        <g transform="translate(176,0)"><rect x="0" y="0" width="170" height="40" rx="5" class="s-chip"/><rect x="0" y="0" width="42" height="40" rx="5" class="s-violet" opacity=".85"/><rect x="42" y="0" width="38" height="40" class="s-cyan" opacity=".85"/><rect x="80" y="0" width="45" height="40" class="s-magenta" opacity=".85"/><rect x="125" y="0" width="45" height="40" class="s-magenta" opacity=".55"/></g>
+        <g transform="translate(352,0)"><rect x="0" y="0" width="170" height="40" rx="5" class="s-chip"/><rect x="0" y="0" width="42" height="40" rx="5" class="s-violet" opacity=".85"/><rect x="42" y="0" width="38" height="40" class="s-cyan" opacity=".85"/><rect x="80" y="0" width="45" height="40" class="s-magenta" opacity=".85"/><rect x="125" y="0" width="45" height="40" class="s-magenta" opacity=".55"/></g>
+        <g transform="translate(528,0)"><rect x="0" y="0" width="170" height="40" rx="5" class="s-chip"/><rect x="0" y="0" width="42" height="40" rx="5" class="s-violet" opacity=".85"/><rect x="42" y="0" width="38" height="40" class="s-cyan" opacity=".85"/><rect x="80" y="0" width="45" height="40" class="s-magenta" opacity=".85"/><rect x="125" y="0" width="45" height="40" class="s-magenta" opacity=".55"/></g>
+        <rect x="0" y="-4" width="3" height="48" class="s-gold"><animate attributeName="x" from="0" to="698" dur="3s" repeatCount="indefinite"/></rect>
+      </g>
+      <g transform="translate(10,104)">
+        <rect width="12" height="12" class="s-violet"/><text x="18" y="11" class="s-muted">68000</text>
+        <rect x="90" width="12" height="12" class="s-cyan"/><text x="108" y="11" class="s-muted">Z80</text>
+        <rect x="160" width="12" height="12" class="s-magenta"/><text x="178" y="11" class="s-muted">SH-2 master</text>
+        <rect x="290" width="12" height="12" class="s-magenta" opacity=".55"/><text x="308" y="11" class="s-muted">SH-2 slave</text>
+        <text x="420" y="11" class="s-gold">interrupts: only at block edges</text>
+      </g>
+    </svg>
+  </figure>
+  <div class="trap"><b>!</b> <span class="zh">真實的坑（issue #50）：遊戲自己的 SOUND TEST 沒有聲音。原因是 68000 暫停 Z80 時，Z80 沒有剛好跑到被暫停的那一刻。修法是先把 Z80 補跑到 68000 當下的時間，再改變它的狀態，跟真機一樣。</span><span class="en">A real trap (issue #50): the game's own SOUND TEST was silent. When the 68000 paused the Z80, the Z80 hadn't run up to that exact moment. The fix runs the Z80 up to the 68000's current time before changing its state, as the hardware does.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/system.h#L33" target="_blank" rel="noopener"><code>src/runtime/system.h</code></a><span class="zh">每條掃描線 4 段時間片</span><span class="en">4 time slices per scanline</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/system.cpp#L227" target="_blank" rel="noopener"><code>src/runtime/system.cpp</code></a><span class="zh">每段時間片依序跑四顆處理器</span><span class="en">Each slice runs the four processors in turn</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/system.cpp#L294" target="_blank" rel="noopener"><code>src/runtime/system.cpp</code></a><span class="zh">issue #50 的修正：Z80 補跑到 68000 的時間</span><span class="en">The issue #50 fix: run the Z80 up to the 68000&#x27;s time</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/runtime/vdp.cpp" target="_blank" rel="noopener"><code>src/runtime/vdp.cpp</code></a><span class="zh">Mega Drive 畫面晶片</span><span class="en">The Mega Drive video chip</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/renderer/compositor.cpp" target="_blank" rel="noopener"><code>src/renderer/compositor.cpp</code></a><span class="zh">32X 畫面與合成</span><span class="en">32X video and compositing</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main/src/audio" target="_blank" rel="noopener"><code>src/audio/</code></a><span class="zh">YM2612 FM、SN76489 PSG</span><span class="en">YM2612 FM, SN76489 PSG</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/docs/ISSUE_50_SOUND_TEST.md" target="_blank" rel="noopener"><code>docs/ISSUE_50_SOUND_TEST.md</code></a><span class="zh">SOUND TEST 沒聲音的完整調查</span><span class="en">The full write-up of the silent SOUND TEST</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/e3c133d626c85a72030929b8f7b43843e173c26d" target="_blank" rel="noopener"><code>e3c133d</code></a><span><span class="date">2026-10-24</span> Z80 runs up to the 68K&#x27;s time on BUSREQ/RESET writes: the SOUND TEST plays (issue #50)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5b6e1f0d507d032c6c33fb6156e8229763434ad5" target="_blank" rel="noopener"><code>5b6e1f0</code></a><span><span class="date">2026-09-27</span> Fix PWM stereo and FM modulation timing for 0.3.4</span></li></ul></div>
+</div></section>
+
+<!-- 07 -->
+<section class="step" id="s7"><div class="wrap">
+  <div class="num">STEP 07</div>
+  <h2><span class="zh">對答案：逐格 lockstep 驗證</span><span class="en">Check against the key: frame-by-frame lockstep</span></h2>
+  <div class="zh">
+    <p>這一步回答「你怎麼知道翻譯沒翻錯？」。做法是讓<b>兩台機器同時跑同一段遊戲</b>：一台用翻好的原生程式，一台用第 3 步的直譯器。每一格結束時比較兩邊的<b>所有</b>東西：每顆 CPU 的暫存器、cycle 數、全部 RAM、顯示記憶體、32X 畫面緩衝、輸出的畫面。只要有一個 byte 不同，測試就失敗，並指出是哪一格、哪裡不同。</p>
+  </div>
+  <div class="en">
+    <p>This step answers "how do you know the translation is right?". Run <b>two machines on the same play session</b>: one on the native translated code, one on the step-03 interpreter. At the end of every frame, compare <b>everything</b>: each CPU's registers and cycle counts, all of RAM, video memory, the 32X frame buffer, the output picture. If a single byte differs, the test fails and says which frame and where.</p>
+  </div>
+  <div class="fig"><div class="lock" aria-hidden="true">
+    <div class="pane"><h4>native (recompiled)</h4><div class="feed" id="feedA"></div></div>
+    <div class="pane"><h4>interpreter (answer key)</h4><div class="feed" id="feedB"></div></div>
+  </div>
+  <figcaption><span class="zh">示意：每格的狀態雜湊值兩邊完全相同（綠色勾）。</span><span class="en">Illustration: each frame's state hash matches on both sides (green tick).</span></figcaption></div>
+  <div class="zh">
+    <ul>
+      <li><b>開機到關卡</b>：3,200 格（開機 → 標題 → 選單 → 進關卡 → 跑、跳、吃環），每格完全一致。</li>
+      <li><b>33 組隨機輸入</b>（sweep）：不同關卡、不同角色、寬螢幕開關，亂按按鈕，每一組都要 bit-identical。每次發版都重跑。</li>
+      <li><b>換一台電腦也一樣</b>：在 Apple M1（ARM）上跑同樣的比對，也完全一致。</li>
+    </ul>
+  </div>
+  <div class="en">
+    <ul>
+      <li><b>Boot to level</b>: 3,200 frames (boot → title → menus → into a level → run, jump, collect rings), identical every frame.</li>
+      <li><b>33 random-input runs</b> (the sweep): different levels, characters, widescreen on and off, random buttons; every one must be bit-identical. It is re-run for every release.</li>
+      <li><b>On another CPU too</b>: the same comparison on an Apple M1 (ARM) is identical as well.</li>
+    </ul>
+  </div>
+  <div class="why"><b>?</b> <span class="zh">這是讓加速和修改都安全的基礎。第 11 步的每一次加速，都必須通過同一套比對，證明「變快了，但遊戲的行為一個 byte 都沒變」。</span><span class="en">This is what makes speed-ups and changes safe. Every speed-up in step 11 had to pass the same comparison: faster, with not one byte of the game's behaviour changed.</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/frontend/headless_main.cpp#L1058" target="_blank" rel="noopener"><code>src/frontend/headless_main.cpp</code></a><span class="zh">--lockstep：兩台機器並排、每格比對</span><span class="en">--lockstep: two machines side by side, compared every frame</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/tests/CMakeLists.txt#L273" target="_blank" rel="noopener"><code>tests/CMakeLists.txt</code></a><span class="zh">lockstep_boot_to_level 與 golden_frames 測試</span><span class="en">The lockstep_boot_to_level and golden_frames tests</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main/tests/golden" target="_blank" rel="noopener"><code>tests/golden/</code></a><span class="zh">固定輸入下每 50 格的畫面雜湊</span><span class="en">Picture hashes every 50 frames for fixed inputs</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5835d4ad1310aaa01a752b6c02c1109980926a9d" target="_blank" rel="noopener"><code>5835d4a</code></a><span><span class="date">2026-09-19</span> Knuckles&#x27; Chaotix static recompilation: toolchain, runtime and SDL3 frontend</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/64b3c59161be01e783f911a9ba5bc09775134a1a" target="_blank" rel="noopener"><code>64b3c59</code></a><span><span class="date">2026-09-20</span> Milestone 4: true widescreen in levels</span></li></ul></div>
+</div></section>
+
+<!-- 08 -->
+<section class="step" id="s8"><div class="wrap">
+  <div class="num">STEP 08</div>
+  <h2><span class="zh">做成能玩的程式：前端</span><span class="en">Make it playable: the frontend</span></h2>
+  <div class="zh">
+    <p>前端用 SDL3 處理視窗、全螢幕、畫面縮放、鍵盤／手把／觸控、聲音輸出和設定檔。還有一個沒有畫面的版本（<code>chaotix_headless</code>），專門給測試和量測用：可以照腳本按鍵、存截圖、輸出 WAV、印出每個 CPU 花了多少時間。</p>
+    <p>一個好習慣：<b>聲音和畫面依模擬時間產生</b>，不讓電腦的音效裝置反過來決定遊戲速度。</p>
+  </div>
+  <div class="en">
+    <p>The frontend uses SDL3 for the window, fullscreen, scaling, keyboard/gamepad/touch, sound output and settings. There's also a windowless build, <code>chaotix_headless</code>, made for tests and measurement: it presses buttons from a script, saves screenshots, writes WAV files and reports how long each CPU took.</p>
+    <p>A good habit: <b>produce sound and pictures from emulated time</b>, and never let the computer's audio device decide how fast the game runs.</p>
+  </div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/platform/sdl_main.cpp" target="_blank" rel="noopener"><code>src/platform/sdl_main.cpp</code></a><span class="zh">SDL3 前端：視窗、輸入、聲音、設定</span><span class="en">The SDL3 frontend: window, input, sound, settings</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/frontend/headless_main.cpp" target="_blank" rel="noopener"><code>src/frontend/headless_main.cpp</code></a><span class="zh">無畫面版：腳本、截圖、WAV、效能統計</span><span class="en">The headless build: scripts, screenshots, WAV, profiling</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/docs/FRAME_PACING.md" target="_blank" rel="noopener"><code>docs/FRAME_PACING.md</code></a><span class="zh">畫面節奏怎麼對齊 59.92 Hz</span><span class="en">How frames are paced to 59.92 Hz</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/b48de50d7a761518728342a12a159ed236f54f45" target="_blank" rel="noopener"><code>b48de50</code></a><span><span class="date">2026-09-27</span> Fix frame pacing and release 0.3.3</span></li></ul></div>
+</div></section>
+
+<!-- 09 -->
+<section class="step" id="s9"><div class="wrap">
+  <div class="num">STEP 09</div>
+  <h2><span class="zh">讓它比原版更好，但不破壞原版</span><span class="en">Improve on the original without breaking it</span></h2>
+  <div class="zh">
+    <p>移植的價值常在「原版做不到的事」。這個專案加了真正的寬螢幕、時間挑戰、成就、作弊碼、存檔／讀檔、倒帶、網路連線、角色與音樂 mod 等等。原則是：<b>不准偷偷改壞原本的遊戲</b>。</p>
+    <p>以寬螢幕為例：不是把 4:3 畫面拉寬，而是讓遊戲自己的關卡繪圖程式多畫兩側的地形、物件和角色。並且有一項測試保證<b>中間那 320 像素跟原版一模一樣</b>。</p>
+  </div>
+  <div class="en">
+    <p>A port earns its keep with things the original can't do. This one added real widescreen, time attack, achievements, cheats, save states, rewind, netplay, character and music mods and more. The rule: <b>never quietly break the original game</b>.</p>
+    <p>Take widescreen: the 4:3 picture isn't stretched; the game's own level renderer is extended to draw real tiles, objects and sprites at the sides. A test guarantees <b>the centre 320 pixels stay identical to the original</b>.</p>
+  </div>
+  <figure class="fig">
+    <div class="wide" aria-hidden="true">
+      <div class="tiles"></div>
+      <div class="ring" style="left:5%"></div><div class="ring" style="left:9%"></div><div class="ring" style="left:48%"></div><div class="ring" style="left:88%"></div><div class="ring" style="left:92%"></div>
+      <div class="hero-sprite"></div>
+      <div class="center"></div>
+      <span class="sidecap" style="left:8px">+53</span><span class="sidecap" style="right:8px">+53</span>
+      <span class="sidecap" style="left:50%;transform:translateX(-50%)">320 × 224 = original</span>
+    </div>
+    <figcaption><span class="zh">426×224（16:9）。虛線框內是原版畫面，必須逐像素相同；兩側是遊戲自己畫出來的延伸。</span><span class="en">426×224 (16:9). Inside the dashed frame is the original picture, required to match pixel for pixel; the sides are drawn by the game's own renderer.</span></figcaption>
+  </figure>
+  <div class="zh"><p>另一個例子：時間挑戰模式沒有自己發明選關畫面，而是找到遊戲裡<b>原本就有、但正式版沒開放的 STAGE SELECT</b>，照它的程式碼呼叫「開始關卡」，所以進關卡的方式跟遊戲本身完全相同。</p></div>
+  <div class="en"><p>Another example: time attack doesn't invent its own level picker. It uses a <b>STAGE SELECT that is in the game but never reachable in the shipped version</b>, calling its own "start level" routine, so a level starts exactly as the game itself would start it.</p></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/runtime/patches.cpp" target="_blank" rel="noopener"><code>src/runtime/patches.cpp</code></a><span class="zh">寬螢幕等對遊戲的修改，集中在這裡</span><span class="en">Widescreen and other game-side changes, all in one place</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/tests/CMakeLists.txt#L289" target="_blank" rel="noopener"><code>tests/CMakeLists.txt</code></a><span class="zh">widescreen_centre_matches_4_3：中間 320 像素必須相同</span><span class="en">widescreen_centre_matches_4_3: the centre 320 px must match</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/docs/ISSUE_7_WIDESCREEN.md" target="_blank" rel="noopener"><code>docs/ISSUE_7_WIDESCREEN.md</code></a><span class="zh">真寬螢幕的做法</span><span class="en">How real widescreen works</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/stage_select.cpp#L121" target="_blank" rel="noopener"><code>src/runtime/stage_select.cpp</code></a><span class="zh">呼叫遊戲自己隱藏的 STAGE SELECT 進關卡</span><span class="en">Starting a level through the game&#x27;s own hidden STAGE SELECT</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main/docs" target="_blank" rel="noopener"><code>docs/</code></a><span class="zh">存檔、倒帶、連線、mod 等功能各自的說明</span><span class="en">Docs for save states, rewind, netplay, mods and more</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/64b3c59161be01e783f911a9ba5bc09775134a1a" target="_blank" rel="noopener"><code>64b3c59</code></a><span><span class="date">2026-09-20</span> Milestone 4: true widescreen in levels</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/b958127755f974597902611dcef20d8c02522804" target="_blank" rel="noopener"><code>b958127</code></a><span><span class="date">2026-09-26</span> Time attack, from the stage select the game already had</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/fef6cf4ca4646bb815026ed41b6d27c9482aec3e" target="_blank" rel="noopener"><code>fef6cf4</code></a><span><span class="date">2026-09-24</span> Achievements: local unlock system with in-game notifications</span></li></ul></div>
+</div></section>
+
+<!-- 10 -->
+<section class="step" id="s10"><div class="wrap">
+  <div class="num">STEP 10</div>
+  <h2><span class="zh">搬到每個平台</span><span class="en">Bring it to every platform</span></h2>
+  <div class="zh">
+    <p>因為產出是 C++，每個平台用自己的編譯器。但每個平台都有自己的坑，要實際在那個平台上跑過才算數：</p>
+  </div>
+  <div class="en"><p>Because the output is C++, each platform uses its own compiler. Each still has its own traps, and a platform only counts once it has really run there:</p></div>
+  <div class="tbl"><table>
+    <thead><tr><th><span class="zh">平台</span><span class="en">Platform</span></th><th><span class="zh">在哪裡驗證</span><span class="en">Verified on</span></th><th><span class="zh">遇過的真實狀況</span><span class="en">A real thing that happened</span></th></tr></thead>
+    <tbody>
+      <tr><td>Windows</td><td><span class="zh">桌機，只用系統 PATH 跑啟動測試</span><span class="en">Desktop; startup test with only the system PATH</span></td><td><span class="zh">非 ASCII 路徑（中文資料夾名）會讓 ROM 搜尋當掉，由外部貢獻者修好</span><span class="en">Non-ASCII folder names crashed the ROM search; an outside contributor fixed it</span></td></tr>
+      <tr><td>Linux</td><td><span class="zh">WSL Ubuntu 22.04，clang-15</span><span class="en">WSL Ubuntu 22.04, clang-15</span></td><td><span class="zh">用 gcc 11.4 建出來的版本一進 SOUND TEST 就卡住，改用 clang-15 並記錄原因</span><span class="en">The gcc 11.4 build hung on entering SOUND TEST; releases use clang-15, with the reason written down</span></td></tr>
+      <tr><td>macOS / iOS</td><td><span class="zh">Mac mini M1：全部測試＋lockstep</span><span class="en">Mac mini M1: all tests + lockstep</span></td><td><span class="zh">ARM 上逐格比對也要完全一致</span><span class="en">Frame-by-frame comparison must match on ARM too</span></td></tr>
+      <tr><td>Android 64 / 32-bit</td><td><span class="zh">實體掌機 AYN Thor（Android 13）</span><span class="en">A real AYN Thor handheld (Android 13)</span></td><td><span class="zh">每版直接覆蓋安裝舊版、開 FPS 顯示跑關卡、放著選單 60 秒確認不會疊在示範畫面上</span><span class="en">Every release installs over the previous one, runs a level with the FPS counter, and leaves the menu alone 60 s to make sure it doesn't float over the demo</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/CMakePresets.json" target="_blank" rel="noopener"><code>CMakePresets.json</code></a><span class="zh">各平台的建置設定</span><span class="en">Build presets for each platform</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main/platforms/android" target="_blank" rel="noopener"><code>platforms/android/</code></a><span class="zh">Android 專案（64-bit 與 32-bit）</span><span class="en">The Android project (64- and 32-bit)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/scripts/package_apple.sh" target="_blank" rel="noopener"><code>scripts/package_apple.sh</code></a><span class="zh">macOS 與 iOS 打包</span><span class="en">macOS and iOS packaging</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tests/test_rom_startup.py" target="_blank" rel="noopener"><code>tests/test_rom_startup.py</code></a><span class="zh">打包後的啟動測試</span><span class="en">The startup test for packaged builds</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/ba32f7510d2e869b2d47b116cf7f2c25802b71a6" target="_blank" rel="noopener"><code>ba32f75</code></a><span><span class="date">2026-09-24</span> Android: touch-driven setup, landscape, and a build that runs</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/897da81fcadcd6e5d02dd692c2ce013bc67c0b53" target="_blank" rel="noopener"><code>897da81</code></a><span><span class="date">2026-10-10</span> Android: document the 32-bit ARM build (issue #19), drop an unused constant</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/1540ae9e12bf32d25e2a8a27ef2e575099eb31ec" target="_blank" rel="noopener"><code>1540ae9</code></a><span><span class="date">2026-10-23</span> macOS and iOS: build the app bundles</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/a1f1d2650b08af7e691c1a4b72cf370fab3bee24" target="_blank" rel="noopener"><code>a1f1d26</code></a><span><span class="date">2026-10-02</span> Windows: non-ASCII names no longer crash the ROM search or break the install</span></li></ul></div>
+</div></section>
+
+<!-- 11 -->
+<section class="step" id="s11"><div class="wrap">
+  <div class="num">STEP 11</div>
+  <h2><span class="zh">跑得更快：先量，再改，再證明</span><span class="en">Make it faster: measure, change, prove</span></h2>
+  <div class="zh">
+    <p>有玩家說在慢手機上跑不順（issue #62）。目標定為：在同一台手機上比 PicoDrive 模擬器快，<b>而且不能犧牲準確度</b>，不准用跳格之類的偷吃步。</p>
+    <p>做法每次都一樣：在實體手機上用 headless 版量 3,000 格，找出最花時間的部分，改它，再用 lockstep 證明行為沒變，最後再量一次。</p>
+  </div>
+  <div class="en">
+    <p>A player said it stuttered on slow phones (issue #62). The goal: be faster than the PicoDrive emulator on the same phone, <b>without giving up accuracy</b>; no frame-skipping shortcuts.</p>
+    <p>The method was the same every time: measure 3,000 frames with the headless build on the real phone, find the biggest cost, change it, prove with lockstep that behaviour didn't change, then measure again.</p>
+  </div>
+  <figure class="fig">
+    <div class="bars">
+      <div class="b"><span>0.15.4</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="v">4.39 ms</span></div>
+      <div class="b"><span>0.15.5</span><div class="track"><div class="fill" style="width:75.2%;animation-delay:.15s"></div></div><span class="v">≈3.3 ms</span></div>
+      <div class="b"><span>0.15.6</span><div class="track"><div class="fill" style="width:54.7%;animation-delay:.3s"></div></div><span class="v">2.40 ms</span></div>
+      <div class="b"><span>0.15.11</span><div class="track"><div class="fill" style="width:48.7%;animation-delay:.45s"></div></div><span class="v">2.14 ms</span></div>
+      <div class="b"><span>PicoDrive 64-bit</span><div class="track"><div class="fill ref" style="width:47.8%;animation-delay:.6s"></div></div><span class="v">≈2.10 ms</span></div>
+    </div>
+    <figcaption><span class="zh">AYN Thor，32-bit 版，BOTANIC BASE 1，每格平均毫秒數（越短越好）。PicoDrive 是在標題／示範畫面量的，條件不完全相同。</span><span class="en">AYN Thor, 32-bit build, BOTANIC BASE 1, average milliseconds per frame (shorter is better). PicoDrive was measured on the title/demo stretch, so it's not a perfect like-for-like.</span></figcaption>
+  </figure>
+  <div class="zh">
+    <p>其中一次加速的故事：關卡中，遊戲每格大約 370 次把資料寫在 SH-2 程式碼的旁邊。原本每次寫入都讓「所有」翻好的函式重新檢查自己有沒有被改，3,000 格裡檢查了 4,049,824 次。改成每個函式只在自己的 byte 真的被改變時才重新檢查之後，同樣 3,000 格只剩 75 次。</p>
+  </div>
+  <div class="en">
+    <p>One speed-up in detail: in a level the game writes about 370 times a frame right next to some SH-2 code. Each write used to make <i>every</i> translated function re-check itself: 4,049,824 checks in 3,000 frames. After each function was made to re-check only when its own bytes actually changed, the same 3,000 frames needed 75.</p>
+  </div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/docs/PERFORMANCE_ANDROID.md" target="_blank" rel="noopener"><code>docs/PERFORMANCE_ANDROID.md</code></a><span class="zh">每次加速的量測數字</span><span class="en">The measurements behind each speed-up</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/docs/IDLE_SKIP.md" target="_blank" rel="noopener"><code>docs/IDLE_SKIP.md</code></a><span class="zh">等待迴圈精確快轉，以及為什麼結果不變</span><span class="en">Exact fast-forward of wait loops, and why results don&#x27;t change</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/sh2_bus.cpp#L62" target="_blank" rel="noopener"><code>src/runtime/sh2_bus.cpp</code></a><span class="zh">每個函式各自記錄程式寫入</span><span class="en">Per-function code-write tracking</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/62" target="_blank" rel="noopener"><code>issue #62</code></a><span class="zh">整個加速過程與實機數字</span><span class="en">The whole speed-up story with phone numbers</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/2415073cafc63783516313850564c638cc178063" target="_blank" rel="noopener"><code>2415073</code></a><span><span class="date">2026-10-28</span> Faster drawing: no division call per line; tests for the fast paths and caches (issue #62)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/dce18474b183b95bafaaa12935b674228df10ab3" target="_blank" rel="noopener"><code>dce1847</code></a><span><span class="date">2026-10-28</span> WIP: fast-forward time-dependent SH-2 polls and 68000 wait loops (issue #62)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/0bb4230a3bf6865fa8ab939e5440826caa628ed8" target="_blank" rel="noopener"><code>0bb4230</code></a><span><span class="date">2026-10-28</span> Find SH-2 writes over recompiled code by bitmap; unit tests (issue #62)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/9884ed698acb722ddff8f9da2731a290b513e9dd" target="_blank" rel="noopener"><code>9884ed6</code></a><span><span class="date">2026-10-30</span> SH-2: count writes over code per function; cache array inline (#62)</span></li></ul></div>
+</div></section>
+
+<!-- 12 -->
+<section class="step" id="s12"><div class="wrap">
+  <div class="num">STEP 12</div>
+  <h2><span class="zh">接玩家回報：先重現，再修，再用同一招驗證</span><span class="en">Handle reports: reproduce, fix, verify the same way</span></h2>
+  <figure class="fig loop">
+    <svg viewBox="0 0 720 250" role="img" aria-label="Issue handling loop">
+      <g>
+        <rect x="20" y="30" width="150" height="50" rx="10" class="s-chip"/><text x="34" y="60" class="lbl s-ink"><tspan class="zh">① 用自己的遊戲檔重現</tspan><tspan class="en">① Reproduce locally</tspan></text>
+        <rect x="210" y="30" width="130" height="50" rx="10" class="s-chip"/><text x="224" y="60" class="lbl s-ink"><tspan class="zh">② 找到真正原因</tspan><tspan class="en">② Find the cause</tspan></text>
+        <rect x="380" y="30" width="130" height="50" rx="10" class="s-chip"/><text x="394" y="60" class="lbl s-ink"><tspan class="zh">③ 真的修，不繞過</tspan><tspan class="en">③ Real fix</tspan></text>
+        <rect x="550" y="30" width="150" height="50" rx="10" class="s-chip"/><text x="564" y="60" class="lbl s-ink"><tspan class="zh">④ 同樣方法驗證</tspan><tspan class="en">④ Verify same way</tspan></text>
+        <rect x="550" y="170" width="150" height="50" rx="10" class="s-chip"/><text x="564" y="200" class="lbl s-ink"><tspan class="zh">⑤ PR＋CI 全綠</tspan><tspan class="en">⑤ PR, CI green</tspan></text>
+        <rect x="380" y="170" width="130" height="50" rx="10" class="s-chip"/><text x="394" y="200" class="lbl s-ink"><tspan class="zh">⑥ 發版</tspan><tspan class="en">⑥ Release</tspan></text>
+        <rect x="190" y="170" width="150" height="50" rx="10" class="s-chip"/><text x="204" y="200" class="lbl s-ink"><tspan class="zh">⑦ 附真實截圖回覆</tspan><tspan class="en">⑦ Reply, real shots</tspan></text>
+        <rect x="20" y="170" width="130" height="50" rx="10" class="s-panel st-gold" stroke-width="1.5" stroke-dasharray="4 3"/><text x="32" y="192" class="lbl s-gold"><tspan class="zh">重現不了？</tspan><tspan class="en">Can't reproduce?</tspan></text><text x="32" y="210" class="lbl s-muted"><tspan class="zh">說明試過什麼再問</tspan><tspan class="en">say what was tried</tspan></text>
+      </g>
+      <path d="M170 55 H210 M340 55 H380 M510 55 H550 M625 80 V170 M550 195 H510 M380 195 H340" class="st-violet flow" stroke-width="3" fill="none"/>
+      <path d="M95 80 V170" class="st-gold" stroke-width="2" fill="none" stroke-dasharray="3 4"/>
+      <circle r="6" class="s-magenta"><animateMotion dur="6s" repeatCount="indefinite" path="M95 55 H625 V195 H265"/></circle>
+    </svg>
+  </figure>
+  <div class="zh">
+    <p>這個流程是專案擁有者訂的規則，每一個 issue 都照走。下面是一個完整的真實例子，就發生在這份文件寫成的同一天。</p>
+  </div>
+  <div class="en"><p>This loop is a rule set by the project owner, and every issue goes through it. Here is a complete real case from the same day this page was written.</p></div>
+
+  <h3><span class="zh">案例：「音樂好像少了一些 32X 聲道」</span><span class="en">Case: "the music missed some 32X audio channels"</span></h3>
+  <div class="zh">
+    <ol>
+      <li><b>先看證據</b>：留言掛在一段實機錄影下。把影片的音訊抽出來，跟模擬輸出對齊比較。結果 PWM（32X 的取樣音源）四個音軌都有在播，<b>沒有少</b>。</li>
+      <li><b>找標準</b>：自己的程式不能當自己的標準。下載 PicoDrive 的 PC 版核心，寫一個小程式讓它不開視窗，跑同一個 ROM、按同樣的鍵、進同一關，把聲音和畫面存下來。</li>
+      <li><b>逐格比對</b>：Mighty 的跑、跳、滾球、spin dash，兩邊<b>逐格相同</b>，所以「Mighty 動畫」不需要改。聲音方面，PicoDrive 的大鼓明顯比較響。</li>
+      <li><b>讀原始碼確認</b>：讀 PicoDrive 的音源程式碼（只讀，不複製），確定每種音源的最大音量：FM ±8191、PSG ±2304、PWM ±32768，最後整體乘 0.875。跟實測的差距吻合。</li>
+      <li><b>修</b>：照這些比例改混音；另外發現 PSG 雜訊聲道只有一半大，一起修正。</li>
+      <li><b>用同樣方法驗證</b>：標題音樂 -23.3 dB 對 PicoDrive -23.5 dB（原本 -31.2），關卡 -20.2 對 -20.1，大鼓頻段從差 9.4 dB 變成 1 dB 以內。</li>
+      <li><b>修好之後又發現新問題</b>：音量變大後，關掉音樂時的「啵」一聲也變大了。追查成因（PWM 停在非中點、波形被瞬間切斷），改成音量在 38 毫秒內漸變，並加一個測試：沒有漸變就會失敗。</li>
+      <li><b>發版</b>：0.15.12，六個平台、全部測試、33 組逐格比對、Mac、實體手機都通過才發。</li>
+    </ol>
+  </div>
+  <div class="en">
+    <ol>
+      <li><b>Look at the evidence</b>: the comment was under a gameplay video. Extract its audio and line it up with the emulated output. All four PWM tracks (the 32X's sample channel) were playing: <b>nothing was missing</b>.</li>
+      <li><b>Find a reference</b>: a program can't be its own yardstick. Download PicoDrive's PC core and write a small windowless host that runs the same ROM, presses the same buttons, enters the same level and saves the sound and frames.</li>
+      <li><b>Compare frame by frame</b>: Mighty's running, jumping, rolling and spin dash were <b>identical frame for frame</b>, so the "Mighty animation" needed no change. In the sound, PicoDrive's bass drum was clearly louder.</li>
+      <li><b>Confirm in the source</b>: read PicoDrive's sound code (read only, nothing copied) for each source's peak level: FM ±8191, PSG ±2304, PWM ±32768, the sum times 0.875. That matched the measured gap.</li>
+      <li><b>Fix</b>: mix at those levels; the PSG noise channel turned out to be half as loud as it should be, and was fixed too.</li>
+      <li><b>Verify the same way</b>: title music -23.3 dB vs PicoDrive -23.5 (was -31.2), level -20.2 vs -20.1, and the bass-drum band from 9.4 dB short to within 1 dB.</li>
+      <li><b>The fix exposed another problem</b>: with the louder mix, muting the music popped louder. Trace the cause (PWM parked off-centre, the waveform cut in one sample), ease volume changes over 38 ms, and add a test that fails without the easing.</li>
+      <li><b>Release</b>: 0.15.12, only after six platforms, every test, 33 lockstep runs, the Mac and the real phone all passed.</li>
+    </ol>
+  </div>
+  <figure class="fig">
+    <div class="spec" aria-hidden="true">
+      <div class="g"><i class="p" style="height:93.7%"></i><i class="o" style="height:62.3%"></i><i class="nw" style="height:96%"></i></div>
+      <div class="g"><i class="p" style="height:82%"></i><i class="o" style="height:73.7%"></i><i class="nw" style="height:85%"></i></div>
+      <div class="g"><i class="p" style="height:84.3%"></i><i class="o" style="height:57.3%"></i><i class="nw" style="height:79.7%"></i></div>
+      <div class="g"><i class="p" style="height:79.3%"></i><i class="o" style="height:52.3%"></i><i class="nw" style="height:77.7%"></i></div>
+      <div class="g"><i class="p" style="height:69.3%"></i><i class="o" style="height:42.7%"></i><i class="nw" style="height:69.3%"></i></div>
+      <div class="g"><i class="p" style="height:48.7%"></i><i class="o" style="height:31.7%"></i><i class="nw" style="height:54.7%"></i></div>
+    </div>
+    <div class="spec-x"><span>40–150</span><span>150–400</span><span>400–1k</span><span>1k–2.5k</span><span>2.5k–5k</span><span>5k–10k Hz</span></div>
+    <div class="legend"><span><i class="p" style="background:var(--gold)"></i>PicoDrive</span><span><i style="background:var(--muted);opacity:.55"></i><span class="zh">修改前</span><span class="en">before</span></span><span><i style="background:var(--magenta)"></i><span class="zh">修改後</span><span class="en">after</span></span></div>
+    <figcaption><span class="zh">BOTANIC BASE 1 各頻段能量（相對刻度）。修改前每個頻段都偏低，大鼓所在的 40–150 Hz 差最多。</span><span class="en">Energy per band in BOTANIC BASE 1 (relative scale). Before, every band was low, and 40–150 Hz, where the bass drum is, was lowest.</span></figcaption>
+  </figure>
+  <div class="why"><b>?</b> <span class="zh">注意第 7 點：修完一個問題，不是交差，而是再量一次、再聽一次。「做到真的對」和「做到看起來能動」的差別，就在這裡。</span><span class="en">Note point 7: fixing one thing isn't the finish line; measure and listen again. That's the difference between "really right" and "seems to work".</span></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/docs/AUDIO_MIX.md" target="_blank" rel="noopener"><code>docs/AUDIO_MIX.md</code></a><span class="zh">混音比例的來源、量測與「啵」的修法</span><span class="en">Where the mix levels come from, the measurements, the pop fix</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/1d0d519d48eb42dfbcef42848fa35031d83a68f9/src/runtime/system.cpp#L305" target="_blank" rel="noopener"><code>src/runtime/system.cpp</code></a><span class="zh">FM、PSG、PWM 混音</span><span class="en">Mixing FM, PSG and PWM</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/src/audio/gain_ramp.h" target="_blank" rel="noopener"><code>src/audio/gain_ramp.h</code></a><span class="zh">音量漸變（不再「啵」）</span><span class="en">Volume easing (no more pop)</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tests/test_pwm_audio.cpp" target="_blank" rel="noopener"><code>tests/test_pwm_audio.cpp</code></a><span class="zh">PWM 聲道與漸變的測試</span><span class="en">Tests for PWM routing and easing</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/pull/87" target="_blank" rel="noopener"><code>PR #87</code></a><span class="zh">這次修正的完整 PR</span><span class="en">The full PR for this fix</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/5fb52358eece0454ccc67b1b4ea60bf6e3ca5484" target="_blank" rel="noopener"><code>5fb5235</code></a><span><span class="date">2026-10-30</span> Mix FM, PSG and PWM at PicoDrive&#x27;s levels</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/ac5c0d7d0ac45cff2d314fccb1ced79615803de6" target="_blank" rel="noopener"><code>ac5c0d7</code></a><span><span class="date">2026-10-30</span> Ease volume changes so muting the music does not pop</span></li></ul></div>
+</div></section>
+
+<!-- 13 -->
+<section class="step" id="s13"><div class="wrap">
+  <div class="num">STEP 13</div>
+  <h2><span class="zh">發版前的檢查清單</span><span class="en">The release checklist</span></h2>
+  <div class="zh"><p>每個版本都照這張清單走，任何一項沒過就不發：</p></div>
+  <div class="en"><p>Every release goes through this list; if any item fails, it doesn't ship:</p></div>
+  <div class="tbl"><table>
+    <tbody>
+      <tr><td class="n">1</td><td><span class="zh">改版號的 PR，GitHub 上 5 項 CI 全綠（Linux、macOS、Windows、SDL3 前端、No game data）</span><span class="en">A version-bump PR with all 5 CI jobs green (Linux, macOS, Windows, SDL3 frontend, No game data)</span></td></tr>
+      <tr><td class="n">2</td><td><span class="zh">Windows：0 警告建置、139 項測試、33 組逐格比對</span><span class="en">Windows: warning-free build, 139 tests, 33 lockstep runs</span></td></tr>
+      <tr><td class="n">3</td><td><span class="zh">Linux（Ubuntu 22.04）：139 項測試，打包後的版本再跑啟動測試</span><span class="en">Linux (Ubuntu 22.04): 139 tests, plus a startup test of the packaged build</span></td></tr>
+      <tr><td class="n">4</td><td><span class="zh">Mac M1：139 項測試、逐格比對、macOS 與 iOS 打包</span><span class="en">Mac M1: 139 tests, lockstep, macOS and iOS packages</span></td></tr>
+      <tr><td class="n">5</td><td><span class="zh">Windows 包：在只有系統 PATH 的環境跑啟動測試，確定沒漏掉 DLL</span><span class="en">Windows package: startup test with only the system PATH, so no DLL is missing</span></td></tr>
+      <tr><td class="n">6</td><td><span class="zh">實體 Android 掌機：兩個 APK 覆蓋安裝舊版，關卡中看 FPS，選單放 60 秒</span><span class="en">Real Android handheld: both APKs over the previous version, FPS in a level, menu left alone 60 s</span></td></tr>
+      <tr><td class="n">7</td><td><span class="zh">發版，然後才回覆 issue：先用一般人聽得懂的話說明，再附開發細節與真實截圖</span><span class="en">Release, and only then reply on the issue: plain words first, then developer detail and real screenshots</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/.github/workflows/ci.yml" target="_blank" rel="noopener"><code>.github/workflows/ci.yml</code></a><span class="zh">5 項 CI 檢查</span><span class="en">The 5 CI jobs</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/blob/main/tests/CMakeLists.txt" target="_blank" rel="noopener"><code>tests/CMakeLists.txt</code></a><span class="zh">139 項測試的定義</span><span class="en">Where the 139 tests are defined</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/releases" target="_blank" rel="noopener"><code>Releases</code></a><span class="zh">每個版本的說明與驗證結果</span><span class="en">Every release with its validation results</span></li></ul><div class="code-h sub"><span class="zh">相關 commit</span><span class="en">Commits</span></div><ul class="commits"><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commit/e93fcd255bbd78af91838c0b0b3dbd65d10be2be" target="_blank" rel="noopener"><code>e93fcd2</code></a><span><span class="date">2026-09-24</span> CI: default generators, no third-party actions</span></li></ul></div>
+</div></section>
+
+<!-- AI -->
+<section class="step" id="ai"><div class="wrap">
+  <div class="num">ABOUT AI</div>
+  <h2><span class="zh">AI 在這裡做了什麼，人做了什麼</span><span class="en">What AI did here, and what people did</span></h2>
+  <div class="ai">
+    <div class="zh">
+      <p>直接說清楚：這個專案大部分的程式碼由 AI（Anthropic 的 Claude）撰寫。264 個 commit 裡有 228 個標註了 Claude 為共同作者，紀錄都在 git 裡。</p>
+      <p>「AI 寫的」不等於「垃圾」，也不等於「好」。決定品質的是<b>有沒有辦法證明它是對的</b>。這份文件裡每一步都有一個「怎麼確認」，那才是重點：</p>
+    </div>
+    <div class="en">
+      <p>To be plain about it: most of this project's code was written by AI (Anthropic's Claude). 228 of its 264 commits name Claude as co-author, and that record is in git for anyone to read.</p>
+      <p>"Written by AI" doesn't mean "slop", and it doesn't mean "good" either. What decides quality is <b>whether you can prove it's right</b>. Every step on this page has a "how you know"; that is the point:</p>
+    </div>
+    <div class="split" style="margin-top:14px">
+      <div>
+        <span class="tag zh">人</span><span class="tag en">People</span>
+        <ul class="zh">
+          <li>定方向和規則：先重現再修、不准用繞過問題的方式「修好」、截圖必須是真的、要比模擬器快但不能犧牲準確度</li>
+          <li>擁有遊戲檔、測試機器和實體手機，實際玩、實際聽</li>
+          <li>決定什麼時候合併、什麼時候發版</li>
+          <li>玩家回報問題：57 個 issue，其中 44 個來自玩家，已關閉 53 個</li>
+          <li>外部貢獻者也送過修正（例如非 ASCII 路徑）</li>
+        </ul>
+        <ul class="en">
+          <li>Set the direction and the rules: reproduce before fixing, no workaround "fixes", screenshots must be real, be faster than an emulator without losing accuracy</li>
+          <li>Own the game file, the test machines and the real phone; actually play and listen</li>
+          <li>Decide when to merge and when to release</li>
+          <li>Players report problems: 57 issues, 44 of them from players, 53 closed</li>
+          <li>Outside contributors sent fixes too (for example non-ASCII paths)</li>
+        </ul>
+      </div>
+      <div>
+        <span class="tag">AI</span>
+        <ul class="zh">
+          <li>寫直譯器、分析器、重編譯器、硬體層、前端</li>
+          <li>寫測試，並在每次修改後跑完整驗證</li>
+          <li>重現問題、量測、查原因、寫說明文件（目前 38 份）</li>
+          <li>照清單建置六個平台、在實體手機上測試、發版</li>
+        </ul>
+        <ul class="en">
+          <li>Wrote the interpreters, analyzer, recompiler, hardware layer and frontend</li>
+          <li>Wrote the tests and ran the full verification after every change</li>
+          <li>Reproduced problems, measured, traced causes, wrote the docs (38 of them so far)</li>
+          <li>Built all six platforms from the checklist, tested on the real phone, released</li>
+        </ul>
+      </div>
+    </div>
+    <div class="zh"><p style="margin-top:14px">不管是誰寫的，你都可以直接檢查：程式碼、每個版本的驗證結果、每個 issue 的處理過程，全部公開在 GitHub 上。</p></div>
+    <div class="en"><p style="margin-top:14px">Whoever wrote it, you can check it yourself: the code, each release's validation results and how every issue was handled are all public on GitHub.</p></div>
+  </div>
+
+  <div class="code"><div class="code-h"><span class="zh">在專案裡的位置</span><span class="en">Where it is in the code</span></div><ul><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/commits/main" target="_blank" rel="noopener"><code>Commits</code></a><span class="zh">每個 commit 與共同作者紀錄</span><span class="en">Every commit, with its co-author lines</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/issues?q=is%3Aissue" target="_blank" rel="noopener"><code>Issues</code></a><span class="zh">每個回報與處理過程</span><span class="en">Every report and how it was handled</span></li><li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/pulls?q=is%3Apr" target="_blank" rel="noopener"><code>Pull requests</code></a><span class="zh">每個修改的 PR</span><span class="en">Every change as a PR</span></li></ul></div>
+</div></section>
+
+<section class="step"><div class="wrap">
+  <div class="num">BY THE NUMBERS</div>
+  <h2><span class="zh">數字一覽</span><span class="en">At a glance</span></h2>
+  <div class="tbl"><table>
+    <tbody>
+      <tr><td><span class="zh">第一個 commit</span><span class="en">First commit</span></td><td class="n">2026-09-19</td></tr>
+      <tr><td><span class="zh">第一個能玩的版本（0.1.0）</span><span class="en">First playable release (0.1.0)</span></td><td class="n">2026-09-24</td></tr>
+      <tr><td><span class="zh">正式版本數（到 0.15.12）</span><span class="en">Releases (to 0.15.12)</span></td><td class="n">50</td></tr>
+      <tr><td><span class="zh">Commit 數</span><span class="en">Commits</span></td><td class="n">264</td></tr>
+      <tr><td><span class="zh">程式碼（src、tools、tests 的 C++／Python）</span><span class="en">Code (C++/Python in src, tools, tests)</span></td><td class="n">≈ 54,700 lines</td></tr>
+      <tr><td><span class="zh">自動測試</span><span class="en">Automated tests</span></td><td class="n">139</td></tr>
+      <tr><td><span class="zh">逐格比對（每版）</span><span class="en">Lockstep runs (every release)</span></td><td class="n">33 × bit-identical</td></tr>
+      <tr><td><span class="zh">翻好的程式執行比例</span><span class="en">Share of code running natively</span></td><td class="n">68K 99.7–100% · SH-2 100%</td></tr>
+      <tr><td><span class="zh">手機每格時間（Thor 32-bit）</span><span class="en">Phone frame time (Thor 32-bit)</span></td><td class="n">4.39 → 2.14 ms</td></tr>
+      <tr><td><span class="zh">說明文件</span><span class="en">Docs</span></td><td class="n">38 + ARCHITECTURE.md</td></tr>
+    </tbody>
+  </table></div>
+</div></section>
+
+<section class="step" id="code"><div class="wrap">
+  <div class="num">THE CODE TODAY</div>
+  <h2><span class="zh">目前的程式碼在這裡</span><span class="en">Where the code is today</span></h2>
+  <div class="zh"><p>上面的行號連結都固定在 commit <a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/1d0d519d48eb42dfbcef42848fa35031d83a68f9"><code>1d0d519</code></a>（0.15.12 發布時的 main），之後程式碼改了也不會跑掉。最新的程式碼請看：</p></div>
+  <div class="en"><p>The line links above are pinned to commit <a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/1d0d519d48eb42dfbcef42848fa35031d83a68f9"><code>1d0d519</code></a> (main at the 0.15.12 release), so they don't drift as the code changes. For the latest code:</p></div>
+  <div class="code"><ul>
+    <li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled" target="_blank" rel="noopener"><code>YuutaTsubasa/ChaotixRecompiled</code></a><span class="zh">GitHub 上的專案首頁</span><span class="en">The project on GitHub</span></li>
+    <li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/main" target="_blank" rel="noopener"><code>main</code></a><span class="zh">目前的程式碼</span><span class="en">The current code</span></li>
+    <li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/tree/1d0d519d48eb42dfbcef42848fa35031d83a68f9" target="_blank" rel="noopener"><code>1d0d519</code></a><span class="zh">這份文件對照的版本</span><span class="en">The version this page describes</span></li>
+    <li><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled/releases/latest" target="_blank" rel="noopener"><code>releases/latest</code></a><span class="zh">最新版本下載與驗證結果</span><span class="en">The latest release and its validation</span></li>
+  </ul></div>
+</div></section>
+
+</main>
+
+<footer><div class="wrap">
+  <p><span class="zh">專案：</span><span class="en">Project: </span><a href="https://github.com/YuutaTsubasa/ChaotixRecompiled">github.com/YuutaTsubasa/ChaotixRecompiled</a></p>
+  <p><span class="zh">本專案不含任何 ROM 或遊戲素材，你需要自己合法取得的 Knuckles' Chaotix (Japan, USA) ROM。Knuckles' Chaotix 是 SEGA 的商標與著作。</span><span class="en">This project contains no ROM or game assets; you need your own legally obtained Knuckles' Chaotix (Japan, USA) ROM. Knuckles' Chaotix is a trademark and work of SEGA.</span></p>
+</div></footer>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  function setLang(l,save){
+    root.setAttribute('data-lang',l);
+    root.setAttribute('lang',l==='en'?'en':'zh-Hant');
+    document.getElementById('btn-zh').setAttribute('aria-pressed',l!=='en');
+    document.getElementById('btn-en').setAttribute('aria-pressed',l==='en');
+    if(save){try{localStorage.setItem('rh-lang',l)}catch(e){}}
+  }
+  var start='zh';
+  var h=(location.hash||'').slice(1);
+  if(h==='en'||h==='zh'){start=h}
+  else{
+    var saved=null;try{saved=localStorage.getItem('rh-lang')}catch(e){}
+    if(saved){start=saved}
+    else if(!/^zh/i.test(navigator.language||'')){start='en'}
+  }
+  setLang(start,false);
+  document.querySelectorAll('.lang button').forEach(function(b){
+    b.addEventListener('click',function(){setLang(b.getAttribute('data-set'),true)});
+  });
+  // lockstep feeds
+  function hash(i){var x=(i*2654435761)>>>0;x^=x>>>13;x=(x*1274126177)>>>0;return ('00000000'+x.toString(16)).slice(-8)}
+  var a=document.getElementById('feedA'),b=document.getElementById('feedB'),html='';
+  for(var r=0;r<2;r++)for(var f=1;f<=24;f++){var n=f*10;html+='<div class="row"><span>frame '+('0000'+n).slice(-4)+'</span><span>'+hash(n)+'</span><span class="ok">✓</span></div>'}
+  a.innerHTML=html;b.innerHTML=html;
+})();
+</script>
+
+</body>
+</html>
