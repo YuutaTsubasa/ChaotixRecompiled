@@ -257,7 +257,8 @@ struct Shipped {
 TEST(achievements, shipped_definitions_are_sound) {
     Shipped s;
     const auto& all = s.t.list();
-    CHECK(all.size() >= 38u);
+    // Issue #95: 16 that came for nothing went, 6 that take some doing came.
+    CHECK_EQ(int(all.size()), 28);
     for (size_t i = 0; i < all.size(); ++i) {
         // Every id is its own: it is what a save file keeps.
         for (size_t j = i + 1; j < all.size(); ++j) CHECK(all[i].id != all[j].id);
@@ -268,16 +269,22 @@ TEST(achievements, shipped_definitions_are_sound) {
         for (char c : all[i].title)
             CHECK((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || std::strchr(" !?-,.'", c));
     }
-    // The ids players' save files already hold are all still there.
-    for (const char* id : {"first_ring", "rings_25", "rings_50", "rings_100", "rings_no_loss", "zone_botanic_base",
-                           "zone_speed_slider", "zone_amazing_arena", "zone_techno_tower", "zone_marina_madness",
-                           "zone_training", "zone_isolated_island", "level_3", "level_5", "play_mighty",
-                           "play_knuckles", "play_charmy", "play_vector", "play_bomb", "play_heavy", "play_espio",
-                           "two_players"}) {
-        bool found = false;
-        for (const auto& a : all) found = found || a.id == id;
-        CHECK(found);
-    }
+    // The ids players' save files already hold are still there, but for the
+    // ones issue #95 took out: entering a place, playing as someone, the
+    // first ring and the claw, all earned by just playing on.
+    auto has = [&all](const char* id) {
+        for (const auto& a : all)
+            if (a.id == id) return true;
+        return false;
+    };
+    for (const char* id : {"rings_25", "rings_50", "rings_100", "rings_no_loss", "level_3", "level_5", "two_players"})
+        CHECK(has(id));
+    for (const char* id : {"first_ring", "zone_botanic_base", "zone_training", "zone_isolated_island", "play_knuckles",
+                           "play_espio", "combi_catcher"})
+        CHECK(!has(id));
+    for (const char* id : {"clear_every_attraction", "clear_as_everyone", "clear_with_everyone", "clear_30s",
+                           "clear_100_rings", "ending"})
+        CHECK(has(id));
 }
 
 TEST(achievements, shipped_attractions_count_their_own_progress) {
@@ -325,5 +332,106 @@ TEST(achievements, shipped_bonus_stage_is_not_the_ending) {
     CHECK(b.got("bonus_stage"));
     CHECK(!b.got("level_3"));
     CHECK(!b.got("final_battle"));
+}
+
+namespace {
+// The goal of a level of `place`, played as `player` with `partner`.
+void reach_goal(Shipped& s, int place, int player, int partner) {
+    s.ram.word(0xDFF2, uint16_t(place));
+    s.ram.word(0xDFF4, 1);
+    s.ram.word(0xE038, uint16_t(player));
+    s.ram.word(0xE03A, uint16_t(partner));
+    s.ram.bytes[0xFDC5] = 0;
+    s.frame();
+    s.ram.bytes[0xFDC5] = 0xFF;
+    s.frame();
+}
+} // namespace
+
+TEST(achievements, shipped_world_tour_takes_every_attraction) {
+    // A goal in each attraction in turn: four earn nothing, the fifth does.
+    // The same place twice counts once.
+    Shipped s;
+    s.frame();
+    for (int place : {0, 1, 1, 2, 3}) reach_goal(s, place, 8, 28);
+    CHECK(!s.got("clear_every_attraction"));
+    reach_goal(s, 4, 8, 28);
+    CHECK(s.got("clear_every_attraction"));
+}
+
+TEST(achievements, shipped_whole_team_takes_five_leaders) {
+    Shipped s;
+    s.frame();
+    for (int who : {8, 28, 16, 12}) reach_goal(s, 0, who, 24);
+    CHECK(!s.got("clear_as_everyone"));
+    reach_goal(s, 0, 0, 24);
+    CHECK(s.got("clear_as_everyone"));
+    CHECK(!s.got("clear_with_everyone"));  // one partner so far
+}
+
+TEST(achievements, shipped_sets_last_across_sessions) {
+    // Three leaders, saved; the other two in a new session finish the set.
+    const std::string path = std::string(std::getenv("TEMP") ? std::getenv("TEMP") : ".") + "/chaotix_ach_set.ini";
+    {
+        Shipped s;
+        s.frame();
+        for (int who : {8, 28, 16}) reach_goal(s, 0, who, 24);
+        CHECK(s.t.take_progress_changed());
+        CHECK(!s.t.take_progress_changed());
+        CHECK(s.t.save_progress(path));
+    }
+    Shipped s;
+    CHECK(s.t.load_progress(path));
+    for (const auto& a : s.t.list())
+        if (a.id == "clear_as_everyone") CHECK_EQ(Tracker::seen(a), 3);
+    s.frame();
+    reach_goal(s, 0, 12, 24);
+    CHECK(!s.got("clear_as_everyone"));
+    reach_goal(s, 0, 0, 24);
+    CHECK(s.got("clear_as_everyone"));
+    std::remove(path.c_str());
+}
+
+TEST(achievements, removed_awards_stay_in_the_save_file) {
+    // An award the definitions no longer have (issue #95 took some out) is
+    // not listed, but its line is written back as it was.
+    const std::string path = std::string(std::getenv("TEMP") ? std::getenv("TEMP") : ".") + "/chaotix_ach_kept.ini";
+    {
+        FILE* f = std::fopen(path.c_str(), "w");
+        CHECK(f != nullptr);
+        if (!f) return;
+        std::fprintf(f, "rings_25 = 1700000000\nplay_knuckles = 1700000001\n");
+        std::fclose(f);
+    }
+    Shipped s;
+    CHECK(s.t.load_progress(path));
+    CHECK_EQ(s.t.unlocked_count(), 1);
+    CHECK(s.t.save_progress(path));
+    std::string text;
+    if (FILE* f = std::fopen(path.c_str(), "r")) {
+        char buf[512];
+        size_t n = std::fread(buf, 1, sizeof buf - 1, f);
+        buf[n] = 0;
+        text = buf;
+        std::fclose(f);
+    }
+    CHECK(text.find("play_knuckles = 1700000001") != std::string::npos);
+    CHECK(text.find("rings_25 = 1700000000") != std::string::npos);
+    std::remove(path.c_str());
+}
+
+TEST(achievements, shipped_ending_is_not_the_bonus_stage) {
+    // The ending's later scenes, WORLD ENTRANCE 4 on; not the bonus stage's 3.
+    Shipped b;
+    b.ram.word(0xDFF2, 0);
+    b.ram.word(0xDFF4, 1);
+    b.frame();
+    b.ram.word(0xDFF2, 7);
+    b.ram.word(0xDFF4, 3);
+    b.frame();
+    CHECK(!b.got("ending"));
+    b.ram.word(0xDFF4, 4);
+    b.frame();
+    CHECK(b.got("ending"));
 }
 #endif

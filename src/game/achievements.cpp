@@ -142,6 +142,10 @@ bool parse(const std::string& text, std::map<std::string, Var>& vars,
             else if (k == "id") a.id = value;
             else if (k == "points") a.points = std::atoi(value.c_str());
             else if (k == "icon") a.icon = lower(value);
+            else if (k == "collect") {
+                if (!vars.count(value)) fail(a.title + ": unknown variable '" + value + "' to collect");
+                a.collect = value;
+            } else if (k == "count") a.count = std::atoi(value.c_str());
             else if (k == "when" || k == "start" || k == "fail") {
                 std::string err;
                 std::vector<Condition>& into = k == "when" ? a.when : k == "start" ? a.start : a.fail;
@@ -157,6 +161,8 @@ bool parse(const std::string& text, std::map<std::string, Var>& vars,
         if (a.when.empty()) fail(a.title + ": no 'when' conditions");
         // An attempt that can be spoiled but never begun would never count.
         if (!a.fail.empty() && a.start.empty()) fail(a.title + ": 'fail' without 'start'");
+        if (a.collect.empty() != (a.count == 0)) fail(a.title + ": 'collect' and 'count' go together");
+        if (a.count < 0 || a.count > 64) fail(a.title + ": 'count' is 1 to 64");
     }
     return ok;
 }
@@ -185,16 +191,33 @@ bool Tracker::load_progress(const std::string& path) {
     std::ifstream f(path);
     if (!f) return false;
     std::string line;
+    kept_.clear();
     while (std::getline(f, line)) {
         const size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
-        const std::string id = trim(line.substr(0, eq));
-        const uint64_t when = std::strtoull(trim(line.substr(eq + 1)).c_str(), nullptr, 10);
+        std::string id = trim(line.substr(0, eq));
+        const std::string whole = trim(line);
+        bool known = false;
+        const uint64_t when = std::strtoull(trim(line.substr(eq + 1)).c_str(), nullptr, 0);
+        if (id.size() > 5 && id.compare(id.size() - 5, 5, ".seen") == 0) {
+            id.resize(id.size() - 5);
+            for (Achievement& a : achievements_)
+                if (a.id == id) {
+                    a.collected = when;
+                    known = true;
+                }
+            if (!known) kept_.push_back(whole);
+            continue;
+        }
         for (Achievement& a : achievements_)
             if (a.id == id) {
                 a.unlocked = true;
                 a.unlocked_at = when;
+                known = true;
             }
+        // An award these definitions no longer have (issue #95 took some
+        // out): kept as it was, so it comes back if the award ever does.
+        if (!known) kept_.push_back(whole);
     }
     return true;
 }
@@ -210,7 +233,9 @@ void Tracker::reset_progress() {
         a.unlocked = false;
         a.unlocked_at = 0;
         a.armed = false;
+        a.collected = 0;
     }
+    kept_.clear();
     LOGI("achievements", "progress reset");
 }
 
@@ -220,6 +245,8 @@ bool Tracker::save_progress(const std::string& path) const {
     std::fprintf(f, "# Knuckles' Chaotix Recompiled - unlocked achievements\n");
     for (const Achievement& a : achievements_)
         if (a.unlocked) std::fprintf(f, "%s = %llu\n", a.id.c_str(), (unsigned long long)a.unlocked_at);
+        else if (a.collected) std::fprintf(f, "%s.seen = 0x%llx\n", a.id.c_str(), (unsigned long long)a.collected);
+    for (const std::string& line : kept_) std::fprintf(f, "%s\n", line.c_str());
     std::fclose(f);
     return true;
 }
@@ -283,6 +310,14 @@ void Tracker::update_memory(const uint8_t* wram, size_t size, const std::functio
                 if (!a.armed) continue;
             }
             if (!holds(a.when)) continue;
+            if (!a.collect.empty()) {
+                const uint32_t v = now[a.collect];
+                if (v < 64 && !(a.collected >> v & 1)) {
+                    a.collected |= uint64_t(1) << v;
+                    progress_changed_ = true;
+                }
+                if (seen(a) < a.count) continue;
+            }
             a.unlocked = true;
             a.unlocked_at = uint64_t(std::time(nullptr));
             LOGI("achievements", "unlocked: %s (%d points)", a.title.c_str(), a.points);
@@ -295,6 +330,12 @@ void Tracker::update_memory(const uint8_t* wram, size_t size, const std::functio
 
 void Tracker::update(const Machine& m, const std::function<void(const Achievement&)>& unlocked) {
     update_memory(m.wram, sizeof m.wram, unlocked);
+}
+
+int Tracker::seen(const Achievement& a) {
+    int n = 0;
+    for (uint64_t m = a.collected; m; m &= m - 1) ++n;
+    return n;
 }
 
 int Tracker::unlocked_count() const {

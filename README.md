@@ -335,11 +335,13 @@ in `SaveData/achievements.ini`. Nothing is downloaded or uploaded and no
 account is involved. `F7` shows the list; see
 [docs/ACHIEVEMENTS.md](docs/ACHIEVEMENTS.md) to write your own.
 
-Twenty-two of them, 270 points: rings, each of the seven attractions, how far
-in you get, one for each of the seven characters, and one for playing with a
-second player on the partner. The character ones want TIME ATTACK, which is
-how you reach a character the game would otherwise have chosen for you. Each
-was checked by driving the game to it rather than by reading the conditions.
+Twenty-eight of them, 665 points, and none for just playing on: rings
+carried and kept, clears (quick, clean, at night or in the morning, with 100
+rings), each attraction finished, the Chaos Rings, the final battle and the
+ending, and sets built up over many sessions (a level cleared in every
+attraction, as every leader, with every partner), which the list shows the
+progress of. Each was checked by driving the game to it rather than by
+reading the conditions.
 
 ## Cheats
 
