@@ -29,6 +29,15 @@
 //   fail  = rings < prev(rings)
 //   when  = goal == 0xFF and prev(goal) != 0xFF
 //
+// An achievement about a set ("clear a level as each character", issue #95)
+// adds `collect`, a variable, and `count`. Each frame `when` holds, the
+// variable's value (0-63) is added to the set seen so far, and it unlocks
+// once `count` different values have been seen. The set is kept with the
+// unlocks, so it builds up across sessions:
+//
+//   collect = player
+//   count   = 7
+//
 // `icon` names the emblem the list and the notification draw for it (ring,
 // chaos, goal, clock, place, team, boss, star); anything else is a star.
 #pragma once
@@ -76,6 +85,11 @@ struct Achievement {
     std::vector<Condition> start, fail;
     bool armed = false;
     std::string icon;             // emblem name, "" for the default
+    // A set (see above): the variable, how many of its values it takes, and
+    // the values seen so far (bit v for value v).
+    std::string collect;
+    int count = 0;
+    uint64_t collected = 0;
     bool unlocked = false;
     uint64_t unlocked_at = 0;     // unix time, 0 while locked
 };
@@ -96,7 +110,8 @@ public:
     // definitions' [rules] require line. Exposed for tests.
     const std::vector<Condition>& require() const { return require_; }
     bool load_definitions_text(const std::string& text, std::string* error);
-    // Restores/stores unlocks (ini: one "id = unix_time" line per unlock).
+    // Restores/stores unlocks (ini: one "id = unix_time" line per unlock, and
+    // "id.seen = mask" for a set under way).
     bool load_progress(const std::string& path);
     // Locks everything again. The caller saves, or deletes, the file.
     void reset_progress();
@@ -114,6 +129,14 @@ public:
 
     const std::vector<Achievement>& list() const { return achievements_; }
     int unlocked_count() const;
+    // How many of a set's values have been seen.
+    static int seen(const Achievement& a);
+    // True once since a set grew (the caller saves the progress then).
+    bool take_progress_changed() {
+        const bool c = progress_changed_;
+        progress_changed_ = false;
+        return c;
+    }
     int points_earned() const;
     int points_total() const;
     // Testing hook: evaluate against raw memory instead of a Machine.
@@ -124,6 +147,10 @@ private:
     std::map<std::string, Var> vars_;
     std::map<std::string, uint32_t> previous_;   // last frame's values
     bool have_previous_ = false;
+    bool progress_changed_ = false;
+    // Lines of the progress file for awards these definitions do not have,
+    // written back as they were (issue #95 removed some).
+    std::vector<std::string> kept_;
     std::vector<Achievement> achievements_;
     std::vector<Condition> require_;
 };

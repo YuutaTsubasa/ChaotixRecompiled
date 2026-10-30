@@ -3255,7 +3255,11 @@ void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {
                        a.unlocked ? ui::theme::text : ui::Color{150, 140, 175});
             g.tint_game_font(false);
             const float dw = card.x + card_w - cl - pad - tx;
-            g.text_fit(Font::Body, tx, card.y + pad + lp + g.px(4), dw, a.description,
+            // A set under way (issue #95) says how far it has got.
+            std::string desc = a.description;
+            if (!a.unlocked && a.count > 0 && a.collected)
+                desc += " (" + std::to_string(achievements::Tracker::seen(a)) + " of " + std::to_string(a.count) + ")";
+            g.text_fit(Font::Body, tx, card.y + pad + lp + g.px(4), dw, desc,
                        a.unlocked ? col::text : col::text_dim);
         }
         y += card_h + gap;

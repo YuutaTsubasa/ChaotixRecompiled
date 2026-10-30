@@ -708,14 +708,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(achievements_not_earned_by_the_demo PROPERTIES TIMEOUT 300
         FAIL_REGULAR_EXPRESSION "unlocked")
 
-    # ... and playing must earn something, or the conditions are simply dead.
-    add_test(NAME achievements_earned_by_playing
+    # ... and nor does just starting to play (issue #95): through the title
+    # into the opening and a few seconds of running right used to earn the
+    # first ring, a place and a character. That the conditions are alive is
+    # shown by the runs below, which earn what they do.
+    add_test(NAME achievements_not_given_for_starting_to_play
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4200
                 --achievements ${CMAKE_SOURCE_DIR}/assets/achievements.ini
                 --press 1750:start:5 --press 1950:start:5 --press 2300:start:5
                 --press 2600:right:400)
-    set_tests_properties(achievements_earned_by_playing PROPERTIES TIMEOUT 300
-        PASS_REGULAR_EXPRESSION "unlocked")
+    set_tests_properties(achievements_not_given_for_starting_to_play PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "ran 4200 frames" FAIL_REGULAR_EXPRESSION "unlocked")
 
     # Issue #3: every award earned by the game itself, through the headless
     # runner (docs/ACHIEVEMENTS.md). The recorded run (recordings/
@@ -730,7 +733,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(achievements_a_clean_quick_night_clear PROPERTIES TIMEOUT 300
         PASS_REGULAR_EXPRESSION
         "frame 2941: unlocked TIGHT GRIP.*frame 3423: unlocked THROUGH THE GOAL.*frame 3423: unlocked BEAT THE CLOCK.*frame 3423: unlocked NOT A SCRATCH.*frame 3423: unlocked NIGHT SHIFT"
-        FAIL_REGULAR_EXPRESSION "EARLY BIRD|GIANT RING FARE|A RING OF CHAOS|WEED KILLER|INTO THE TUBE|LAST STOP")
+        FAIL_REGULAR_EXPRESSION "EARLY BIRD|GIANT RING FARE|A RING OF CHAOS|WEED KILLER|INTO THE TUBE|LAST STOP|SPEED DEMON|RING HOARDER|WORLD TOUR|THE WHOLE TEAM")
+    # Issue #95: the same clear with the clock set back under 30 seconds, and
+    # with 100 rings in hand, just before the goal.
+    add_test(NAME achievements_a_clear_under_30_seconds
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3500 ${_ach} ${_run} --poke 3420:E010:05)
+    set_tests_properties(achievements_a_clear_under_30_seconds PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 3423: unlocked SPEED DEMON")
+    add_test(NAME achievements_a_clear_with_100_rings
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3500 ${_ach} ${_run} --poke 3420:E009:64)
+    set_tests_properties(achievements_a_clear_with_100_rings PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 3423: unlocked RING HOARDER")
     # The same run with its rings taken away halfway: a clear, not a clean one.
     add_test(NAME achievements_a_lost_ring_spoils_the_clean_clear
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3500 ${_ach} ${_run} --poke 3000:E009:00)
@@ -782,28 +795,19 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --poke 1000:8049:08 --poke 1000:804C:06 --poke 1000:804D:6C --poke 1000:E008:00 --poke 1000:E009:32)
     set_tests_properties(achievements_bonus_stage PROPERTIES TIMEOUT 300
         PASS_REGULAR_EXPRESSION "frame 1034: unlocked INTO THE TUBE"
-        FAIL_REGULAR_EXPRESSION "HALFWAY THROUGH THE RIDE|THE LAST ATTRACTION")
+        FAIL_REGULAR_EXPRESSION "HALFWAY THROUGH THE RIDE|THE LAST ATTRACTION|CURTAIN CALL")
     # The final battle, WORLD ENTRANCE 2, by the stage select. (The app earns
     # nothing during LEVEL SELECT; the runner does not ask.)
     add_test(NAME achievements_final_battle
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 700 ${_ach} --level-select --stage 300:7:2:0:2:7:0)
     set_tests_properties(achievements_final_battle PROPERTIES TIMEOUT 300
         PASS_REGULAR_EXPRESSION "frame 379: unlocked THE LAST ATTRACTION"
-        FAIL_REGULAR_EXPRESSION "INTO THE TUBE|HALFWAY")
-    # The Combi Catcher: Down on its box in WORLD ENTRANCE (the walk of
-    # lobby_shortcuts_off_leave_the_combi_catcher_as_it_was). Walking past it
-    # earns nothing.
-    add_test(NAME achievements_combi_catcher
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1400 ${_ach} --stage 300:7:0:0:2:7:0
-                --press 600:right:200 --press 1100:left:35 --press 1300:down:10)
-    set_tests_properties(achievements_combi_catcher PROPERTIES TIMEOUT 300
-        PASS_REGULAR_EXPRESSION "frame 1302: unlocked CLAW GAME")
-    add_test(NAME achievements_combi_catcher_needs_the_claw
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1400 ${_ach} --stage 300:7:0:0:2:7:0
-                --press 600:right:200 --press 1100:left:35)
-    set_tests_properties(achievements_combi_catcher_needs_the_claw PROPERTIES TIMEOUT 300
-        PASS_REGULAR_EXPRESSION "ran 1400 frames"
-        FAIL_REGULAR_EXPRESSION "CLAW GAME")
+        FAIL_REGULAR_EXPRESSION "INTO THE TUBE|HALFWAY|CURTAIN CALL")
+    # The ending's scenes (issue #95), WORLD ENTRANCE 4, by the stage select.
+    add_test(NAME achievements_the_ending
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 700 ${_ach} --level-select --stage 300:7:4:0:2:7:0)
+    set_tests_properties(achievements_the_ending PROPERTIES TIMEOUT 300
+        PASS_REGULAR_EXPRESSION "frame 379: unlocked CURTAIN CALL")
 
     # TIME ATTACK: the front end asks for a stage and the game's own stage
     # select code starts it. The chosen place, level, characters and player

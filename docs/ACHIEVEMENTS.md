@@ -66,6 +66,55 @@ refused when the file is read. Whenever the tracker loses sight of the game
 look at because a cheat is on or the ring tether is changed -- any attempt
 going is dropped and has to start again.
 
+### Sets: `collect` and `count`
+
+Some awards are about a set of things done over many sessions ("clear a
+level as each of the five leaders"). Issue #95 added `collect`, a variable,
+and `count`:
+
+```ini
+[achievement THE WHOLE TEAM]
+id = clear_as_everyone
+when = zone <= 4 and level >= 1 and goal == 0xFF and prev(goal) != 0xFF
+collect = player
+count = 5
+```
+
+Each frame `when` holds, the variable's value (0-63) joins the set seen so
+far, and the award unlocks once `count` different values are in it. The set is
+kept in the same file as the unlocks, as `id.seen = 0x...` (bit v for value v),
+and saved whenever it grows, so it builds up across sessions. RESET AWARDS
+empties it too. `collect` and `count` go together, and `count` is 1 to 64.
+
+## Issue #95: fewer free awards
+
+A video review found that three awards came just from playing the tutorial,
+and others from simply playing on. Sixteen awards needed nothing done, and
+were taken out:
+
+- FIRST SPARKLE (the first ring)
+- the five TICKET TO ... (entering an attraction)
+- PRACTICE MAKES PERFECT and WASHED ASHORE (playing Training, the opening)
+- the seven "play as" awards
+- CLAW GAME (choosing a partner with the Combi Catcher)
+
+Six awards that take some doing came in:
+
+| award | what | points |
+| --- | --- | --- |
+| WORLD TOUR | clear a level of each of the five attractions (a set of places) | 30 |
+| THE WHOLE TEAM | clear a level as each of the five who can lead (a set of players) | 40 |
+| NOBODY LEFT BEHIND | clear a level with each of the seven as partner (a set of partners) | 30 |
+| SPEED DEMON | clear a level with under 30 seconds on the clock | 40 |
+| RING HOARDER | reach a goal carrying 100 rings or more | 30 |
+| CURTAIN CALL | beat the final battle and see the ending (WORLD ENTRANCE 4 on) | 50 |
+
+That makes 28 awards. A player who had earned a removed award no longer sees
+it listed: none of the new ones follows from having entered a place or played
+as someone, so there is nothing to carry it over to. Its line stays in the
+progress file as it was (`Tracker` writes back lines it has no award for), so
+it comes back if the award ever does.
+
 ### Icons
 
 `icon` names the emblem drawn for an award in the notification and on the

@@ -3104,6 +3104,9 @@ int main(int argc, char** argv) {
                     app.toasts.push_back(t);
                     app.achievements.save_progress(achievements_progress_path(app));
                 });
+                // A set grew ("clear a level as each character"): kept too.
+                if (app.achievements.take_progress_changed())
+                    app.achievements.save_progress(achievements_progress_path(app));
             } else if (app.achievements_on && !app.achievements_paused) {
                 // Frames the tracker does not see (a cheat on, the tether
                 // changed) are frames it knows nothing about: an attempt going
