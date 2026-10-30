@@ -1900,7 +1900,7 @@ void Menu::draw_front(ui::Ui& g) {
     // A larger MENU SIZE (issue #49) spaces the entries a little more as well,
     // as the lists do, so a finger has more to land on.
     const float extra = g.px(4.0f * float(g.zoom()));
-    const float lp = g.line_height(Font::Pixel), ls = g.line_height(Font::Small);
+    const float lp = g.line_height(Font::Pixel);
     auto clamp_to = [](float v, float lo, float hi) { return std::max(lo, std::min(v, hi)); };
 
     // The hint along the foot, on a dark strip of its own so that it reads
