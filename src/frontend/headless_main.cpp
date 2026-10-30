@@ -119,9 +119,9 @@ void trace_m68k_block(m68k::State* c) {
     for (;;) {
         m68k::Insn in;
         m68k::decode(c->pc, m68k::fetch_bus, c, in);
-        std::fprintf(g_trace, "M %06X %-34s d0=%08X d1=%08X d2=%08X d3=%08X d4=%08X a0=%08X a1=%08X a2=%08X a6=%08X sp=%08X ccr=%02X\n",
+        std::fprintf(g_trace, "M %06X %-34s d0=%08X d1=%08X d2=%08X d3=%08X d4=%08X a0=%08X a1=%08X a2=%08X a3=%08X a4=%08X a5=%08X a6=%08X sp=%08X ccr=%02X\n",
                      c->pc, m68k::disassemble(in).c_str(), c->d[0], c->d[1], c->d[2], c->d[3], c->d[4], c->a[0], c->a[1], c->a[2],
-                     c->a[6], c->a[7], m68k::get_ccr(c));
+                     c->a[3], c->a[4], c->a[5], c->a[6], c->a[7], m68k::get_ccr(c));
         ++g_trace_lines;
         c->pc = c->pc + in.len;
         c->cycles -= in.cycles;

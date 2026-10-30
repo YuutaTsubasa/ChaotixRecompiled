@@ -26,6 +26,12 @@ namespace chaotix::patches {
 // routines, so the ring covers [cam_x - W, cam_x - W + 512) and both
 // widescreen margins show valid tiles.
 enum : uint32_t {
+    // A 32X object's screen position (68K 0x880F50: movem.w $14(a0),d2/d3),
+    // just read for its pieces to be pushed (kPiecesDone). The HUD's
+    // fly-in at the start of a level is three such objects (kHudIntroMaps);
+    // they are moved by the same shift as the SH-2's HUD (kHudBaseX), which
+    // only takes over once the clock starts (issue #92).
+    kObjectScreenXY = 0x880F56,
     // Ring sprites (68K 0x1044): screen X in sprite coordinates is kept only
     // when 0x70 <= x < 0x1D0 (screen -16..335). The hooks shift d2 by +E
     // before the low compare and by -2E before the high compare, then restore
@@ -120,7 +126,7 @@ constexpr uint32_t kSceneLevel = 0xDFF4;
 
 // Sorted: the interpreter binary-searches this list.
 inline constexpr uint32_t kM68kHooks[] = {
-    kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit, kPiecesDone, kModeDispatch,
+    kObjectScreenXY, kRingCullLo, kRingCullHi, kRingCullDone, kRingCullExit, kPiecesDone, kModeDispatch,
     kFullRedrawA, kRowsA_X, kFullRedrawB, kRowsB_X, kPlaneUpdateA, kRowUpA_X, kRowDownA_X,
     kColLeftA_X, kColRightA_X, kPlaneUpdateB, kColLeftB_X, kColRightB_X, kRowUpB_X, kRowDownB_X,
     kCamClampMax, kCamClampMin, kCamClampBottom,
@@ -352,6 +358,11 @@ constexpr HudBase kHudBaseX[] = {
     {0x0CA2, 0xE210}, {0x0CAC, 0xE220}, {0x0CB4, 0xE230}, {0x0CC0, 0xE210}, {0x0CCA, 0xAFF4},
 };
 constexpr int kHudX = 32;
+// The HUD as the 68K draws it while it flies in at the start of a level
+// (issue #92): three 32X objects, SCORE, TIME and RINGS, each with its
+// numbers, that come to rest at the same place the SH-2 HUD then takes over.
+// Told apart by their mapping ($10(a0)).
+constexpr uint32_t kHudIntroMaps[] = {0x029BE326, 0x029BE32E, 0x029BE34E};
 
 // The SH-2 immediates above change at run time: the special stage's ADD #80
 // pairs, the HUD's MOV #32 and the bonus stage's centre. Code covering them

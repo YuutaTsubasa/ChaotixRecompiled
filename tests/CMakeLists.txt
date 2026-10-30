@@ -412,6 +412,22 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1800 --wide 53 --hud-edges --lockstep
                 --stage 300:0:1:0:2:7:0 --press 1300:right:400)
     set_tests_properties(lockstep_widescreen_hud_at_the_edge PROPERTIES TIMEOUT 900)
+    # At the start of a level the 68K draws the HUD itself as it flies in, as
+    # three 32X objects, and the SH-2's HUD takes over only when the clock
+    # starts. Landing in SPEED SLIDER (the lobby walk above), the fly-in came
+    # to rest at its 4:3 place, X 32, for twenty frames and then jumped to the
+    # edge (issue #92). It must already be at the edge, X 32 - 53: SCORE
+    # (bank 19 frame 37) at frame 2438, before the clock starts at 2442.
+    add_test(NAME widescreen_hud_flies_in_to_the_edge
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2439 --wide 53 --wide-bottom 16 --hud-edges
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --sprites-log 2438)
+    set_tests_properties(widescreen_hud_flies_in_to_the_edge PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "bank  19 frame  37 x  -21 y   16")
+    add_test(NAME lockstep_widescreen_hud_flies_in
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2460 --wide 53 --wide-bottom 16 --hud-edges --lockstep
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600)
+    set_tests_properties(lockstep_widescreen_hud_flies_in PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 2460 frames bit-identical")
 
     # The special stage is drawn by its own SH-2 polygon code, not the level
     # engine, and stayed 4:3 (issue #18). Its tube is now projected further
