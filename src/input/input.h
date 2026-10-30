@@ -17,6 +17,18 @@ struct InputState {
     bool reset_pressed = false;
 };
 
+// A Mega Drive pad cannot press left and right (or up and down) together: the
+// d-pad rocks one way. A keyboard can, and so can a stick and a d-pad, or two
+// devices, read together. The game was never written for it: a gliding
+// Knuckles turning round with right still held saw both and dropped out of
+// the air (issue #93). So the newer of two opposite directions wins until it
+// is let go, and two pressed on the same frame cancel out.
+struct OppositeDirections {
+    uint16_t held = 0;    // the raw directions last frame
+    uint16_t chosen = 0;  // the direction each axis gave last frame
+    uint16_t clean(uint16_t raw);
+};
+
 // Parses a button name ("up", "a", "start", ...). Returns 0 if unknown.
 uint16_t pad_button_from_name(const char* name);
 const char* pad_button_name(uint16_t button);

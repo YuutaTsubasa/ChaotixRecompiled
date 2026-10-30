@@ -269,6 +269,7 @@ struct App {
     std::vector<TitleHoldEvent> recorded_title_hold;
     bool title_holding = false;
     uint16_t prev_buttons = 0;
+    OppositeDirections opposite[2];  // issue #93: no left+right for the game
     // The menu is the front end: it owns the screen until the player chooses
     // START GAME, and the game owns it afterwards. Nothing about where the
     // game is has to be guessed from its memory.
@@ -2929,7 +2930,8 @@ int main(int argc, char** argv) {
             raw |= device_buttons(app, 0) | touch_held;
             raw2 = device_buttons(app, 1);
         }
-        uint16_t buttons = raw;
+        uint16_t buttons = app.opposite[0].clean(raw);
+        raw2 = app.opposite[1].clean(raw2);
         app.prev_buttons = raw;
         if (app.inject_start > 0) { buttons |= PAD_START; --app.inject_start; }
         app.m->input.pad[0] = buttons;
