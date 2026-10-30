@@ -51,6 +51,13 @@ bool decode_wav(const std::vector<uint8_t>& bytes, double out_rate, Track& out, 
 // resampled from that rate. False if the text holds no start.
 bool apply_loop_text(const std::string& text, double in_rate, double out_rate, Track& track);
 
+// The player's setting (ModMusicVolume, 25 by default: files are mastered
+// louder than the game's own music) scaled by the music volume, as a
+// percent of the file's level. The game's own music is mixed 7/3 louder
+// than the setting was made for (docs/AUDIO_MIX.md), so a replaced piece is
+// too and keeps its balance with the music it stands in for.
+inline int mixed_percent(int setting, int music_volume = 100) { return setting * music_volume * 7 / 300; }
+
 class MusicMods {
 public:
     // Finds "<id>.wav" files in dir (ids 01-29). Returns how many.
@@ -60,7 +67,8 @@ public:
     bool has(uint8_t id) const;
     // Tells the machine which music it should leave to this player.
     void attach(Machine& m) const;
-    // Percent; files are mastered louder than the game's own music.
+    // Percent of the file's own level (mixed_percent turns the player's
+    // setting into this).
     void set_volume(int percent) { volume_ = percent; }
     // After each emulated frame: takes the game's music requests and mixes
     // this frame's share of the piece into m.audio_out from first_sample (an
@@ -81,7 +89,7 @@ private:
 
     std::map<uint8_t, std::string> files_;  // id -> path
     std::map<uint8_t, Track> tracks_;       // decoded (files) or given (set_track)
-    int volume_ = 25;
+    int volume_ = mixed_percent(25);
     uint8_t current_ = 0;
     size_t position_ = 0;
     uint8_t held_ = 0;            // the piece a jingle interrupted

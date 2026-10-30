@@ -26,6 +26,8 @@ public:
     // music and sound effects can be set apart (audio/volumes.h). Not chip
     // state: the game cannot see it.
     float gain[6] = {1, 1, 1, 1, 1, 1};
+    // What is applied this sample: eased towards gain (audio/gain_ramp.h).
+    float gain_now[6] = {1, 1, 1, 1, 1, 1};
 
     // Save states (runtime/save_state.h): every field of the chip's state, in
     // a fixed order, through the archive `a`. Not gain, the host's.
