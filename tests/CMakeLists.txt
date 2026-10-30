@@ -413,6 +413,25 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1800 --wide 53 --hud-edges --lockstep
                 --stage 300:0:1:0:2:7:0 --press 1300:right:400)
     set_tests_properties(lockstep_widescreen_hud_at_the_edge PROPERTIES TIMEOUT 900)
+    # The way into the special stage (issue #91): the white flash and the
+    # starfield fading in, 38 frames before the stage widens itself, were 4:3
+    # with black bars. Played in: the recorded run with 50 rings at the goal
+    # (poked at frame 3100) and its input after the goal changed to jump into
+    # the giant ring. From the stage select too. The hashes are a frame of
+    # each, the flash and the starfield, with the margins filled.
+    add_test(NAME widescreen_the_way_into_the_special_stage
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 4160 --wide 53 --wide-bottom 16
+                --poke 3100:E009:32 --replay-input ${CMAKE_CURRENT_SOURCE_DIR}/recordings/finished_run_giant_ring.txt
+                --expect-hash 4130:ea617ec8fb229343 --expect-hash 4148:5f9825b24b854eaf)
+    set_tests_properties(widescreen_the_way_into_the_special_stage PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "the way into the special stage wide from frame 4114 for 38 frames"
+        FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    add_test(NAME widescreen_the_way_into_the_special_stage_from_the_stage_select
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 500 --wide 53 --wide-bottom 16
+                --level-select --stage 300:10:0:0:2:7:0)
+    set_tests_properties(widescreen_the_way_into_the_special_stage_from_the_stage_select PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "margins live from frame 419.*the way into the special stage wide from frame 381 for 38 frames")
+
     # At the start of a level the 68K draws the HUD itself as it flies in, as
     # three 32X objects, and the SH-2's HUD takes over only when the clock
     # starts. Landing in SPEED SLIDER (the lobby walk above), the fly-in came

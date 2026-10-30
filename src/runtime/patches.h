@@ -415,6 +415,22 @@ bool wide_scene_active(const Machine& m);
 // modes) are all 32X and keep their bars.
 bool title_margins(const Machine& m);
 
+// The way into the special stage (issue #91): after a level's tally the
+// screen flashes white, then the stage's starfield fades in behind a dissolve,
+// for about 38 frames before the stage's own rectangle is set and
+// special_stage_active widens it. Both are the Mega Drive's: the white is the
+// backdrop colour and the starfield is a plane the game fills wider than the
+// screen, as in the stage. The level is over (its plane size is gone), so the
+// picture fell back to 4:3 with black bars, then went wide when the stage
+// began. The scene is told apart by the stage's plane size with the stage's
+// code loaded and the full-screen rectangle still in place, in either mode the
+// stage runs in. Machine::special_entry; the margins then show the planes, and
+// the stage's black frame sprites are hidden as in the stage.
+constexpr uint16_t kModeLevel = 0x18;
+constexpr uint16_t kModeStageSelectSpecial = 0x20;
+constexpr uint8_t kSpecialPlaneSize = 0x00;
+bool special_stage_entry(const Machine& m);
+
 // WORLD ENTRANCE, zone 7: the lobby (levels 0 and 1), the final boss (2) and
 // the ending's scenes (3-6). It was kept 4:3 (issues #13, #56); it is
 // widened since issue #61, all but the ending's scenes, which stay 4:3. What

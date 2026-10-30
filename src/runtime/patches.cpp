@@ -600,6 +600,12 @@ void lobby_margins(Machine& m, int e) {
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
 
+bool special_stage_entry(const Machine& m) {
+    const uint16_t mode = wram16(m, kGameMode);
+    return (mode == kModeLevel || mode == kModeStageSelectSpecial) && m.vdp.reg[16] == kSpecialPlaneSize &&
+           special_projection_loaded(m) && rect_is(m, kFullRect);
+}
+
 bool wide_zone(const Machine& m) {
     if (wram16(m, kSceneZone) != kWorldEntrance) return true;
     return wram16(m, kSceneLevel) <= kFinalBossLevel;
@@ -707,6 +713,7 @@ void begin_frame(Machine& m) {
     }
     m.wide_special = want != PolyScene::None;
     m.wide_active = level || m.wide_special;
+    m.special_entry = !m.wide_active && m.wide_enabled && e > 0 && special_stage_entry(m);
     m.radial_len = want == PolyScene::Bonus ? kRadialLen : 0;
     if (m.wide_special) {
         m.poly_scene = uint8_t(want);

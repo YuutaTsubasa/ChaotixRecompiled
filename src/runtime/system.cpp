@@ -381,8 +381,9 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // The bonus stage, the results screen and the final boss use the whole
     // screen.
     const patches::PolyScene scene = patches::PolyScene(poly_scene);
-    const bool stage = wide_special && scene != patches::PolyScene::Bonus && scene != patches::PolyScene::Results &&
-                       scene != patches::PolyScene::Boss;
+    // The way into the stage is framed like the stage (issue #91).
+    const bool stage = special_entry || (wide_special && scene != patches::PolyScene::Bonus &&
+                                         scene != patches::PolyScene::Results && scene != patches::PolyScene::Boss);
     vdp.hidden_frame_tile = stage ? patches::kSpecialFrameTile : 0xFFFF;
     vdp.radial_lut = radial_lut;
     vdp.radial_len = radial_len;
@@ -439,7 +440,7 @@ void Machine::render_output_line(int src_line, int dst_row) {
         patches::MarginCut cut{extra, extra};
         // The special stage's frame: black above and below its rectangle.
         if (wide_special && !stage) cut = patches::MarginCut{};
-        else if (wide_special) cut = src_line < patches::kSpecialRect[2] || src_line > patches::kSpecialRect[3]
+        else if (stage) cut = src_line < patches::kSpecialRect[2] || src_line > patches::kSpecialRect[3]
                                     ? patches::MarginCut{extra, extra} : patches::MarginCut{};
         else if (wide_active) cut = patches::margin_cut(*this, extra);
         // The title's horizon (issue #77): the game draws it wider than the

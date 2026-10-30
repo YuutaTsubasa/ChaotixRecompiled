@@ -448,6 +448,8 @@ int main(int argc, char** argv) {
     std::vector<cheats::Write> cheat_writes;  // --cheat, set before every frame
     uint64_t wide_live_frames = 0;
     int wide_stretches = 0;
+    // The way into the special stage, shown wide (issue #91).
+    uint64_t entry_frames = 0, entry_first = 0;
     bool wide_was_live = false;
     // --compare-native: run a 4:3 machine alongside the widescreen one and
     // require the centre 320 px to be pixel-identical. Comparison stops when
@@ -1512,6 +1514,7 @@ int main(int argc, char** argv) {
         } else {
             wide_was_live = false;
         }
+        if (m->special_entry && !entry_frames++) entry_first = m->frame_count;
         if (trace_wide) {
             const patches::CameraRange cr = patches::camera_range(*m);
             std::printf("WCAM f=%llu active=%d cam=%d,%d range=%d..%d\n", (unsigned long long)m->frame_count,
@@ -1768,6 +1771,9 @@ int main(int argc, char** argv) {
     if (m->wide_enabled)
         std::printf("widescreen: margins live for %llu frames in %d stretches\n",
                     (unsigned long long)wide_live_frames, wide_stretches);
+    if (entry_frames)
+        std::printf("widescreen: the way into the special stage wide from frame %llu for %llu frames\n",
+                    (unsigned long long)entry_first, (unsigned long long)entry_frames);
     print_recomp_stats(*m);
     // Whether the game saved, and when: tests check that a finished level
     // reaches the cartridge save, and that a time attack run does not.
