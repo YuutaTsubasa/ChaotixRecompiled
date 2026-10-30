@@ -9,6 +9,10 @@ hardware compatibility layer (32X and Mega Drive registers, both VDPs,
 interrupts, timers, sound chips) plus an SDL3 frontend make it an ordinary
 native program on each platform.
 
+How it was made, step by step, with the numbers behind each step: the
+[Recompiled Handbook](https://yuuta-tsubasa.studio/ChaotixRecompiled/)
+(English and Traditional Chinese; its source is [site/index.html](site/index.html)).
+
 **No game data is included.** You supply your own legally obtained ROM of
 *Knuckles' Chaotix (Japan, USA)* — SHA-1
 `0c2fff7bc79ed26507c08ac47464c3af19f7ced7`. No 32X BIOS is needed. Read
