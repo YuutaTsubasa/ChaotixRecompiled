@@ -246,6 +246,7 @@ public:
     std::vector<uint8_t> music_events;
     // Host-side level of the 32X PWM output (see Ym2612::gain).
     float pwm_gain = 1.0f;
+    float pwm_gain_now = 1.0f;  // eased towards pwm_gain (audio/gain_ramp.h)
     // Host-side shadow of the 32X frame buffers for widescreen margins: while
     // wide_active, sprite (overwrite image) writes outside native columns land
     // here instead of in the line padding, which the game uses as storage.

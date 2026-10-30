@@ -60,10 +60,7 @@ TEST(volumes, music_off_keeps_the_sound_effects_with_local_rom) {
         m->audio_out.clear();
         m->run_frame();
     }
-    // Muting takes the music's DC level away at once, and the DC blocker's
-    // tail of that step lasts a few frames (950 RMS, then 160, 27, 4, 0.5);
-    // what is checked is the quiet after it.
-    rms(6);
+    rms(3);  // the music fades out over 40 ms (audio/gain_ramp.h)
     const double quiet = rms(60);
     m->zram[0x1C0A] = 0x34;  // a sound effect, queued as $8F6E76 does
     const double effect = rms(20);

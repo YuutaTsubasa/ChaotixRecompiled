@@ -67,3 +67,33 @@ A music mod's WAV is mixed at a percent of its own level (`ModMusicVolume`,
 music). The game's music is now 7/3 louder than when that default was
 chosen, so `audio::mixed_percent` scales the setting by 7/3. A saved setting
 keeps the same balance against the game's music.
+
+## No pop when a level changes
+
+Muting the music, or moving any volume, used to pop, and at the levels above
+the pop got louder. A level that jumps cuts whatever the waveform was doing
+at that sample, which is a click. It also takes away at once whatever DC the
+music carries, which the output's DC blocker turns into a thump. The DC is
+there because, in a level, the game parks PWM at 465 of a 1047 cycle instead
+of the middle, 523, and the FM and PSG sum sits a little below zero too
+(about -320 and -180).
+
+So FM, PSG and PWM levels now move to the one asked for by 1/2048 per sample:
+0 to 1 takes 38 ms (`audio/gain_ramp.h`). That is long compared with the DC
+blocker's 9 ms, so what is left of a DC step is below what can be heard.
+At 100% nothing is scaled, so the output there is unchanged.
+
+Muting the music in BOTANIC BASE 1, before and after:
+
+- At the moment of muting, the biggest jump between two samples went from
+  3353 to 1980. The music's own biggest jump in the second before is 2294.
+- The music now fades out over two to three frames.
+
+A separate DC blocker for PWM, ahead of its level, was also tried. Above
+60 Hz it gave the same result as the easing alone (40 RMS against 44 in the
+first frame after the fade), and its state would have had to go into save
+states, which would make every existing save state unreadable. So it was
+left out.
+
+`pwm_audio.a_level_change_eases_in_without_a_jump` checks this without the
+ROM. It fails if levels jump.

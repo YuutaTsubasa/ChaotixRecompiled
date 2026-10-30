@@ -3,6 +3,7 @@
 #include "cpu/m68k/m68k_interp.h"
 #include "runtime/patches.h"
 #include "runtime/divide.h"
+#include "audio/gain_ramp.h"
 #include "cpu/sh2/sh2_interp.h"
 #include "runtime/sprite_record.h"
 #include <algorithm>
@@ -325,8 +326,7 @@ void Machine::audio_advance(uint64_t end_mclk) {
     // disagree on the single-source routing (see docs/AUDIO_PWM.md).
     const int route = pwm.ctrl & 0x0f;
     const int right_source = route == 0x05 ? 2 : route == 0x0a ? 1 : (pwm.ctrl >> 2) & 3;
-    int32_t pl = pwm_level(pwm.ctrl & 3), pr = pwm_level(right_source);
-    if (pwm_gain != 1.0f) { pl = int32_t(float(pl) * pwm_gain); pr = int32_t(float(pr) * pwm_gain); }
+    const int32_t pwm_in[2] = {pwm_level(pwm.ctrl & 3), pwm_level(right_source)};
     for (int i = 0; i < n; ++i) {
         psg_frac += kMclkPerAudioSample;
         int clocks = psg_frac / 15;
@@ -334,11 +334,10 @@ void Machine::audio_advance(uint64_t end_mclk) {
         // Ym2612::generate gives a channel +-3072 (its 9-bit DAC x 12) and
         // Sn76489::run a tone +-4096: scaled here to the levels above.
         int32_t p = psg.run(clocks) * 9 / 16;
-        const int32_t in[2] = {audio_out[base + size_t(i) * 2] * 8 / 3 + p + pl,
-                               audio_out[base + size_t(i) * 2 + 1] * 8 / 3 + p + pr};
+        const float pg = audio::ease_gain(pwm_gain_now, pwm_gain);
         for (int ch = 0; ch < 2; ++ch) {
             // One-pole DC blocker (~17 Hz corner at 53 kHz).
-            float x = float(in[ch]) * 0.875f;
+            float x = (float(audio_out[base + size_t(i) * 2 + size_t(ch)] * 8 / 3 + p) + float(pwm_in[ch]) * pg) * 0.875f;
             float y = x - dc_x[ch] + 0.998f * dc_y[ch];
             dc_x[ch] = x;
             dc_y[ch] = y;

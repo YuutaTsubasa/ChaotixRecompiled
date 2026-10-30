@@ -14,6 +14,9 @@ public:
 
     // Host-side output level of tones 1-3 and noise (see Ym2612::gain).
     float gain[4] = {1, 1, 1, 1};
+    // What is applied: eased towards gain once per output sample (run),
+    // audio/gain_ramp.h.
+    float gain_now[4] = {1, 1, 1, 1};
 
     // Save states (runtime/save_state.h): every field of the chip's state, in
     // a fixed order, through the archive `a`. Not gain, the host's.

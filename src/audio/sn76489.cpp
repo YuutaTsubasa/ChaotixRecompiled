@@ -1,4 +1,5 @@
 #include "sn76489.h"
+#include "audio/gain_ramp.h"
 
 namespace chaotix {
 
@@ -27,6 +28,8 @@ void Sn76489::write(uint8_t v) {
 }
 
 int16_t Sn76489::run(int clocks) {
+    float g[4];
+    for (int c = 0; c < 4; ++c) g[c] = audio::ease_gain(gain_now[c], gain[c]);
     int32_t acc = 0;
     int n = 0;
     // The PSG divides its input clock by 16 before the tone counters.
@@ -49,12 +52,12 @@ int16_t Sn76489::run(int clocks) {
         int32_t s = 0;
         for (int c = 0; c < 3; ++c) {
             const int32_t v = out_[c] ? kVolume[vol_[c]] : -kVolume[vol_[c]];
-            s += gain[c] == 1.0f ? v : int32_t(float(v) * gain[c]);
+            s += g[c] == 1.0f ? v : int32_t(float(v) * g[c]);
         }
         // Swinging both ways like the tones, so noise and a tone at the same
         // volume are as loud as each other (as in PicoDrive: docs/AUDIO_MIX.md).
         const int32_t noise = out_[3] ? kVolume[vol_[3]] : -kVolume[vol_[3]];
-        s += gain[3] == 1.0f ? noise : int32_t(float(noise) * gain[3]);
+        s += g[3] == 1.0f ? noise : int32_t(float(noise) * g[3]);
         acc += s;
         ++n;
     }
