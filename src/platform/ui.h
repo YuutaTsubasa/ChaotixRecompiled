@@ -59,13 +59,17 @@ enum class Font {
     Title,      // the one heading at the top of a page
     Pixel,      // in-game menu labels
     PixelBig,   // in-game menu headings
+    PixelSmall, // the hint lines under the menus (issue #96)
     Count_
 };
 
 // True for the fonts drawn from the bitmap-style face, whose sizes are
 // snapped to whole pixels so the glyphs stay sharp. These are also the ones
 // the game's own font stands in for (set_game_font).
-constexpr bool is_pixel(Font f) { return f == Font::Pixel || f == Font::PixelBig; }
+constexpr bool is_pixel(Font f) { return f == Font::Pixel || f == Font::PixelBig || f == Font::PixelSmall; }
+// The pixel faces the game's own font stands in for. Not the small one: the
+// game's letters cannot be drawn smaller than 8x16, as tall as a menu row.
+constexpr bool game_glyphs(Font f) { return f == Font::Pixel || f == Font::PixelBig; }
 
 // How many screen pixels a pixel of the game's 8x16 font becomes for a pixel
 // face of this size: a whole number, so its pixels stay square and sharp,
@@ -197,7 +201,7 @@ private:
     bool game_on_ = false;
     bool game_tint_ = false;
     float pixel_sizes_[size_t(Font::Count_)] = {};
-    int game_scales_[size_t(Font::Count_)] = {1, 1, 1, 1, 1, 2};
+    int game_scales_[size_t(Font::Count_)] = {1, 1, 1, 1, 1, 2, 1};
 
     SDL_Renderer* renderer_ = nullptr;
     TTF_TextEngine* engine_ = nullptr;
