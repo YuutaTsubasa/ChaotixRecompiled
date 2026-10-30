@@ -25,6 +25,11 @@ namespace chaotix {
 
 namespace {
 
+// The hint lines along the foot of the pages ("Up/Down choose ..."), in the
+// pixel face like the rest of the menu rather than a smooth one among the
+// pixel art (issue #96).
+constexpr ui::Font kHintFont = ui::Font::PixelSmall;
+
 // Menus of this era shout, so the labels are upper case and the selected one
 // carries a marker rather than a highlight bar.
 const char* kAspectNames[] = {"AUTO", "4:3", "16:9", "16:10", "21:9", "CUSTOM"};
@@ -75,6 +80,7 @@ void Menu::set_page(Page p) {
     if (is_row_page(p) || p == Page::Front) return_to_ = p;
     const Page from = page_;
     page_ = p;
+    if (transitions_ && p != from) page_opened_ms_ = std::max<uint64_t>(1, SDL_GetTicks());
     selected_ = 0;
     scroll_ = 0;
     anim_ = 0;
@@ -1842,7 +1848,7 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     if (page_ == Page::Front)
         draw_front(g);
     else if (page_ == Page::Main)
-        draw_row_page(g, "Left/Right choose    Enter select    Esc close");
+        draw_row_page(g, "Left/Right choose  Enter select  Esc close");
     else if (is_showcase())
         draw_showcase(g);
     else if (is_list_page(page_))
@@ -1850,6 +1856,13 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
     else
         draw_achievements(g, ach);
     g.enable_game_font(false);
+    if (page_opened_ms_) {
+        // Out of the dark, the same time at any refresh rate.
+        constexpr float kPageFadeMs = 140.0f;
+        const float t = float(SDL_GetTicks() - page_opened_ms_) / kPageFadeMs;
+        if (t >= 1.0f) page_opened_ms_ = 0;
+        else g.rect({0, 0, g.width(), g.height()}, award_art::color::ink.alpha(uint8_t(220.0f * (1.0f - t))));
+    }
 }
 
 // The front end (issue #3): the entries on the game's title screen. The
@@ -1888,15 +1901,16 @@ void Menu::draw_front(ui::Ui& g) {
     // the plaque would float over the city and the road, and the first press
     // skips to the title and brings the entries up (waiting_for_title).
     const bool waiting = waiting_for_title();
-    const char* hint = waiting ? "Enter skip intro    Esc close" : "Up/Down choose    Enter select    Esc close";
-    if (g.text_width(Font::Small, hint) + g.px(24) > W - margin * 2)
-        hint = waiting ? "Enter skip intro" : "Up/Down choose    Enter select";
-    const float hint_h = ls + g.px(12);
+    const char* hint = waiting ? "Enter skip intro  Esc close" : "Up/Down choose  Enter select  Esc close";
+    if (g.text_width(kHintFont, hint) + g.px(24) > W - margin * 2)
+        hint = waiting ? "Enter skip intro" : "Up/Down choose  Enter select";
+    const float lh_hint = g.line_height(kHintFont);
+    const float hint_h = lh_hint + g.px(12);
     auto draw_hint = [&] {
-        const float hw = std::min(g.text_width(Font::Small, hint) + g.px(24), W - margin * 2);
+        const float hw = std::min(g.text_width(kHintFont, hint) + g.px(24), W - margin * 2);
         const SDL_FRect hr{(W - hw) * 0.5f, H - hint_h - g.px(4), hw, hint_h};
         g.rect(hr, col::ink.alpha(170), hint_h * 0.5f);
-        g.text_fit(Font::Small, hr.x + g.px(12), hr.y + (hint_h - ls) * 0.5f, hw - g.px(24), hint, col::text_dim);
+        g.text_fit(kHintFont, hr.x + g.px(12), hr.y + (hint_h - lh_hint) * 0.5f, hw - g.px(24), hint, col::text_dim);
     };
     if (waiting) {
         // A tap anywhere skips too: a finger has no Enter.
@@ -2038,7 +2052,7 @@ void Menu::draw_front(ui::Ui& g) {
 
 void Menu::draw_row_page(ui::Ui& g, const char* hint) {
     const float item_h = g.line_height(ui::Font::Pixel);
-    const float hint_h = g.line_height(ui::Font::Small);
+    const float hint_h = g.line_height(kHintFont);
     const float gap = g.px(34);
     // Measure first so each line can be centred as a whole. A row too wide for
     // the window (a larger MENU SIZE, a narrow window) carries on onto a
@@ -2093,7 +2107,7 @@ void Menu::draw_row_page(ui::Ui& g, const char* hint) {
         x += w + gap;
     }
 
-    g.text_fit(ui::Font::Small, std::max(g.px(8), (g.width() - g.text_width(ui::Font::Small, hint)) * 0.5f),
+    g.text_fit(kHintFont, std::max(g.px(8), (g.width() - g.text_width(kHintFont, hint)) * 0.5f),
                band_y + band_h - g.px(16) - hint_h, g.width() - g.px(16), hint, faint());
 }
 
@@ -2138,7 +2152,7 @@ void Menu::draw_options(ui::Ui& g) {
         if (it.value) w += g.text_width(ui::Font::Pixel, it.value()) + g.px(60);
         need = std::max(need, w);
     }
-    need = std::max({need, g.text_width(ui::Font::Small, "Up/Down choose    Left/Right change    Esc back"),
+    need = std::max({need, g.text_width(kHintFont, "Up/Down choose  Left/Right change  Esc back"),
                      g.text_width(ui::Font::PixelBig, pack_heading) +
                          (g.line_height(ui::Font::PixelBig) + g.px(18)) * 0.9f + g.px(40)});
     need = std::ceil(need / g.px(40)) * g.px(40);
@@ -2149,7 +2163,7 @@ void Menu::draw_options(ui::Ui& g) {
     const float extra = g.px(4.0f * float(g.zoom()));
     const float row_h = g.line_height(ui::Font::Pixel) + g.px(16) + extra;
     const float head_h = g.line_height(ui::Font::PixelBig) + g.px(22);
-    const float hint_h = g.line_height(ui::Font::Small);
+    const float hint_h = g.line_height(kHintFont);
     // A value too wide to sit beside its label - a controller's own name, say
     // - gets a line of its own rather than running into it.
     std::vector<bool> wrapped(items_.size(), false);
@@ -2329,11 +2343,11 @@ void Menu::draw_options(ui::Ui& g) {
 
     y -= extra * 0.5f;
     const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
-                           ? "Up/Down choose    Enter rebind    Esc back"
-                       : page_ == Page::Mods ? "Up/Down choose    Left/Right on/off    Enter details"
-                       : page_ == Page::Music ? "Up/Down choose    Enter play    Esc back"
-                                             : "Up/Down choose    Left/Right change    Esc back";
-    g.text_fit(ui::Font::Small, x, y + g.px(8), column, hint, ui::theme::text_faint);
+                           ? "Up/Down choose  Enter rebind  Esc back"
+                       : page_ == Page::Mods ? "Up/Down choose  Left/Right on/off  Enter details"
+                       : page_ == Page::Music ? "Up/Down choose  Enter play  Esc back"
+                                             : "Up/Down choose  Left/Right change  Esc back";
+    g.text_fit(kHintFont, x, y + g.px(8), column, hint, ui::theme::text_faint);
     // More rows below the window: a marker at the hint's right.
     if (last < items_.size()) {
         const float mw = g.text_width(ui::Font::Pixel, "v");
@@ -2398,12 +2412,13 @@ void Menu::draw_showcase(ui::Ui& g) {
     }
 
     // --- Hint along the foot. --------------------------------------------
-    const float hint_h = lh_s + g.px(10);
+    const float lh_hint = g.line_height(kHintFont);
+    const float hint_h = lh_hint + g.px(10);
     // As much of it as the width takes, whole phrases only.
-    const char* hint = "Up/Down choose    Left/Right change    Enter start    Esc back";
-    for (const char* shorter : {"Up/Down choose    Left/Right change    Esc back", "Up/Down choose    Left/Right change"})
-        if (g.text_width(Font::Small, hint) > W - 2 * M) hint = shorter;
-    g.text_fit(Font::Small, M, H - hint_h + (hint_h - lh_s) * 0.5f - g.px(2), W - 2 * M, hint, faint());
+    const char* hint = "Up/Down choose  Left/Right change  Enter start  Esc back";
+    for (const char* shorter : {"Up/Down choose  Left/Right change  Esc back", "Up/Down choose  Left/Right change"})
+        if (g.text_width(kHintFont, hint) > W - 2 * M) hint = shorter;
+    g.text_fit(kHintFont, M, H - hint_h + (hint_h - lh_hint) * 0.5f - g.px(2), W - 2 * M, hint, faint());
 
     const float body_top = head_y + head_h + g.px(10);
     const float body_bottom = H - hint_h - g.px(2);
@@ -3102,7 +3117,7 @@ void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {
     y += bar_h + g.px(12);
 
     // The cards.
-    const float hint_h = g.line_height(Font::Small) + g.px(18);
+    const float hint_h = g.line_height(kHintFont) + g.px(18);
     // Two columns only where a card is still wide enough for its line of
     // description: a 16:9 window, not a 4:3 one or a phone at a larger size.
     const int cols = column >= g.px(1120) ? 2 : 1;
@@ -3173,8 +3188,8 @@ void Menu::draw_achievements(ui::Ui& g, achievements::Tracker& ach) {
         marker(x + column - mw * 2 - g.px(8), true, kScrollUp, scroll_ > 0);
     }
     const float hint_w = column - (more ? mw * 2 + g.px(16) : 0.0f);
-    g.text_fit(Font::Small, x, H - g.line_height(Font::Small) - g.px(10), hint_w,
-               "Up/Down scroll    Enter or Esc back", faint());
+    g.text_fit(kHintFont, x, H - g.line_height(kHintFont) - g.px(10), hint_w,
+               "Up/Down scroll  Enter or Esc back", faint());
 }
 
 } // namespace chaotix

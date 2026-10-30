@@ -2479,11 +2479,12 @@ TEST(showcase, character_portraits_come_from_the_rom_with_the_mods) {
         Portrait p;
         std::string why;
         const bool ok = character_portrait(rom, id, nullptr, nullptr, p, &why);
-        // Slot 1 has no graphics; everyone else stands.
+        // Slot 1 has no graphics; everyone else stands, with the arm that
+        // holds the ring (issue #96): wider than the body alone.
         CHECK(ok == (id != stage_select::kBrokenCharacter));
         if (!ok) continue;
-        CHECK_EQ(p.frame, kPortraitFrame);
-        CHECK(p.width > 10 && p.width < 64 && p.height > 10 && p.height < 64);
+        CHECK_EQ(p.frame, portrait_pieces(id).front().frame);
+        CHECK(p.width > 10 && p.width < 80 && p.height > 10 && p.height < 80);
         CHECK_EQ(int(p.argb.size()), p.width * p.height);
         int opaque = 0;
         for (uint32_t px : p.argb) opaque += px != 0;
@@ -2515,13 +2516,13 @@ TEST(showcase, character_portraits_come_from_the_rom_with_the_mods) {
     box.width = 8;
     box.height = 4;
     box.px.assign(32, 1);
-    pack.add(stage_select::kKnuckles, kPortraitFrame, box);
+    pack.add(stage_select::kKnuckles, portrait_pieces(stage_select::kKnuckles).front().frame, box);
     Portrait modded;
     CHECK(character_portrait(rom, stage_select::kKnuckles, &pack, nullptr, modded, nullptr));
     CHECK(modded.replaced);
-    CHECK_EQ(modded.width, 8);
-    CHECK_EQ(modded.height, 4);
-    CHECK(!modded.argb.empty() && modded.argb[0] != 0);
+    // The body is the box now; the ring the arm holds is still the game's.
+    CHECK(modded.width != plain.width || modded.height != plain.height);
+    CHECK_EQ(int(modded.argb.size()), modded.width * modded.height);
 }
 
 TEST(showcase, stage_pictures_are_made_on_demand_and_cached) {

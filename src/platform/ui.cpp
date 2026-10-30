@@ -26,7 +26,7 @@ namespace {
 // Point sizes at scale 1, i.e. in a 720-pixel-tall window. The pixel face is
 // an 8x8 design, so its sizes are multiples of 8 and get snapped again after
 // scaling.
-constexpr float kSizes[size_t(Font::Count_)] = {13.0f, 16.0f, 20.0f, 30.0f, 16.0f, 32.0f};
+constexpr float kSizes[size_t(Font::Count_)] = {13.0f, 16.0f, 20.0f, 30.0f, 16.0f, 32.0f, 8.0f};
 
 // Text that has not been drawn for this many frames is released. The screens
 // redraw the same strings every frame, so anything still in use is refreshed
@@ -208,13 +208,13 @@ float Ui::line_height(Font f) const {
     const float face = fonts_[size_t(f)] ? float(TTF_GetFontHeight(fonts_[size_t(f)])) : 0.0f;
     // With the game's font, a line is tall enough for either, so a label in
     // the pixel face sits in the same rows as the game's.
-    if (game_font_active() && is_pixel(f))
+    if (game_font_active() && game_glyphs(f))
         return std::max(face, float(GameFont::kGlyphH * game_scale(f)));
     return face;
 }
 
 bool Ui::uses_game_font(Font f, const std::string& s) const {
-    if (!game_font_active() || !is_pixel(f) || s.empty()) return false;
+    if (!game_font_active() || !game_glyphs(f) || s.empty()) return false;
     for (unsigned char c : s)
         if (c != ' ' && (c >= 128 || game_glyph_[c] < 0)) return false;
     return true;
@@ -323,7 +323,7 @@ float Ui::text(Font f, float x, float y, const std::string& s, Color c) {
     TTF_SetTextColor(t, c.r, c.g, c.b, c.a);
     // A pixel-face string among the game font's lines is centred in the
     // taller line, so both sit on the same middle.
-    if (game_font_active() && is_pixel(f) && fonts_[size_t(f)])
+    if (game_font_active() && game_glyphs(f) && fonts_[size_t(f)])
         y += (line_height(f) - float(TTF_GetFontHeight(fonts_[size_t(f)]))) * 0.5f;
     // Whole pixels only: at a fractional position the glyphs are sampled
     // between texels, which blurs the pixel face and picks up thin lines

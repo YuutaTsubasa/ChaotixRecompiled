@@ -119,6 +119,9 @@ public:
 
     static constexpr int kPictureMaking = 0, kPictureReady = 1, kPictureNone = 2;
     void set_hooks(Hooks h) { hooks_ = std::move(h); }
+    // Pages fade in as they open (issue #96). Off by default, so a test sees
+    // a page as it settles at once.
+    void set_transitions(bool on) { transitions_ = on; }
     // TIME ATTACK's character names, by id (stage_select::character_names,
     // read from the ROM); without them, stage_select::kCharacters.
     void set_character_names(std::vector<std::string> names) { characters_ = std::move(names); }
@@ -393,6 +396,10 @@ private:
     float drag_y_ = 0, drag_total_ = 0;
     // Drives the little bounce on the selected entry.
     float anim_ = 0;
+    // A page fades in when it opens (issue #96), over kPageFadeMs from when
+    // it opened (0: no fade under way). Input is not held meanwhile.
+    bool transitions_ = false;
+    uint64_t page_opened_ms_ = 0;
     // The text row being typed into (begin_edit).
     std::string* editing_ = nullptr;
     std::string edit_before_;

@@ -421,3 +421,25 @@ frame 1000, a press at frame 200 skipping to the title without choosing, and
 START GAME after it handing over.
 
 ![The front end at frame 4300, the title held](images/issue-3-title-menu-held.png)
+
+## Menu polish (issue #96)
+
+From a video review: smooth text among the pixel art, no page transitions,
+and characters without arms on the PLAYER and PARTNER cards.
+
+- **The hint lines** along the foot of every page ("Up/Down choose ...") are
+  in a small pixel face (`ui::Font::PixelSmall`, Press Start 2P on its 8-pixel
+  grid) instead of Inter. They are not drawn with the game's own font, which
+  cannot be smaller than 8x16, as tall as a menu row (`ui::game_glyphs`). The
+  face is monospaced, so the phrases are two spaces apart rather than four,
+  and the pages keep their widths.
+- **A page fades in** as it opens: a dark layer over the menu, gone after
+  140 ms (`Menu::set_transitions`, on in the app, off in tests). Input is not
+  held while it fades.
+- **The character cards show the arm holding the ring.** In the game a
+  character is drawn in pieces: the body from its own bank, the arm from bank
+  +8. The body's stand alone (frame 0) has no arms. The cards now draw what
+  the game draws for the character standing still at the start of BOTANIC
+  BASE 1, at the places the game puts the pieces (`portrait_pieces`,
+  measured with `--sprites-log 1180`). A sprite mod for a piece still
+  replaces that piece, and a character mod's colours apply to all of them.

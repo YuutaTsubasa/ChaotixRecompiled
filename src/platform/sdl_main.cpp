@@ -2594,6 +2594,7 @@ int main(int argc, char** argv) {
         hooks.music_replaced = [&app](uint8_t id) { return app.music.has(id); };
         app.start_stage = hooks.start_stage;
         app.menu.set_hooks(std::move(hooks));
+        app.menu.set_transitions(true);
     }
     // The menu is the front end, so it is up from the start: the game boots
     // behind it and its title screen and attract demo are the backdrop.
