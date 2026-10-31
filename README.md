@@ -745,6 +745,9 @@ people below. Thank you all: every report here led to a fix or a feature.
   [#93](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/93)).
 - **[UsagiJojo's World Updates](https://x.com/UsagijojoVRC)**: pointed us to
   that review.
+- **GamerG**: asked whether the music's drums could be played from cleaner
+  recordings, which became the drum sample mods
+  ([PR #110](https://github.com/YuutaTsubasa/ChaotixRecompiled/pull/110)).
 
 ### Thanks also to
 
