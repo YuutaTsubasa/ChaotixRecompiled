@@ -11,6 +11,7 @@
 #endif
 
 #include "audio/music_mods.h"
+#include "audio/sample_mods.h"
 #include "audio/volumes.h"
 #include "frontend/config.h"
 #include "frontend/ghost.h"
@@ -95,6 +96,7 @@ struct App {
     SaveStore store;
     std::unique_ptr<Machine> m;
     audio::MusicMods music;  // <user data>/Mods/Music
+    audio::SampleMods samples;  // <user data>/Mods/Samples
     SDL_Window* window = nullptr;
     SDL_Renderer* renderer = nullptr;
     SDL_Texture* texture = nullptr;
@@ -876,7 +878,7 @@ void rewind_step(App& app) {
 // main loop, or by the page's first request if that comes in the same pass.
 void open_jukebox(App& app) {
     if (app.jukebox_open || app.net.on) return;  // netplay: the game cannot be held
-    app.jukebox.begin(app.m->rom, &app.music, app.recompiled);
+    app.jukebox.begin(app.m->rom, &app.music, app.recompiled, &app.samples);
     app.jukebox.set_tracks(jukebox::track_list(app.m->rom));
     app.jukebox_open = true;
     app.m->audio_out.clear();
@@ -1057,9 +1059,11 @@ void netplay_begin(App& app, bool host) {
         if (resimulating) {
             app.m->audio_out.resize(std::min(app.m->audio_out.size(), app.net.first_sample));
             app.m->music_events.clear();
+            app.m->pwm_events.clear();
         } else {
             app.music.set_volume(audio::mixed_percent(app.cfg.mod_music_volume, app.cfg.music_volume));
             app.music.after_frame(*app.m, app.net.first_sample);
+            app.samples.after_frame(*app.m, app.net.first_sample);
         }
     };
     net::SessionOptions o;
@@ -1931,6 +1935,12 @@ void load_mods(App& app, bool force = false) {
     if (music_files) LOGI("music", "%d piece(s) of music replaced from %zu folder(s)", music_files, music_dirs.size());
     app.music.attach(*app.m);
     if (force) app.music.load_position(music_position);
+    app.samples = audio::SampleMods{};
+    const std::vector<std::string> sample_dirs = mod_folders(app, mod_packs::kSamples);
+    int sample_files = 0;
+    for (const auto& dir : sample_dirs) sample_files = app.samples.scan(dir);
+    if (sample_files) LOGI("samples", "%d drum sample(s) replaced from %zu folder(s)", sample_files, sample_dirs.size());
+    app.samples.attach(*app.m);
     load_touch_skin(app, mods + "Touch", mod_folders(app, mod_packs::kTouch));
     load_tiles(app);
     // The characters' colours, from the ROM as it runs (patched or not).
@@ -3088,6 +3098,7 @@ int main(int argc, char** argv) {
             // Replacement music is music too.
             app.music.set_volume(audio::mixed_percent(app.cfg.mod_music_volume, app.cfg.music_volume));
             app.music.after_frame(*app.m, first_sample);
+            app.samples.after_frame(*app.m, first_sample);
             follow_time_attack(app);
             follow_level_select(app);
             follow_speedrun(app);

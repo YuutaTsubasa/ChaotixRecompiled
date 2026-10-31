@@ -3,7 +3,7 @@
 Requested in issue #42. There are many kinds of mods now — graphics
 ([TEXTURE_MODS.md](TEXTURE_MODS.md), [SPRITES_32X.md](SPRITES_32X.md)),
 characters ([CHARACTER_MODS.md](CHARACTER_MODS.md)), music
-([MUSIC_MODS.md](MUSIC_MODS.md)), ROM patches ([ROM_PATCHES.md](ROM_PATCHES.md))
+([MUSIC_MODS.md](MUSIC_MODS.md)), drum samples ([SAMPLE_MODS.md](SAMPLE_MODS.md)), ROM patches ([ROM_PATCHES.md](ROM_PATCHES.md))
 and touch control images — and mixing the loose files of several mods in one
 folder does not scale. A *mod pack* keeps one mod in a folder of its own, so
 it can be turned on and off, put in order and taken out again whole.
@@ -25,6 +25,7 @@ Mods/
     Music/                     <id>.wav, <id>.loop
     Patches/                   *.ips, *.bps
     Touch/                     dpad.bmp, a.bmp, ...
+    Samples/                   <NN>.wav (the music's PWM drums)
   FasterKnuckles/
     mod.ini
     Characters/knuckles.ini

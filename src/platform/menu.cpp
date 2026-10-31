@@ -1323,6 +1323,7 @@ std::string pack_contents(const mod_packs::Pack& p) {
     if (p.music) what.push_back("music");
     if (p.patches) what.push_back("ROM patches");
     if (p.touch) what.push_back("touch controls");
+    if (p.samples) what.push_back("drum samples");
     std::string s;
     for (const auto& w : what) s += (s.empty() ? "" : ", ") + w;
     return s.empty() ? std::string("nothing yet") : s;

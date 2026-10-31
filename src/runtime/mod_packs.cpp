@@ -57,7 +57,7 @@ fs::path find_kind(const fs::path& dir, const char* kind) {
 
 void scan_kinds(Pack& p) {
     const fs::path dir = fs::u8path(p.dir);
-    bool* flags[] = {&p.textures, &p.characters, &p.music, &p.patches, &p.touch};
+    bool* flags[] = {&p.textures, &p.characters, &p.music, &p.patches, &p.touch, &p.samples};
     for (size_t i = 0; i < std::size(kKinds); ++i) {
         const fs::path k = find_kind(dir, kKinds[i]);
         *flags[i] = !k.empty() && has_content(k);
@@ -121,6 +121,7 @@ bool Pack::has(const char* kind) const {
     if (k == kMusic) return music;
     if (k == kPatches) return patches;
     if (k == kTouch) return touch;
+    if (k == kSamples) return samples;
     return false;
 }
 

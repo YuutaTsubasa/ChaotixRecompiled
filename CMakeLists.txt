@@ -72,6 +72,8 @@ add_library(chaotix_runtime STATIC
     src/audio/ym2612.cpp
     src/audio/sn76489.cpp
     src/audio/music_mods.cpp
+    src/audio/pwm_samples.cpp
+    src/audio/sample_mods.cpp
     src/audio/volumes.cpp
     src/renderer/image_io.cpp
     src/renderer/tile_pack.cpp

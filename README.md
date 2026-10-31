@@ -565,6 +565,13 @@ level. Every music request is logged with its id, so playing the game shows
 which file to make; see [docs/MUSIC_MODS.md](docs/MUSIC_MODS.md). Only music
 you have the right to use, please.
 
+The music's drums can be replaced one at a time instead: WAV files in
+`Mods/Samples`, named after the 32X sample's number in hex (`00.wav` is the
+bass drum), play in place of the game's 11 kHz 8-bit samples, at each note's
+volume and the level of the sample they replace.
+`chaotix_headless --dump-pwm-samples DIR` writes the game's own; see
+[docs/SAMPLE_MODS.md](docs/SAMPLE_MODS.md).
+
 ## Music player
 
 MUSIC PLAYER (on the front end, and under OPTIONS > SOUND, so from the pause

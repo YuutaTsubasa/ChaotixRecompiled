@@ -2,6 +2,7 @@
 #include "system.h"
 #include "divide.h"
 #include "patches.h"
+#include "audio/pwm_samples.h"
 #include "log.h"
 #include "sprite_record.h"
 #include <climits>
@@ -567,6 +568,14 @@ void Machine::mars_write(int who, uint32_t addr, uint32_t v, int size) {
             pwm_notes[at] = uint8_t(c >> 8);
             pwm_notes[at + 1] = uint8_t(c);
             ++pwm_note_writes;
+            // A sample a file replaces: the host plays the file, and the
+            // voice is given the game's silent sample, which stops what it
+            // was playing as the note would have (audio/sample_mods.h).
+            if (pwm_replacing && c && (size == 2 || (woff & 1))) {
+                if (pwm_events.size() < 256) pwm_events.push_back({m68k_now_mclk(), uint8_t(at >> 1), c});
+                if ((c & 0xFF) < pwm_replaced.size() && pwm_replaced[c & 0xFF])
+                    c = uint16_t((c & 0xFF00) | audio::pwm::kSilence);
+            }
         }
         return;
     }
