@@ -18,6 +18,7 @@ add_executable(chaotix_tests
     test_tether.cpp
     test_title_hold.cpp
     test_music_mods.cpp
+    test_sample_mods.cpp
     test_cheats.cpp
     test_volumes.cpp
     test_rom_patch.cpp

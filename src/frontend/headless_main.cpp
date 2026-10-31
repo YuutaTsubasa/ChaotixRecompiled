@@ -19,6 +19,8 @@
 //                    [--netplay-loopback MS:MS:PCT | --netplay-host PORT | --netplay-join ADDR ...]
 //                                 (issue #46, frontend/netplay_headless.cpp)
 #include "audio/music_mods.h"
+#include "audio/pwm_samples.h"
+#include "audio/sample_mods.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "cpu/m68k/m68k_ops.h"
 #include "cpu/sh2/sh2_interp.h"
@@ -459,11 +461,13 @@ int main(int argc, char** argv) {
     std::string achievements_file;  // --achievements FILE: report unlocks
     uint64_t min_centre_frames = 0;  // fail if fewer frames could be compared
     std::string wav_path;
+    std::string pwm_dump_dir;  // --dump-pwm-samples (audio/pwm_samples.h)
     struct Poke { uint64_t frame; uint32_t addr; uint8_t value; bool sdram = false, fb = false; };
     std::vector<Poke> pokes;
     struct Peek { uint64_t every; uint32_t addr; uint32_t bytes; };
     std::vector<Peek> peeks;
     std::vector<std::string> music_dirs;  // --music-dir: music replaced by files (audio/music_mods.h)
+    std::vector<std::string> sample_dirs;  // --samples-dir: PWM samples replaced by files (audio/sample_mods.h)
     // The music player (issue #48, frontend/jukebox.h). --jukebox TRACK:FRAMES
     // plays a track on the player's own machine instead of running the game
     // (--wav keeps its sound); --jukebox-at FRAME:TRACK:FRAMES does it in the
@@ -718,7 +722,11 @@ int main(int argc, char** argv) {
         else if (a == "--achievements" && i + 1 < argc) achievements_file = next();
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
+        // The 32X's PWM samples as the driver has them at the end of the run:
+        // "<NN>.wav" for each, the table printed (audio/pwm_samples.h).
+        else if (a == "--dump-pwm-samples") pwm_dump_dir = next();
         else if (a == "--music-dir") music_dirs.push_back(next());
+        else if (a == "--samples-dir") sample_dirs.push_back(next());
         else if (a == "--jukebox" || a == "--jukebox-at") {
             auto parts = split(next(), ':');
             const bool mid = a == "--jukebox-at";
@@ -922,6 +930,7 @@ int main(int argc, char** argv) {
         before(character_dirs, mod_packs::folders(packs, mod_packs::kCharacters));
         before(tile_dirs, mod_packs::folders(packs, mod_packs::kTextures));
         before(music_dirs, mod_packs::folders(packs, mod_packs::kMusic));
+        before(sample_dirs, mod_packs::folders(packs, mod_packs::kSamples));
     }
 
     auto m = std::make_unique<Machine>();
@@ -1099,6 +1108,17 @@ int main(int argc, char** argv) {
         music.attach(*m);
         if (ref) music.attach(*ref);
     }
+    audio::SampleMods samples, ref_samples;
+    if (!sample_dirs.empty()) {
+        int replaced = 0;
+        for (const auto& dir : sample_dirs) replaced = samples.scan(dir);
+        std::printf("samples: %d replaced from %zu folder(s)\n", replaced, sample_dirs.size());
+        // The 32X is given the silent sample for a replaced one: so must a
+        // lockstep reference be.
+        samples.attach(*m);
+        ref_samples = samples;
+        if (ref) ref_samples.attach(*ref);
+    }
     // The music player's track list and machine (issue #48).
     if (jukebox_list) {
         bool from_rom = false;
@@ -1113,7 +1133,8 @@ int main(int argc, char** argv) {
         jukebox::Player jb;
         std::string why;
         const auto t0 = std::chrono::steady_clock::now();
-        if (!jb.start(m->rom, music_dirs.empty() ? nullptr : &music, rs.active && !jukebox_interp, &why)) {
+        if (!jb.start(m->rom, music_dirs.empty() ? nullptr : &music, rs.active && !jukebox_interp, &why,
+                      sample_dirs.empty() ? nullptr : &samples)) {
             std::fprintf(stderr, "jukebox: %s\n", why.c_str());
             return false;
         }
@@ -1535,6 +1556,7 @@ int main(int argc, char** argv) {
             if (m->sram_dirty) { ++sram_frames; sram_last = f; m->sram_dirty = false; }
         }
         if (!music_dirs.empty()) music.after_frame(*m, first_sample);
+        if (!sample_dirs.empty()) samples.after_frame(*m, first_sample);
         if (m->wide_active) {
             ++wide_live_frames;
             if (!wide_was_live) { ++wide_stretches; wide_was_live = true; }
@@ -1819,6 +1841,7 @@ int main(int argc, char** argv) {
         std::printf("worst frame %.3f ms (frame %llu), %llu frames over 8 ms\n", worst_ms,
                     (unsigned long long)worst_frame, (unsigned long long)slow_frames);
     }
+    if (!pwm_dump_dir.empty()) audio::pwm::dump(*m, pwm_dump_dir);
     if (!wav_path.empty()) {
         if (write_wav(wav_path, wav, int(kAudioRate + 0.5))) std::printf("audio written to %s (%zu samples)\n", wav_path.c_str(), wav.size() / 2);
     }

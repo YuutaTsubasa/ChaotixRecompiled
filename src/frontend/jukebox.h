@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "audio/music_mods.h"
+#include "audio/sample_mods.h"
 
 namespace chaotix {
 
@@ -102,12 +103,14 @@ public:
     // time, so a caller with a picture to keep moving is not held up. `music`
     // is the player's music mods, copied; may be null. recompiled: use the
     // generated code, pointed at this machine only for its own frames.
-    void begin(const Rom& rom, const audio::MusicMods* music, bool recompiled);
+    void begin(const Rom& rom, const audio::MusicMods* music, bool recompiled,
+               const audio::SampleMods* samples = nullptr);
     // Runs up to max_frames boot frames: 1 ready, 0 not yet, -1 it never got
     // there (it gives up after kGiveUp frames).
     int boot(int max_frames);
     // begin() and boot() to the end: false and `why` if it never got there.
-    bool start(const Rom& rom, const audio::MusicMods* music, bool recompiled, std::string* why);
+    bool start(const Rom& rom, const audio::MusicMods* music, bool recompiled, std::string* why,
+               const audio::SampleMods* samples = nullptr);
     void stop();
     bool started() const { return m_ != nullptr; }
     bool ready() const { return ready_; }
@@ -146,6 +149,7 @@ private:
 
     std::unique_ptr<Machine> m_;
     audio::MusicMods music_;
+    audio::SampleMods samples_;
     bool recompiled_ = false;
     bool ready_ = false;
     bool failed_ = false;

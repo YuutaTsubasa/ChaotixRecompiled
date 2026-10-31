@@ -248,6 +248,17 @@ public:
     // since the host last drained them (patches.h, kSoundRequest).
     std::array<bool, 0x2A> music_replaced{};
     std::vector<uint8_t> music_events;
+    // PWM samples replaced by files (audio/sample_mods.h): which samples the
+    // host plays itself (the 32X is given the silent one instead), and the
+    // notes the 68K has passed on since the host last took them, with when.
+    std::array<bool, 32> pwm_replaced{};
+    bool pwm_replacing = false;
+    struct PwmNote {
+        uint64_t mclk;
+        uint8_t voice;
+        uint16_t command;
+    };
+    std::vector<PwmNote> pwm_events;
     // Host-side level of the 32X PWM output (see Ym2612::gain).
     float pwm_gain = 1.0f;
     float pwm_gain_now = 1.0f;  // eased towards pwm_gain (audio/gain_ramp.h)

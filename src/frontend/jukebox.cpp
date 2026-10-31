@@ -133,7 +133,7 @@ const char* repeat_name(Repeat r) {
 Player::Player() = default;
 Player::~Player() { stop(); }
 
-void Player::begin(const Rom& rom, const audio::MusicMods* music, bool recompiled) {
+void Player::begin(const Rom& rom, const audio::MusicMods* music, bool recompiled, const audio::SampleMods* samples) {
     stop();
     auto m = std::make_unique<Machine>();
     m->load_rom(Rom(rom));
@@ -141,6 +141,8 @@ void Player::begin(const Rom& rom, const audio::MusicMods* music, bool recompile
     m->audio_enabled = true;
     music_ = music ? *music : audio::MusicMods{};
     music_.attach(*m);
+    samples_ = samples ? *samples : audio::SampleMods{};
+    samples_.attach(*m);
     // Whatever the copy was playing for the game stops (after_frame takes it).
     m->music_events.push_back(patches::kSoundStopMusic);
     m->mode_request = kModeOptions;
@@ -184,8 +186,9 @@ int Player::boot(int max_frames) {
     return 0;
 }
 
-bool Player::start(const Rom& rom, const audio::MusicMods* music, bool recompiled, std::string* why) {
-    begin(rom, music, recompiled);
+bool Player::start(const Rom& rom, const audio::MusicMods* music, bool recompiled, std::string* why,
+                   const audio::SampleMods* samples) {
+    begin(rom, music, recompiled, samples);
     int r = 0;
     while ((r = boot(60)) == 0) {}
     if (r < 0 && why) *why = "the game did not reach its OPTIONS screen";
@@ -324,6 +327,7 @@ void Player::run_one(std::vector<int16_t>* audio) {
     const size_t first = m.audio_out.size();
     m.run_frame();
     music_.after_frame(m, first);
+    samples_.after_frame(m, first);
     int peak = 0;
     for (size_t i = first; i < m.audio_out.size(); ++i) peak = std::max(peak, std::abs(int(m.audio_out[i])));
     if (audio) audio->insert(audio->end(), m.audio_out.begin() + long(first), m.audio_out.end());
