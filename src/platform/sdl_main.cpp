@@ -2896,6 +2896,9 @@ int main(int argc, char** argv) {
                     if (e.type == SDL_EVENT_FINGER_DOWN) app.menu.on_touch_down(tx, ty);
                     break;
                 }
+                // TOUCH PAD OFF: the controls are not there, so nothing on the
+                // screen presses them, the menu button included (issue #124).
+                if (!app.touch_enabled) break;
                 // The on-screen menu button (issue #72) opens the menu, as
                 // Escape does; the touch goes no further.
                 if (e.type == SDL_EVENT_FINGER_DOWN && (app.touch.hit(tx, ty) & TOUCH_MENU)) {
@@ -2931,6 +2934,16 @@ int main(int argc, char** argv) {
                 break;
             default: break;
             }
+        }
+        // TOUCH PAD as it is now (issue #124): ON shows the controls at once;
+        // OFF hides them and lets go of whatever fingers were on them; AUTO
+        // shows them once the screen is touched.
+        if (app.cfg.touch == TouchMode::On) {
+            app.touch_enabled = true;
+        } else if (app.cfg.touch == TouchMode::Off && (app.touch_enabled || !app.fingers.empty())) {
+            app.touch_enabled = false;
+            for (const auto& [id, b] : app.fingers) app.touch.lift(uint64_t(id));
+            app.fingers.clear();
         }
         // Unified input: keyboard | gamepads | touch -> InputState. While the
         // menu is open it takes the controls, so driving it does not also move
