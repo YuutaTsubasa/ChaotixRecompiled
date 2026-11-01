@@ -45,10 +45,10 @@ them straight to the VDP data port from $9C4B20 (ROM bank 2).
   (yellow, brown, dark red), the shadow entry 5 (black).
 
 `renderer/game_font.*` decodes it (`nemesis_decode`, `build_game_font`) and
-builds an atlas of 51 glyphs, 408x24: the ROM's 47, plus `:` (the full
+builds an atlas of 53 glyphs, 424x24: the ROM's 47, plus `:` (the full
 stop's dot twice), `<` `>` (triangles in the letters' yellow with the
-shadow) and `/` (a stroke in the same colours), which the menu's values,
-arrows and hints need. Under the full 8x16 glyphs are small 8x8 ones, the
+shadow), `/` and `[` `]` (strokes in the same colours), which the menu's
+values, arrows, hints and notes need. Under the full 8x16 glyphs are small 8x8 ones, the
 same letters with each pair of rows folded into one: a capital fills rows
 1-14 with its shadow on row 15, so rows 1-14 fold into seven, a letter pixel
 winning over the shadow in each pair (strokes one row thick are kept), and
@@ -67,11 +67,22 @@ for the selected entry and headings, about two thirds for the others), so
 the game's own colours are kept. The small pixel face -- the hints along
 the foot of a page and the notes beside its entries ("JUMP", "NOT USED BY
 THIS GAME") -- uses the small glyphs, at its size over 8 (they are as tall
-as that face, and square). A hint too wide for its line comes a scale
-smaller before it is shortened, and a page's notes all take the largest
-scale at which every one fits beside its label, so a narrow window does not
-shrink only the longest. The notes may be dimmer than the labels (down to
-about half brightness), so they read as captions. Other captions keep the
+as that face, and square). The notes are captions, so their letters are
+at most half the labels' scale, rounded up (the square letters at the
+labels' own scale looked as large as the labels), so two lines of them fit
+in a label's height. Nothing is cut short where it can be wrapped: a note
+too long for one line beside its label takes two there, wrapped at words
+and stacked close (the letters' own height apart, not the pixel face's
+taller line), its value moving to a line of its own if that makes the room;
+only where even that is too narrow (a phone held upright) does the note go
+on lines of its own just below the label (and a row that would be taller
+than the screen loses lines, the last one ending "..."). The hint along the
+foot takes the largest scale at which it fits on one line beside the "more
+below" marker, or else two lines, its groups ("Enter rebind") kept whole.
+That marker, and the "more above" one at the heading, is a gold arrowhead on
+a small magenta banner, as on the awards' pages (it was a letter V, which
+read as text). The notes may be dimmer than the labels (down to about half
+brightness). Other captions keep the
 small text face; the touch controls and notifications keep the pixel face.
 
 `chaotix_headless --game-font FILE.png` writes the atlas.

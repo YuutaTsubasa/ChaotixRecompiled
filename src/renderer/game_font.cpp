@@ -18,7 +18,7 @@ constexpr int kDigits = 0, kLetters = 10, kQuestion = 36, kExclaim = 37, kDash =
 constexpr int kRomGlyphs = kGameFontTileCount / 2;
 // Made here, after the ROM's glyphs (see game_font_from_tiles).
 constexpr int kColon = kRomGlyphs, kLess = kRomGlyphs + 1, kGreater = kRomGlyphs + 2, kSlash = kRomGlyphs + 3,
-              kGlyphTotal = kRomGlyphs + 4;
+              kOpenBracket = kRomGlyphs + 4, kCloseBracket = kRomGlyphs + 5, kGlyphTotal = kRomGlyphs + 6;
 // The palette entries the letters use: their yellow, and the black of the
 // drop shadow every glyph has.
 constexpr int kLetterInk = 10, kShadowInk = 5;
@@ -188,10 +188,21 @@ bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<ui
         at(kSlash, x, y) = kLetterInk;
         at(kSlash, x + 1, y) = kLetterInk;
     }
-    for (int y = 15; y >= 0; --y)
-        for (int x = 7; x >= 0; --x)
-            if (at(kSlash, x, y) == kLetterInk && x + 1 < 8 && y + 1 < 16 && at(kSlash, x + 1, y + 1) == 0)
-                at(kSlash, x + 1, y + 1) = kShadowInk;
+    // '[' and ']': a stroke two pixels wide as tall as a capital, with feet
+    // two pixels long at its top and bottom.
+    for (int y = 1; y <= 14; ++y) {
+        at(kOpenBracket, 2, y) = at(kOpenBracket, 3, y) = kLetterInk;
+        at(kCloseBracket, 4, y) = at(kCloseBracket, 5, y) = kLetterInk;
+    }
+    for (int y : {1, 2, 13, 14}) {
+        at(kOpenBracket, 4, y) = at(kOpenBracket, 5, y) = kLetterInk;
+        at(kCloseBracket, 2, y) = at(kCloseBracket, 3, y) = kLetterInk;
+    }
+    for (int g : {kSlash, kOpenBracket, kCloseBracket})
+        for (int y = 15; y >= 0; --y)
+            for (int x = 7; x >= 0; --x)
+                if (at(g, x, y) == kLetterInk && x + 1 < 8 && y + 1 < 16 && at(g, x + 1, y + 1) == 0)
+                    at(g, x + 1, y + 1) = kShadowInk;
     // The small glyphs. A capital fills rows 1-14 with its drop shadow on row
     // 15 (row 0 is the gap above it), so rows 1-14 fold pairwise into seven
     // and the shadow row stays the last. In each pair a letter pixel wins
@@ -225,6 +236,8 @@ bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<ui
     out.glyph[size_t('<')] = kLess;
     out.glyph[size_t('>')] = kGreater;
     out.glyph[size_t('/')] = kSlash;
+    out.glyph[size_t('[')] = kOpenBracket;
+    out.glyph[size_t(']')] = kCloseBracket;
     return true;
 }
 

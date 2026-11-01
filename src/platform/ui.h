@@ -130,6 +130,10 @@ public:
     int zoom() const { return zoom_; }
 
     float line_height(Font f) const;
+    // The height of the letters alone: the game's when they are drawn with
+    // its font, without the pixel face's taller line. For lines stacked
+    // close, such as a note's two lines beside its entry.
+    float letter_height(Font f) const;
     float text_width(Font f, const std::string& s);
     // Returns the advance width actually drawn.
     float text(Font f, float x, float y, const std::string& s, Color c);
@@ -158,6 +162,8 @@ public:
     // on it (0 for none) while a page lays out lines that must all match,
     // such as the notes beside its entries.
     int small_game_scale() const { return game_scale(Font::PixelSmall); }
+    // The scale of the menu labels' game letters (Font::Pixel).
+    int label_game_scale() const { return game_scale(Font::Pixel); }
     void cap_small_game_scale(int k) { small_cap_ = k; }
 
     // Draws a texture over r, cropped to r's shape rather than stretched, so
