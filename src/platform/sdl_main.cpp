@@ -674,8 +674,6 @@ bool return_to_title(App& app) {
     *app.m = *app.title_snapshot;
     std::copy(save.begin(), save.end(), app.m->sram);
     app.m->sram_dirty = save_dirty;
-    // Nor is whether it makes sound: SOUND may have changed since.
-    app.m->audio_enabled = app.audio != nullptr;
     app.m->sdram_code_epoch = std::max(sdram_epoch, app.m->sdram_code_epoch) + 1;
     for (int c = 0; c < 2; ++c) app.m->cache_code_epoch[c] = std::max(cache_epoch[c], app.m->cache_code_epoch[c]) + 1;
     // Rewinding from the title back into the game left behind is not a thing.
@@ -794,17 +792,19 @@ void save_state(App& app, int slot) {
     notice(app, "SAVE STATE", "STATE " + std::to_string(slot) + " SAVED");
 }
 
-// SOUND (Config::audio, issue #119): opens the audio stream when it is on and
-// closes it when it is off, at start-up and whenever the menu changes it.
-// An autotest never has one.
+// SOUND (Config::audio, issue #119): the audio stream is open while it is on
+// and closed while it is off, from start-up and whenever the menu changes it.
+// The machine makes its sound either way (only an autotest's makes none), and
+// what it makes is dropped while SOUND is off, so the music, replaced pieces
+// and samples go on with the game and SOUND coming back on finds them there.
 void apply_sound_setting(App& app) {
+    app.m->audio_enabled = !app.autotest_frames;
     const bool want = app.cfg.audio && !app.autotest_frames;
     if (want == app.sound_applied) return;
     app.sound_applied = want;  // a device that will not open is not retried every frame
     if (!want) {
         if (app.audio) SDL_DestroyAudioStream(app.audio);
         app.audio = nullptr;
-        app.m->audio_enabled = false;
         return;
     }
     // The machine produces 16-bit stereo at the YM2612 native rate; SDL
@@ -815,7 +815,6 @@ void apply_sound_setting(App& app) {
     if (app.audio) {
         SDL_SetAudioStreamGain(app.audio, float(app.cfg.volume) / 100.0f);
         SDL_ResumeAudioStreamDevice(app.audio);
-        app.m->audio_enabled = true;
     } else {
         LOGW("audio", "cannot open audio device: %s", SDL_GetError());
     }
@@ -1153,7 +1152,7 @@ void netplay_finish(App& app) {
         app.handed_over = n.own_handed_over;
         after_time_jump(app);
     }
-    app.m->audio_enabled = app.audio != nullptr;
+    app.m->audio_enabled = !app.autotest_frames;
     // Achievements did not follow the session: they start again from here
     // rather than count what happened in it as one frame's change.
     app.achievements.forget_previous();
