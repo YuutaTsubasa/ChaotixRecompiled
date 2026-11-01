@@ -13,6 +13,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <mutex>
 #include <vector>
 
 namespace chaotix {
@@ -25,22 +27,34 @@ struct Hit {
 };
 enum : int { kActionBrowse = -2, kActionInstall = -3, kActionRescan = -4 };
 
+// What the file dialog hands back. SDL may call file_chosen on another
+// thread, and after the setup screen has gone -- it can finish while the
+// dialog is still open, from a gamepad, Enter or a dropped file -- so the
+// screen and the callback share this, under its lock, until both are done
+// with it (issue #123).
+struct DialogResult {
+    std::mutex lock;
+    bool open = false;
+    std::string picked;
+};
+
 struct SetupState {
     std::vector<setup::Candidate> candidates;
     std::vector<Hit> hits;   // touch targets from the last frame
     int selected = 0;
     int visible = 0;         // rows the last layout had room for
     std::string status;
-    std::string picked;      // filled in by the file dialog callback
-    bool dialog_open = false;
+    std::shared_ptr<DialogResult> dialog = std::make_shared<DialogResult>();
     bool rescan = true;
 };
 
 #ifndef SDL_PLATFORM_IOS
+// userdata: a std::shared_ptr<DialogResult> of its own, made for this call.
 void SDLCALL file_chosen(void* userdata, const char* const* files, int) {
-    auto* st = static_cast<SetupState*>(userdata);
-    st->dialog_open = false;
-    if (files && files[0]) st->picked = files[0];
+    std::unique_ptr<std::shared_ptr<DialogResult>> result(static_cast<std::shared_ptr<DialogResult>*>(userdata));
+    std::lock_guard<std::mutex> hold((*result)->lock);
+    (*result)->open = false;
+    if (files && files[0]) (*result)->picked = files[0];
 }
 #endif
 
@@ -207,16 +221,25 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
         return installed;
     };
     auto browse = [&]() {
-        if (st.dialog_open) return;
+        {
+            std::lock_guard<std::mutex> hold(st.dialog->lock);
+            if (st.dialog->open) return;
+#ifndef SDL_PLATFORM_IOS
+            st.dialog->open = true;
+#endif
+        }
 #ifdef SDL_PLATFORM_IOS
         // SDL has no file dialog on iOS: the system's picker, which returns
         // once a file is chosen.
         const char* documents = SDL_GetUserFolder(SDL_FOLDER_DOCUMENTS);
-        st.picked = ios_pick_document(window, documents ? documents : "");
+        std::string picked = ios_pick_document(window, documents ? documents : "");
+        std::lock_guard<std::mutex> hold(st.dialog->lock);
+        st.dialog->picked = std::move(picked);
 #else
         static const SDL_DialogFileFilter filters[] = {{"32X ROM", "32x;bin;md;gen;rom"}, {"All files", "*"}};
-        st.dialog_open = true;
-        SDL_ShowOpenFileDialog(file_chosen, &st, window, filters, 2, nullptr, false);
+        // Not under the lock: SDL may call file_chosen before this returns.
+        SDL_ShowOpenFileDialog(file_chosen, new std::shared_ptr<DialogResult>(st.dialog), window, filters, 2,
+                               nullptr, false);
 #endif
     };
 
@@ -310,9 +333,12 @@ std::string run_setup_screen(SDL_Window* window, SDL_Renderer* renderer,
             }
         }
 
-        if (!st.picked.empty()) {
-            std::string path = st.picked;
-            st.picked.clear();
+        std::string path;
+        {
+            std::lock_guard<std::mutex> hold(st.dialog->lock);
+            path.swap(st.dialog->picked);
+        }
+        if (!path.empty()) {
             std::string installed = install(path);
             if (!installed.empty()) return installed;
         }
