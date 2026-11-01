@@ -29,6 +29,9 @@ namespace {
 // pixel face like the rest of the menu rather than a smooth one among the
 // pixel art (issue #96).
 constexpr ui::Font kHintFont = ui::Font::PixelSmall;
+// The notes beside a page's entries ("JUMP", "NOT USED BY THIS GAME"): the
+// same small letters, so with the game's font on they are its letters too.
+constexpr ui::Font kNoteFont = ui::Font::PixelSmall;
 
 // Menus of this era shout, so the labels are upper case and the selected one
 // carries a marker rather than a highlight bar.
@@ -2183,7 +2186,7 @@ void Menu::draw_options(ui::Ui& g) {
     if (!info_lines_.empty()) need = widest;
     for (const Item& it : items_) {
         float w = g.text_width(ui::Font::Pixel, it.label);
-        if (!it.note.empty()) w += g.text_width(ui::Font::Small, it.note) + g.px(16);
+        if (!it.note.empty()) w += g.text_width(kNoteFont, it.note) + g.px(16);
         if (it.value) w += g.text_width(ui::Font::Pixel, it.value()) + g.px(60);
         need = std::max(need, w);
     }
@@ -2209,10 +2212,19 @@ void Menu::draw_options(ui::Ui& g) {
     // A value too wide to sit beside its label - a controller's own name, say
     // - gets a line of its own rather than running into it.
     std::vector<bool> wrapped(items_.size(), false);
+    // The notes all come at one size: the largest at which each fits beside
+    // its label, so a narrow window does not shrink only the longest ones.
+    int note_scale = g.small_game_scale();
+    for (const Item& it : items_) {
+        if (it.note.empty()) continue;
+        const float room = column - g.text_width(ui::Font::Pixel, it.label) - g.px(16);
+        while (note_scale > 1 && float(it.note.size() * GameFont::kGlyphW * size_t(note_scale)) > room) --note_scale;
+    }
+    g.cap_small_game_scale(note_scale);
     // A note sits between the label and the value, so it counts towards the
     // room a row needs.
     auto note_width = [&g](const Item& it) {
-        return it.note.empty() ? 0.0f : g.text_width(ui::Font::Small, it.note) + g.px(16);
+        return it.note.empty() ? 0.0f : g.text_width(kNoteFont, it.note) + g.px(16);
     };
     float rows_h = 0;
     for (size_t i = 0; i < items_.size(); ++i) {
@@ -2223,6 +2235,7 @@ void Menu::draw_options(ui::Ui& g) {
         }
         rows_h += wrapped[i] ? row_h * 2 : row_h;
     }
+    g.cap_small_game_scale(0);
 
     // A pack's page (issue #42): its description under the heading, wrapped
     // to the panel beside its preview image, in at most a third of the
@@ -2347,9 +2360,11 @@ void Menu::draw_options(ui::Ui& g) {
         if (!it.note.empty()) {
             // Smaller and dimmer than the label, on the same middle line, so
             // it reads as a caption rather than as a second entry.
-            const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(ui::Font::Small)) * 0.5f;
+            g.cap_small_game_scale(note_scale);
+            const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(kNoteFont)) * 0.5f;
             // Shortened rather than run out of the panel on a narrow window.
-            g.text_fit(ui::Font::Small, x + label_w + g.px(16), ny, column - label_w - g.px(16), it.note, ui::theme::text_faint);
+            g.text_fit(kNoteFont, x + label_w + g.px(16), ny, column - label_w - g.px(16), it.note, ui::theme::text_faint);
+            g.cap_small_game_scale(0);
         }
         const float this_h = wrapped[i] ? row_h * 2 : row_h;
         Hit hit{{x - g.px(24), y - g.px(4) - extra * 0.5f, column + g.px(48), this_h}, int(i)};

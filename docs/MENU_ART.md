@@ -45,22 +45,34 @@ them straight to the VDP data port from $9C4B20 (ROM bank 2).
   (yellow, brown, dark red), the shadow entry 5 (black).
 
 `renderer/game_font.*` decodes it (`nemesis_decode`, `build_game_font`) and
-builds an atlas of 50 glyphs, 400x16: the ROM's 47, plus `:` (the full
-stop's dot twice) and `<` `>` (triangles in the letters' yellow with the
-shadow), which the menu's values and arrows need. Lower case is drawn as
+builds an atlas of 51 glyphs, 408x24: the ROM's 47, plus `:` (the full
+stop's dot twice), `<` `>` (triangles in the letters' yellow with the
+shadow) and `/` (a stroke in the same colours), which the menu's values,
+arrows and hints need. Under the full 8x16 glyphs are small 8x8 ones, the
+same letters with each pair of rows folded into one: a capital fills rows
+1-14 with its shadow on row 15, so rows 1-14 fold into seven, a letter pixel
+winning over the shadow in each pair (strokes one row thick are kept), and
+the shadow row stays the last. Lower case is drawn as
 upper case, `"` and `'` as the curly ones. The header and the palette words
 are checked, so a different ROM is refused rather than misread.
 
 `ui::Ui` draws the pixel fonts (the menu's labels, values and headings) with
 it when MENU FONT is GAME and the font has every character of the string; a
-string with anything else (`%`, `/`) keeps the pixel face, whole, centred in
+string with anything else (`%`, `(`) keeps the pixel face, whole, centred in
 the same line. Glyph pixels become whole screen pixels: the scale is the
 pixel face's size over 16, rounded (1 at 720p for labels and 2 for headings,
 2 and 3 at 1080p), positions are rounded, and the texture is sampled
 nearest-neighbour. The text's colour only sets the glyphs' brightness (full
 for the selected entry and headings, about two thirds for the others), so
-the game's own colours are kept. Captions and hints keep the small text
-face; the touch controls and notifications keep the pixel face.
+the game's own colours are kept. The small pixel face -- the hints along
+the foot of a page and the notes beside its entries ("JUMP", "NOT USED BY
+THIS GAME") -- uses the small glyphs, at its size over 8 (they are as tall
+as that face, and square). A hint too wide for its line comes a scale
+smaller before it is shortened, and a page's notes all take the largest
+scale at which every one fits beside its label, so a narrow window does not
+shrink only the longest. The notes may be dimmer than the labels (down to
+about half brightness), so they read as captions. Other captions keep the
+small text face; the touch controls and notifications keep the pixel face.
 
 `chaotix_headless --game-font FILE.png` writes the atlas.
 

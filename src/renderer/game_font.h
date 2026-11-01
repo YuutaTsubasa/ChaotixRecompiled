@@ -30,8 +30,13 @@ bool nemesis_decode(const uint8_t* data, size_t size, std::vector<uint8_t>& out,
 
 struct GameFont {
     static constexpr int kGlyphW = 8, kGlyphH = 16;  // every glyph is this cell, and advances by its width
-    // The glyphs side by side, glyph g at x = g * kGlyphW. ARGB, 0 where
-    // transparent.
+    // Each glyph also comes half as tall, for the menu's small lines (the
+    // notes beside its entries, the hints along its foot): the same letters,
+    // each pair of rows folded into one.
+    static constexpr int kSmallGlyphH = 8;
+    // The glyphs side by side, glyph g at x = g * kGlyphW: the full ones in
+    // the top kGlyphH rows, the small ones in the kSmallGlyphH rows below.
+    // ARGB, 0 where transparent.
     int width = 0, height = 0;
     std::vector<uint32_t> pixels;
     int glyph_count = 0;
@@ -54,9 +59,10 @@ constexpr int kGameFontTileCount = 94;  // 47 glyphs of two tiles, top then bott
 
 // Builds the atlas from the 94 decoded tiles and the palette line (16 Mega
 // Drive colour words, entry 0 transparent): the 47 glyphs of the ROM, in its
-// order (0-9, A-Z, ? ! - , . and four more signs), plus ':' '<' '>' made from
-// the ROM's own pixels (the full stop's dot twice; triangles in the letters'
-// yellow and shadow colours), which the menu's values and arrows need.
+// order (0-9, A-Z, ? ! - , . and four more signs), plus ':' '<' '>' '/' made
+// from the ROM's own pixels (the full stop's dot twice; triangles and a
+// stroke in the letters' yellow and shadow colours), which the menu's values,
+// arrows and hints need.
 bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<uint16_t, 16>& palette, GameFont& out,
                           std::string* why);
 
