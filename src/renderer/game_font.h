@@ -59,10 +59,10 @@ constexpr int kGameFontTileCount = 94;  // 47 glyphs of two tiles, top then bott
 
 // Builds the atlas from the 94 decoded tiles and the palette line (16 Mega
 // Drive colour words, entry 0 transparent): the 47 glyphs of the ROM, in its
-// order (0-9, A-Z, ? ! - , . and four more signs), plus ':' '<' '>' '/' made
-// from the ROM's own pixels (the full stop's dot twice; triangles and a
-// stroke in the letters' yellow and shadow colours), which the menu's values,
-// arrows and hints need.
+// order (0-9, A-Z, ? ! - , . and four more signs), plus ':' '<' '>' '/' '['
+// ']' made from the ROM's own pixels (the full stop's dot twice; triangles
+// and strokes in the letters' yellow and shadow colours), which the menu's
+// values, arrows, hints and notes need.
 bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<uint16_t, 16>& palette, GameFont& out,
                           std::string* why);
 

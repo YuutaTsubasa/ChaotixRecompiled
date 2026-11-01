@@ -132,8 +132,8 @@ TEST(game_font, atlas_from_tiles_keeps_the_order_and_colours) {
     std::string why;
     const auto palette = grey_palette();
     CHECK(game_font_from_tiles(numbered_tiles(), palette, f, &why));
-    CHECK_EQ(f.glyph_count, 51);  // 47 from the ROM, ':' '<' '>' '/' made from them
-    CHECK_EQ(f.width, 51 * GameFont::kGlyphW);
+    CHECK_EQ(f.glyph_count, 53);  // 47 from the ROM, ':' '<' '>' '/' '[' ']' made from them
+    CHECK_EQ(f.width, 53 * GameFont::kGlyphW);
     CHECK_EQ(f.height, GameFont::kGlyphH + GameFont::kSmallGlyphH);
     CHECK_EQ(f.glyph_for('0'), 0);
     CHECK_EQ(f.glyph_for('9'), 9);
@@ -142,6 +142,8 @@ TEST(game_font, atlas_from_tiles_keeps_the_order_and_colours) {
     CHECK_EQ(f.glyph_for('Z'), 35);
     CHECK_EQ(f.glyph_for('?'), 36);
     CHECK_EQ(f.glyph_for('.'), 40);
+    CHECK_EQ(f.glyph_for('['), 51);
+    CHECK_EQ(f.glyph_for(']'), 52);
     CHECK_EQ(f.glyph_for('%'), -1);
     // Glyph g is drawn in palette colour g % 15 + 1, its left column clear,
     // both its tiles (the top one, then the one below).
@@ -207,8 +209,8 @@ TEST(game_font, the_rom_has_the_font) {
     CHECK(rom.load(CHAOTIX_TEST_ROM, &err));
     GameFont f;
     CHECK(build_game_font(rom.data, f, &err));
-    CHECK_EQ(f.glyph_count, 51);
-    CHECK_EQ(f.width, 408);
+    CHECK_EQ(f.glyph_count, 53);
+    CHECK_EQ(f.width, 424);
     CHECK_EQ(f.height, 24);
     // White digits, yellow letters, as the TRAINING screen shows them.
     auto ink = [&f](char c) {

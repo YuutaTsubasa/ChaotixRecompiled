@@ -216,6 +216,11 @@ float Ui::line_height(Font f) const {
     return face;
 }
 
+float Ui::letter_height(Font f) const {
+    if (game_font_active() && game_glyphs(f)) return float(game_glyph_h(f) * game_scale(f));
+    return line_height(f);
+}
+
 bool Ui::uses_game_font(Font f, const std::string& s) const {
     if (!game_font_active() || !game_glyphs(f) || s.empty()) return false;
     for (unsigned char c : s)

@@ -2242,26 +2242,55 @@ void Menu::draw_options(ui::Ui& g) {
     // - gets a line of its own rather than running into it.
     std::vector<bool> wrapped(items_.size(), false);
     // The notes are captions, so their letters stay well under the labels':
-    // at most half the labels' scale, rounded up. A note too long to sit
-    // beside its label goes on lines of its own below it, wrapped at words,
-    // rather than being cut short.
+    // at most half the labels' scale, rounded up, which lets two lines of
+    // them stack in a label's height. A note too long for one line beside its
+    // label takes two there, wrapped at words, the value moving to a line of
+    // its own if that makes the room; only where even that is too narrow (a
+    // phone held upright) does the note go on lines of its own below.
     const int note_scale = std::min(g.small_game_scale(), std::max(1, (g.label_game_scale() + 1) / 2));
     g.cap_small_game_scale(note_scale);
     const float note_gap = g.px(16), note_indent = g.px(16);
-    const float note_line_h = g.line_height(kNoteFont) + g.px(4);
-    std::vector<std::vector<std::string>> note_below(items_.size());
+    const float label_h = g.line_height(ui::Font::Pixel);
+    std::vector<std::vector<std::string>> notes(items_.size());
+    // Lines in the game's letters stack close; a note it cannot draw keeps
+    // the pixel face's taller lines.
+    std::vector<float> note_pitch(items_.size(), 0.0f);
+    std::vector<bool> note_below(items_.size(), false);
+    std::vector<float> note_room(items_.size(), 0.0f), notes_h(items_.size(), 0.0f);
     std::vector<float> row_hs(items_.size(), row_h);
     float rows_h = 0;
     for (size_t i = 0; i < items_.size(); ++i) {
         const Item& it = items_[i];
         const float label_w = g.text_width(ui::Font::Pixel, it.label);
-        const bool note_inline = it.note.empty() || label_w + note_gap + g.text_width(kNoteFont, it.note) <= column;
-        if (!note_inline) note_below[i] = wrap_lines(g, kNoteFont, it.note, column - note_indent, " ");
-        if (it.value) {
-            const float note_w = note_inline && !it.note.empty() ? g.text_width(kNoteFont, it.note) + note_gap : 0.0f;
-            wrapped[i] = label_w + note_w + g.text_width(ui::Font::Pixel, it.value()) + g.px(60) > column;
+        const float value_w = it.value ? g.text_width(ui::Font::Pixel, it.value()) + g.px(60) : 0.0f;
+        note_pitch[i] = g.uses_game_font(kNoteFont, it.note) ? g.letter_height(kNoteFont) + g.px(3)
+                                                             : g.line_height(kNoteFont) + g.px(2);
+        // Whether the note goes beside the label in at most two lines no
+        // wider than room.
+        auto beside = [&](float room) {
+            if (room < g.px(40)) return false;
+            std::vector<std::string> lines = wrap_lines(g, kNoteFont, it.note, room, " ");
+            if (lines.size() > 2) return false;
+            for (const std::string& l : lines)
+                if (g.text_width(kNoteFont, l) > room) return false;
+            notes[i] = std::move(lines);
+            note_room[i] = room;
+            return true;
+        };
+        if (it.note.empty()) {
+            wrapped[i] = it.value && label_w + value_w > column;
+        } else if (beside(column - label_w - note_gap - value_w)) {
+        } else if (it.value && beside(column - label_w - note_gap)) {
+            wrapped[i] = true;
+        } else {
+            notes[i] = wrap_lines(g, kNoteFont, it.note, column - note_indent, " ");
+            note_below[i] = true;
+            note_room[i] = column - note_indent;
+            wrapped[i] = it.value && label_w + value_w > column;
         }
-        row_hs[i] = row_h + float(note_below[i].size()) * note_line_h + (wrapped[i] ? row_h : 0.0f);
+        const float block = float(notes[i].size()) * note_pitch[i];
+        notes_h[i] = note_below[i] ? block : std::max(0.0f, block - label_h);
+        row_hs[i] = row_h + notes_h[i] + (wrapped[i] ? row_h : 0.0f);
         rows_h += row_hs[i];
     }
     g.cap_small_game_scale(0);
@@ -2269,12 +2298,13 @@ void Menu::draw_options(ui::Ui& g) {
     // The hint along the foot: on one line at the largest scale it fits, or
     // else on two, its groups ("Enter rebind") kept whole. Room is left for
     // the marker that says more rows are below.
+    const float marker_w = g.px(48);
     const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
                            ? "Up/Down choose  Enter rebind  Esc back"
                        : page_ == Page::Mods ? "Up/Down choose  Left/Right on/off  Enter details"
                        : page_ == Page::Music ? "Up/Down choose  Enter play  Esc back"
                                              : "Up/Down choose  Left/Right change  Esc back";
-    const float hint_room = column - g.text_width(ui::Font::Pixel, "v") - g.px(12);
+    const float hint_room = column - marker_w - g.px(12);
     int hint_scale = g.small_game_scale();
     for (;; --hint_scale) {
         g.cap_small_game_scale(hint_scale);
@@ -2293,7 +2323,7 @@ void Menu::draw_options(ui::Ui& g) {
             if (fits || hint_scale == 1) break;
         }
     }
-    const float hint_line_h = g.line_height(kHintFont) + g.px(2);
+    const float hint_line_h = g.letter_height(kHintFont) + g.px(4);
     const float hint_h = float(hint_lines.size()) * hint_line_h;
     g.cap_small_game_scale(0);
 
@@ -2350,18 +2380,20 @@ void Menu::draw_options(ui::Ui& g) {
     // follows the selection, with a marker above and below where there is
     // more; a tap on a marker steps the selection that way.
     const float rows_room = g.height() - g.px(28) - g.px(16) - g.px(30) - head_h - info_h - g.px(12) - hint_h;
-    // A row is never taller than that room: a note wrapped to more lines
-    // than it leaves keeps as many as fit, the last one shortened.
+    // A row is never taller than that room: a note wrapped below its label
+    // to more lines than it leaves keeps as many as fit, the last one
+    // shortened.
     for (size_t i = 0; i < items_.size(); ++i) {
-        std::vector<std::string>& lines = note_below[i];
-        if (lines.empty()) continue;
+        std::vector<std::string>& lines = notes[i];
+        if (!note_below[i]) continue;
         const float spare = rows_room - row_h - (wrapped[i] ? row_h : 0.0f);
-        const size_t keep = size_t(std::max(1.0f, std::floor(spare / note_line_h)));
+        const size_t keep = size_t(std::max(1.0f, std::floor(spare / note_pitch[i])));
         if (lines.size() <= keep) continue;
         lines.resize(keep);
         lines.back() += " ...";
         rows_h -= row_hs[i];
-        row_hs[i] = row_h + float(keep) * note_line_h + (wrapped[i] ? row_h : 0.0f);
+        notes_h[i] = float(keep) * note_pitch[i];
+        row_hs[i] = row_h + notes_h[i] + (wrapped[i] ? row_h : 0.0f);
         rows_h += row_hs[i];
     }
     size_t first = 0, last = items_.size();  // the rows drawn: [first, last)
@@ -2397,12 +2429,17 @@ void Menu::draw_options(ui::Ui& g) {
         award_art::heading(g, hx, y - g.px(8), ui::Font::PixelBig, pack_heading,
                            column + (x - hx) - (first > 0 ? g.px(56) : 0.0f));
     }
-    // More rows above the window: a marker at the heading's right.
-    if (first > 0) {
-        const float mw = g.text_width(ui::Font::Pixel, "^");
-        g.text(ui::Font::Pixel, x + column - mw, y, "^", award_art::color::magenta);
-        hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), head_h}, kScrollUp});
-    }
+    // More rows above or below the window: an arrow on a small banner, as on
+    // the awards' pages, at the heading's right and at the hint's.
+    const float marker_edge = std::max(2.0f, std::round(g.px(3)));
+    auto marker = [&](float my, float mh, bool up) {
+        const SDL_FRect m{x + column - marker_w, my, marker_w, mh};
+        award_art::banner(g, m, mh * 0.3f, award_art::color::magenta, award_art::color::ink, marker_edge);
+        award_art::arrowhead(g, m.x + marker_w * 0.5f, m.y + mh * 0.5f, mh * 0.3f, up, award_art::color::gold,
+                             marker_edge);
+        hits_.push_back({{m.x - g.px(4), m.y - g.px(6), m.w + g.px(8), m.h + g.px(12)}, up ? kScrollUp : kScrollDown});
+    };
+    if (first > 0) marker(y, std::min(head_h - g.px(10), g.px(30)), true);
     y += head_h;
 
     if (!info.empty()) {
@@ -2436,28 +2473,23 @@ void Menu::draw_options(ui::Ui& g) {
             // it reads as a caption rather than as a second entry; or, when
             // it does not fit there, on lines of its own just below.
             g.cap_small_game_scale(note_scale);
-            if (note_below[i].empty()) {
-                const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(kNoteFont)) * 0.5f;
-                g.text_fit(kNoteFont, x + label_w + note_gap, ny, column - label_w - note_gap, it.note,
-                           ui::theme::text_faint);
-            } else {
-                float ny = y + g.line_height(ui::Font::Pixel) + g.px(2);
-                for (const std::string& line : note_below[i]) {
-                    g.text_fit(kNoteFont, x + note_indent, ny, column - note_indent, line, ui::theme::text_faint);
-                    ny += note_line_h;
-                }
+            const float block = float(notes[i].size()) * note_pitch[i] - g.px(3);
+            float ny = note_below[i] ? y + label_h + g.px(2) : y + std::max(0.0f, (label_h - block) * 0.5f);
+            const float nx = note_below[i] ? x + note_indent : x + label_w + note_gap;
+            for (const std::string& line : notes[i]) {
+                g.text_fit(kNoteFont, nx, ny, note_room[i], line, ui::theme::text_faint);
+                ny += note_pitch[i];
             }
             g.cap_small_game_scale(0);
         }
         const float this_h = row_hs[i];
-        const float notes_h = float(note_below[i].size()) * note_line_h;
         Hit hit{{x - g.px(24), y - g.px(4) - extra * 0.5f, column + g.px(48), this_h}, int(i)};
         if (it.value) {
             const std::string v = it.value();
             const float vw = g.text_width(ui::Font::Pixel, v);
             // Wrapped values sit on the next line, indented, and are shortened
             // if even a whole line cannot hold them.
-            const float vy = wrapped[i] ? y + row_h + notes_h : y;
+            const float vy = wrapped[i] ? y + row_h + notes_h[i] : y;
             const float vx = wrapped[i] ? x + g.px(16) : x + column - vw;
             const float room = wrapped[i] ? column - g.px(46) : column;
             g.text_fit(ui::Font::Pixel, vx, vy, room, v,
@@ -2489,12 +2521,7 @@ void Menu::draw_options(ui::Ui& g) {
         g.text_fit(kHintFont, x, y + g.px(8) + float(l) * hint_line_h, hint_room, hint_lines[l],
                    ui::theme::text_faint);
     g.cap_small_game_scale(0);
-    // More rows below the window: a marker at the hint's right.
-    if (last < items_.size()) {
-        const float mw = g.text_width(ui::Font::Pixel, "v");
-        g.text(ui::Font::Pixel, x + column - mw, y + g.px(2), "v", award_art::color::magenta);
-        hits_.push_back({{x + column - g.px(48), y - g.px(4), g.px(56), hint_h + g.px(20)}, kScrollDown});
-    }
+    if (last < items_.size()) marker(y + g.px(6), std::max(hint_h, g.px(22)), false);
 }
 
 // Issue #102: the keyboards of the game's own SOUND TEST, beside MUSIC
@@ -3261,13 +3288,13 @@ void Menu::draw_showcase(ui::Ui& g) {
         if (sc_scroll_[c] > 0.5f) {
             const SDL_FRect m{v.x + v.w - mw, v.y, mw, lh_p + g.px(10)};
             g.rect(m, ui::theme::background.alpha(220), g.px(4));
-            g.text(Font::Pixel, m.x + (mw - g.text_width(Font::Pixel, "^")) * 0.5f, m.y + g.px(5), "^", acc);
+            award_art::arrowhead(g, m.x + mw * 0.5f, m.y + m.h * 0.5f, m.h * 0.3f, true, acc, std::max(2.0f, std::round(g.px(3))));
             hits_.insert(hits_.begin() + std::ptrdiff_t(first_hit), Hit{m, kScrollUp});
         }
         if (most - sc_scroll_[c] > 0.5f) {
             const SDL_FRect m{v.x + v.w - mw, v.y + v.h - lh_p - g.px(10), mw, lh_p + g.px(10)};
             g.rect(m, ui::theme::background.alpha(220), g.px(4));
-            g.text(Font::Pixel, m.x + (mw - g.text_width(Font::Pixel, "v")) * 0.5f, m.y + g.px(5), "v", acc);
+            award_art::arrowhead(g, m.x + mw * 0.5f, m.y + m.h * 0.5f, m.h * 0.3f, false, acc, std::max(2.0f, std::round(g.px(3))));
             hits_.insert(hits_.begin() + std::ptrdiff_t(first_hit), Hit{m, kScrollDown});
         }
     }

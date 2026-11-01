@@ -130,6 +130,10 @@ public:
     int zoom() const { return zoom_; }
 
     float line_height(Font f) const;
+    // The height of the letters alone: the game's when they are drawn with
+    // its font, without the pixel face's taller line. For lines stacked
+    // close, such as a note's two lines beside its entry.
+    float letter_height(Font f) const;
     float text_width(Font f, const std::string& s);
     // Returns the advance width actually drawn.
     float text(Font f, float x, float y, const std::string& s, Color c);
