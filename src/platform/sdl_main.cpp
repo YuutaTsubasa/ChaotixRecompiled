@@ -29,6 +29,7 @@
 #include "frontend/portrait.h"
 #include "platform/frame_pacing.h"
 #include "platform/menu.h"
+#include "platform/pad_input.h"
 #include "platform/award_art.h"
 #include "platform/toast_queue.h"
 #include "platform/ui.h"
@@ -116,6 +117,9 @@ struct App {
     std::shared_ptr<CharacterPalettes> character_palettes;
     SDL_AudioStream* audio = nullptr;
     std::vector<SDL_Gamepad*> pads;
+    // Which triggers are pressed on each pad (left, right), so a press is
+    // seen once as it crosses half way (issue #113).
+    std::map<SDL_JoystickID, std::array<bool, 2>> triggers;
     TouchControls touch;
     bool touch_enabled = false;
     std::map<SDL_FingerID, uint16_t> fingers;
@@ -505,23 +509,10 @@ void warn_about_dead_bindings(const App& app) {
 }
 
 // The Mega Drive pad the game sees, from whatever the player bound to it.
-// Defaults are in Config::set_defaults; anything here can be rebound.
+// Defaults are in Config::set_defaults; anything here can be rebound,
+// triggers included (issue #113).
 uint16_t gamepad_buttons(SDL_Gamepad* g, const std::map<std::string, std::string>& binds) {
-    uint16_t out = 0;
-    for (const auto& [name, sdl_name] : binds) {
-        const SDL_GamepadButton b = SDL_GetGamepadButtonFromString(sdl_name.c_str());
-        if (b != SDL_GAMEPAD_BUTTON_INVALID && SDL_GetGamepadButton(g, b))
-            out |= pad_button_from_name(name.c_str());
-    }
-    // The sticks always steer, whatever the d-pad is bound to.
-    const int dead = 12000;
-    const int lx = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTX);
-    const int ly = SDL_GetGamepadAxis(g, SDL_GAMEPAD_AXIS_LEFTY);
-    if (lx < -dead) out |= PAD_LEFT;
-    if (lx > dead) out |= PAD_RIGHT;
-    if (ly < -dead) out |= PAD_UP;
-    if (ly > dead) out |= PAD_DOWN;
-    return out;
+    return pad_input::mega_drive_buttons(g, binds);
 }
 
 // Which physical device drives a player: "auto", "keyboard", "padN", "none".
@@ -727,14 +718,8 @@ SDL_GamepadButton menu_pad_button(const App& app) {
 // Whether a host function's gamepad binding (a button name, a trigger, or
 // "none") is down on any pad.
 bool pad_binding_held(const App& app, const std::string& name) {
-    const SDL_GamepadButton b = SDL_GetGamepadButtonFromString(name.c_str());
-    const SDL_GamepadAxis axis = b == SDL_GAMEPAD_BUTTON_INVALID ? SDL_GetGamepadAxisFromString(name.c_str())
-                                                                 : SDL_GAMEPAD_AXIS_INVALID;
-    const bool trigger = axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
-    for (SDL_Gamepad* g : app.pads) {
-        if (b != SDL_GAMEPAD_BUTTON_INVALID && SDL_GetGamepadButton(g, b)) return true;
-        if (trigger && SDL_GetGamepadAxis(g, axis) > 16384) return true;
-    }
+    for (SDL_Gamepad* g : app.pads)
+        if (pad_input::held(g, name)) return true;
     return false;
 }
 
@@ -1538,6 +1523,22 @@ void draw_fps_counter(App& app, int ow, int oh) {
 void handle_pad_button(App& app, Uint8 button) {
     if (app.menu.on_pad(button)) return;
     if (SDL_GamepadButton(button) == menu_pad_button(app)) menu_back(app);
+}
+
+// SDL sends the triggers as axis motion, not presses. Crossing half way is
+// the press, which the menu takes when a game button is being bound to it
+// (issue #113); in play the triggers are read as they are held.
+void handle_pad_axis(App& app, const SDL_GamepadAxisEvent& a) {
+    const SDL_GamepadAxis axis = SDL_GamepadAxis(a.axis);
+    if (axis != SDL_GAMEPAD_AXIS_LEFT_TRIGGER && axis != SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) return;
+    bool& down = app.triggers[a.which][axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER ? 1 : 0];
+    if (down) {
+        if (a.value < pad_input::kTriggerReleased) down = false;
+        return;
+    }
+    if (a.value <= pad_input::kTriggerPressed) return;
+    down = true;
+    app.menu.on_pad_trigger(SDL_GetGamepadStringForAxis(axis));
 }
 
 void handle_key(App& app, const SDL_KeyboardEvent& key_event) {
@@ -2858,6 +2859,7 @@ int main(int argc, char** argv) {
             case SDL_EVENT_KEY_DOWN: handle_key(app, e.key); break;
             case SDL_EVENT_TEXT_INPUT: app.menu.on_text(e.text.text); break;
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN: handle_pad_button(app, e.gbutton.button); break;
+            case SDL_EVENT_GAMEPAD_AXIS_MOTION: handle_pad_axis(app, e.gaxis); break;
             case SDL_EVENT_GAMEPAD_ADDED:
                 if (SDL_Gamepad* g = SDL_OpenGamepad(e.gdevice.which)) {
                     app.pads.push_back(g);
@@ -2866,7 +2868,7 @@ int main(int argc, char** argv) {
                 break;
             case SDL_EVENT_GAMEPAD_REMOVED:
                 for (size_t i = 0; i < app.pads.size(); ++i)
-                    if (SDL_GetGamepadID(app.pads[i]) == e.gdevice.which) { SDL_CloseGamepad(app.pads[i]); app.pads.erase(app.pads.begin() + long(i)); break; }
+                    if (SDL_GetGamepadID(app.pads[i]) == e.gdevice.which) { app.triggers.erase(e.gdevice.which); SDL_CloseGamepad(app.pads[i]); app.pads.erase(app.pads.begin() + long(i)); break; }
                 break;
             case SDL_EVENT_FINGER_DOWN: case SDL_EVENT_FINGER_MOTION: {
                 app.touch_enabled = app.cfg.touch != TouchMode::Off;

@@ -60,8 +60,10 @@ if(CHAOTIX_BUILD_FRONTEND)
         test_state_menu.cpp
         test_mod_menu.cpp
         test_music_menu.cpp
+        test_pad_input.cpp
         test_time_attack.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/menu.cpp
+        ${CMAKE_SOURCE_DIR}/src/platform/pad_input.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/ui.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/award_art.cpp
         ${CMAKE_SOURCE_DIR}/src/platform/backdrops.cpp

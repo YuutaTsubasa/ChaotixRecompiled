@@ -261,6 +261,11 @@ jumps, B holds your partner still (the game answers with its own HOLD!
 bubble), A pulls the partner in for ten rings, Start pauses. X, Y, Z and Mode
 say NOT USED BY THIS GAME, because they are: pressing them changes neither
 the picture nor the game's state, on the title screen or in a level.
+The triggers can be bound too (pressed past half way), for 6-button pads
+such as the 8BitDo M30 and Retro-Bit's, which report C and Z as the right
+and left triggers. Fast-forward and rewind start on the triggers, so binding
+a game button to one sets that function's pad button to NONE (choose another
+under FAST FORWARD PAD or STATES AND REWIND); one input never does two jobs.
 
 MENU BUTTON is Escape's counterpart on a controller: the emulated 6-button
 pad takes every face and shoulder button, so the choice is among the ones it
@@ -273,7 +278,7 @@ out of the menu again.
 FAST FORWARD KEY (Tab to begin with; press Enter, then the key) and FAST
 FORWARD PAD (the right trigger to begin with; also the left trigger, either
 stick click, Guide/Home/PS, the touchpad click, Share/Capture or NONE -- never
-one the emulated pad uses, nor the MENU BUTTON) are on the CONTROLS page.
+one the emulated pad uses or a game button is bound to, nor the MENU BUTTON) are on the CONTROLS page.
 OPTIONS > INPUT has the rest:
 
 - TOUCH FAST FORWARD (OFF by default) adds a small fast-forward button to the

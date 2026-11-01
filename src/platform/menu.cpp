@@ -332,6 +332,15 @@ const MenuButtonChoice* pad_choice(const std::string& name) {
     return nullptr;
 }
 
+// Whether a gamepad input is bound to a Mega Drive button, for either
+// player. The host's functions step over those.
+bool bound_to_game(const Config* c, const std::string& name) {
+    for (const auto* binds : {&c->pads, &c->pads2})
+        for (const auto& [button, bound] : *binds)
+            if (bound == name) return true;
+    return false;
+}
+
 std::string upper(std::string v) {
     for (char& c : v) c = char(std::toupper((unsigned char)c));
     return v;
@@ -428,7 +437,8 @@ void Menu::build_controls() {
                           do i = (i + step + kFastForwardButtonCount) % kFastForwardButtonCount;
                           while (c->menu_button == kFastForwardButtons[i].name ||
                                  (std::string(kFastForwardButtons[i].name) != "none" &&
-                                  (c->rewind_button == kFastForwardButtons[i].name ||
+                                  (bound_to_game(c, kFastForwardButtons[i].name) ||
+                                   c->rewind_button == kFastForwardButtons[i].name ||
                                    c->state_save_button == kFastForwardButtons[i].name ||
                                    c->state_load_button == kFastForwardButtons[i].name)));
                           c->ff_button = kFastForwardButtons[i].name;
@@ -449,6 +459,15 @@ std::string* Menu::capture_target(const std::string& what) const {
     if (what == kRunStartCapture) return &cfg_->sr_start_key;
     if (what == kRunResetCapture) return &cfg_->sr_reset_key;
     return nullptr;
+}
+
+void Menu::bind_pad(const char* name) {
+    auto& binds = keys_player_ == 0 ? cfg_->pads : cfg_->pads2;
+    binds[awaiting_] = name;
+    awaiting_.clear();
+    for (std::string Config::*f : {&Config::ff_button, &Config::rewind_button, &Config::state_save_button,
+                                   &Config::state_load_button})
+        if (cfg_->*f == name) cfg_->*f = "none";
 }
 
 // Save states (issue #40), from the pause menu: the slot quick save and quick
@@ -536,7 +555,8 @@ void Menu::build_state_keys() {
                               // Not a button the menu, fast-forward or the other two hold.
                               auto taken = [cc, field](const std::string& name) {
                                   if (name == "none") return false;
-                                  if (name == cc->menu_button || name == cc->ff_button) return true;
+                                  if (name == cc->menu_button || name == cc->ff_button || bound_to_game(cc, name))
+                                      return true;
                                   for (std::string Config::*other : {&Config::state_save_button, &Config::state_load_button,
                                                                      &Config::rewind_button})
                                       if (other != field && name == cc->*other) return true;
@@ -799,7 +819,9 @@ void Menu::build_keys() {
                               const auto& binds = pad ? (p == 0 ? c->pads : c->pads2)
                                                       : (p == 0 ? c->keys : c->keys2);
                               auto it = binds.find(button);
-                              return it == binds.end() ? std::string("-") : upper(it->second);
+                              if (it == binds.end()) return std::string("-");
+                              const MenuButtonChoice* b = pad ? pad_choice(it->second) : nullptr;
+                              return b ? std::string(b->label) : upper(it->second);
                           },
                           [this, button](int step) {
                               // Enter starts the capture; left/right do nothing
@@ -1652,6 +1674,14 @@ bool Menu::on_key(SDL_Keycode key) {
     }
 }
 
+bool Menu::on_pad_trigger(const char* name) {
+    if (!open()) return false;
+    // The triggers do nothing else in the menu; fast-forward and rewind,
+    // which may use them, are read as held, not here.
+    if (!awaiting_.empty() && !capture_target(awaiting_) && keys_pad_ && cfg_ && name && *name) bind_pad(name);
+    return true;
+}
+
 bool Menu::on_pad(Uint8 button) {
     if (!open()) return false;
     if (editing_) {
@@ -1672,11 +1702,7 @@ bool Menu::on_pad(Uint8 button) {
             if (button == SDL_GAMEPAD_BUTTON_EAST) awaiting_.clear();
         } else if (keys_pad_ && cfg_) {
             const char* name = SDL_GetGamepadStringForButton(SDL_GamepadButton(button));
-            if (name && *name) {
-                auto& binds = keys_player_ == 0 ? cfg_->pads : cfg_->pads2;
-                binds[awaiting_] = name;
-                awaiting_.clear();
-            }
+            if (name && *name) bind_pad(name);
         }
         return true;
     }

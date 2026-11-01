@@ -163,6 +163,9 @@ public:
     // Each returns true when the menu consumed the input.
     bool on_key(SDL_Keycode key);
     bool on_pad(Uint8 button);
+    // A trigger pressed past half way, by SDL's name ("lefttrigger",
+    // "righttrigger"). Only binding a game button takes one (issue #113).
+    bool on_pad_trigger(const char* name);
     bool on_touch_down(float x, float y);
     bool on_touch_up();
     // Typing into a text row (the NETPLAY address and port): while it lasts
@@ -311,6 +314,9 @@ private:
     // The setting a host-key capture writes (fast-forward, save state, ...),
     // or null when awaiting_ is a Mega Drive button.
     std::string* capture_target(const std::string& what) const;
+    // Binds the Mega Drive button being captured to this gamepad input, and
+    // takes it off the host functions that had it: one button, one job.
+    void bind_pad(const char* name);
     void move(int delta);
     void activate(int step);
     // Escape, the menu button or the pad's back button: one level up, or
