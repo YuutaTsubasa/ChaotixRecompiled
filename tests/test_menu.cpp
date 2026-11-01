@@ -2624,3 +2624,47 @@ TEST(level_select, the_no_partner_card_is_drawn_without_a_character) {
         CHECK(solo);
     }
 }
+
+TEST(menu, a_game_button_can_be_bound_to_a_trigger) {
+    // Issue #113: pads such as the 8BitDo M30 report C and Z as the triggers,
+    // which SDL sends as axes, not presses. Binding takes them all the same.
+    Config cfg;
+    cfg.set_defaults();
+    CHECK_STR(cfg.ff_button, "righttrigger");
+    CHECK_STR(cfg.rewind_button, "lefttrigger");
+    Menu m;
+    m.bind(cfg);
+    m.toggle();
+    CHECK(m.show_page("pad1"));
+    // Not capturing, a trigger changes nothing.
+    CHECK(m.on_pad_trigger("righttrigger"));
+    CHECK(select_row(m, "C"));
+    const std::string before = cfg.pads["c"];
+    CHECK(before != "righttrigger");
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK_STR(m.selected_value(), "PRESS A BUTTON");
+    CHECK(m.on_pad_trigger("righttrigger"));
+    CHECK_STR(cfg.pads["c"], "righttrigger");
+    CHECK_STR(m.selected_value(), "RIGHT TRIGGER");
+    // One button, one job: fast-forward had the right trigger and lets it go.
+    CHECK_STR(cfg.ff_button, "none");
+    CHECK_STR(cfg.rewind_button, "lefttrigger");
+    CHECK(select_row(m, "Z"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(m.on_pad_trigger("lefttrigger"));
+    CHECK_STR(cfg.pads["z"], "lefttrigger");
+    CHECK_STR(cfg.rewind_button, "none");
+    // The host functions now step over the triggers the game has.
+    m.close();
+    m.toggle();
+    CHECK(select_row(m, "CONTROLS"));
+    CHECK(m.on_key(SDLK_RETURN));
+    CHECK(select_row(m, "FAST FORWARD PAD"));
+    for (int i = 0; i < 10; ++i) {
+        m.on_key(SDLK_RIGHT);
+        CHECK(cfg.ff_button != "righttrigger" && cfg.ff_button != "lefttrigger");
+    }
+    // A closed menu leaves the triggers to the game.
+    m.close();
+    CHECK(!m.on_pad_trigger("righttrigger"));
+}
