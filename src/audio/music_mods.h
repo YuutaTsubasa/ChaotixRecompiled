@@ -46,6 +46,9 @@ struct Track {
 // the first two used) and resamples it to out_rate. Takes the first loop of a
 // "smpl" chunk, if there is one.
 bool decode_wav(const std::vector<uint8_t>& bytes, double out_rate, Track& out, std::string* error);
+// Whether decode_wav would take the file at path, from its chunk headers and
+// format alone (the samples are not read), and if not, why.
+bool check_wav_file(const std::string& path, std::string* error);
 
 // "<start> [<end>]" in sample frames of a file at in_rate; applied to a track
 // resampled from that rate. False if the text holds no start.
@@ -60,7 +63,8 @@ inline int mixed_percent(int setting, int music_volume = 100) { return setting *
 
 class MusicMods {
 public:
-    // Finds "<id>.wav" files in dir (ids 01-29). Returns how many.
+    // Finds "<id>.wav" files in dir (ids 01-29) that check_wav_file takes;
+    // a later dir's file replaces an earlier one's. Returns how many.
     int scan(const std::string& dir);
     // Sets a piece directly (tests, or a host with its own loader).
     void set_track(uint8_t id, Track track);

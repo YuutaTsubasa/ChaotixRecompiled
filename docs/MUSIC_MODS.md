@@ -36,6 +36,9 @@ marks the tracks a file replaces and plays the file.
 - **Formats:** PCM WAV at 8, 16, 24 or 32 bits, or 32-bit float, any sample
   rate, mono or stereo (other channels are ignored). Files are resampled once,
   when first played.
+  A file in any other format (ADPCM, MP3 in a WAV, not a WAV at all) is left
+  out when the game starts, with "not using 05.wav: ..." in the log, and the
+  game plays its own music for that piece.
 - **Loops:** the first loop of the WAV's sampler (`smpl`) chunk, which most
   audio editors write when you set a loop. Or a text file next to it,
   `05.loop`, holding the loop's first sample frame and optionally its last,

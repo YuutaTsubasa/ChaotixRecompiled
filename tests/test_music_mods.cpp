@@ -5,6 +5,8 @@
 #include "test_framework.h"
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -228,6 +230,40 @@ TEST(music_mods, scans_only_music_ids) {
     MusicMods music;
     CHECK_EQ(music.scan("this folder does not exist"), 0);
     CHECK(!music.has(5));
+}
+
+TEST(music_mods, scan_leaves_files_it_cannot_play_to_the_game) {
+    // Issue #122: a file that is not a WAV it can play must not take the
+    // piece from the game, or the piece is silent.
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "chaotix_test_music_scan";
+    fs::remove_all(dir);
+    fs::create_directories(dir);
+    auto write = [&](const char* name, const std::vector<uint8_t>& bytes) {
+        std::ofstream(dir / name, std::ios::binary).write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    };
+    std::vector<uint8_t> samples;
+    for (int i = 0; i < 8; ++i) put16(samples, uint16_t(i * 100));
+    write("05.wav", wav(1, 2, 44100, 16, samples));
+    write("06.wav", {'n', 'o', 't', ' ', 'a', ' ', 'w', 'a', 'v'});
+    write("07.wav", wav(2, 2, 44100, 4, std::vector<uint8_t>(64, 0)));  // ADPCM
+    write("08.wav", wav(1, 2, 44100, 16, {}));                         // no samples
+    std::string err;
+    CHECK(audio::check_wav_file((dir / "05.wav").u8string(), &err));
+    CHECK(!audio::check_wav_file((dir / "06.wav").u8string(), &err));
+    CHECK(err == "not a WAV file");
+    CHECK(!audio::check_wav_file((dir / "07.wav").u8string(), &err));
+    CHECK(!audio::check_wav_file((dir / "missing.wav").u8string(), &err));
+
+    MusicMods music;
+    CHECK_EQ(music.scan(dir.u8string()), 1);
+    CHECK(music.has(5));
+    CHECK(!music.has(6) && !music.has(7) && !music.has(8));
+    auto m = std::make_unique<Machine>();
+    music.attach(*m);
+    CHECK(m->music_replaced[5]);
+    CHECK(!m->music_replaced[6] && !m->music_replaced[7] && !m->music_replaced[8]);
+    fs::remove_all(dir);
 }
 
 #ifdef CHAOTIX_TEST_ROM

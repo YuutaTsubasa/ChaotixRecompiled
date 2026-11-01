@@ -45,13 +45,76 @@ int music_id(const std::string& stem) {
     return id >= 1 && id < patches::kFirstSoundEffect ? id : -1;
 }
 
+struct WavFormat {
+    int format = 0, channels = 0, bits = 0;
+    uint32_t rate = 0;
+};
+
+// The "fmt " chunk's body (at least 16 bytes); an extensible one's sub-format.
+WavFormat read_fmt(const uint8_t* body, size_t avail) {
+    WavFormat f;
+    f.format = le16(body);
+    f.channels = le16(body + 2);
+    f.rate = le32(body + 4);
+    f.bits = le16(body + 14);
+    if (f.format == 0xFFFE && avail >= 26) f.format = le16(body + 24);
+    return f;
+}
+
+// Whether decode_wav can play this format and amount of data.
+bool check_format(const WavFormat& f, size_t data_size, std::string* error) {
+    if (f.format != 1 && f.format != 3) return fail(error, "unsupported encoding (only PCM and float WAV)");
+    if (f.channels < 1 || f.rate == 0) return fail(error, "bad format chunk");
+    if (f.format == 1 && f.bits != 8 && f.bits != 16 && f.bits != 24 && f.bits != 32)
+        return fail(error, "unsupported sample size");
+    if (f.format == 3 && f.bits != 32) return fail(error, "unsupported float sample size");
+    if (data_size / (size_t(f.bits / 8) * size_t(f.channels)) == 0) return fail(error, "no audio data");
+    return true;
+}
+
 } // namespace
+
+bool check_wav_file(const std::string& path, std::string* error) {
+    std::ifstream f(fs::u8path(path), std::ios::binary);
+    if (!f) return fail(error, "cannot read it");
+    f.seekg(0, std::ios::end);
+    const std::streamoff end = f.tellg();
+    f.seekg(0);
+    uint8_t head[12];
+    if (end < 12 || !f.read(reinterpret_cast<char*>(head), 12) || std::memcmp(head, "RIFF", 4) != 0 ||
+        std::memcmp(head + 8, "WAVE", 4) != 0)
+        return fail(error, "not a WAV file");
+    // The chunks as decode_wav walks them, reading only their headers and
+    // the format, not the samples.
+    WavFormat format;
+    bool have_data = false;
+    size_t data_size = 0;
+    for (std::streamoff p = 12; p + 8 <= end;) {
+        uint8_t h[8];
+        f.seekg(p);
+        if (!f.read(reinterpret_cast<char*>(h), 8)) break;
+        const size_t size = le32(h + 4);
+        const std::streamoff body = p + 8;
+        const size_t avail = std::min(size, size_t(end - body));
+        if (std::memcmp(h, "fmt ", 4) == 0 && avail >= 16) {
+            uint8_t b[26] = {};
+            const size_t n = std::min(avail, sizeof b);
+            if (!f.read(reinterpret_cast<char*>(b), std::streamsize(n))) break;
+            format = read_fmt(b, n);
+        } else if (std::memcmp(h, "data", 4) == 0) {
+            have_data = true;
+            data_size = avail;
+        }
+        p = body + std::streamoff(size) + std::streamoff(size & 1);
+    }
+    if (!have_data) return fail(error, "no audio data");
+    return check_format(format, data_size, error);
+}
 
 bool decode_wav(const std::vector<uint8_t>& b, double out_rate, Track& out, std::string* error) {
     if (b.size() < 12 || std::string(b.begin(), b.begin() + 4) != "RIFF" || std::string(b.begin() + 8, b.begin() + 12) != "WAVE")
         return fail(error, "not a WAV file");
-    int format = 0, channels = 0, bits = 0;
-    uint32_t rate = 0;
+    WavFormat fmt;
     const uint8_t* data = nullptr;
     size_t data_size = 0;
     bool have_loop = false;
@@ -62,11 +125,7 @@ bool decode_wav(const std::vector<uint8_t>& b, double out_rate, Track& out, std:
         const size_t body = p + 8;
         const size_t avail = std::min(size, b.size() - body);
         if (id == "fmt " && avail >= 16) {
-            format = le16(&b[body]);
-            channels = le16(&b[body + 2]);
-            rate = le32(&b[body + 4]);
-            bits = le16(&b[body + 14]);
-            if (format == 0xFFFE && avail >= 26) format = le16(&b[body + 24]);  // extensible: sub-format
+            fmt = read_fmt(&b[body], avail);
         } else if (id == "data") {
             data = &b[body];
             data_size = avail;
@@ -78,13 +137,11 @@ bool decode_wav(const std::vector<uint8_t>& b, double out_rate, Track& out, std:
         p = body + size + (size & 1);
     }
     if (!data) return fail(error, "no audio data");
-    if (format != 1 && format != 3) return fail(error, "unsupported encoding (only PCM and float WAV)");
-    if (channels < 1 || rate == 0) return fail(error, "bad format chunk");
-    if (format == 1 && bits != 8 && bits != 16 && bits != 24 && bits != 32) return fail(error, "unsupported sample size");
-    if (format == 3 && bits != 32) return fail(error, "unsupported float sample size");
+    if (!check_format(fmt, data_size, error)) return false;
+    const int format = fmt.format, channels = fmt.channels, bits = fmt.bits;
+    const uint32_t rate = fmt.rate;
     const size_t bytes = size_t(bits / 8);
     const size_t in_frames = data_size / (bytes * size_t(channels));
-    if (in_frames == 0) return fail(error, "no audio data");
     auto sample = [&](size_t frame, int ch) -> float {
         const uint8_t* s = data + (frame * size_t(channels) + size_t(std::min(ch, channels - 1))) * bytes;
         if (format == 3) {
@@ -143,7 +200,16 @@ int MusicMods::scan(const std::string& dir) {
         std::string ext = p.extension().u8string();
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char ch) { return char(std::tolower(ch)); });
         const int id = ext == ".wav" ? music_id(p.stem().u8string()) : -1;
-        if (id > 0) files_[uint8_t(id)] = p.u8string();
+        if (id <= 0) continue;
+        // A file it could not play would still tell the game to leave the
+        // piece to it, and the piece would be silent (issue #122): only one
+        // that can be played replaces the game's music.
+        std::string error;
+        if (!check_wav_file(p.u8string(), &error)) {
+            LOGW("music", "not using %s: %s", p.u8string().c_str(), error.c_str());
+            continue;
+        }
+        files_[uint8_t(id)] = p.u8string();
     }
     return int(files_.size());
 }
