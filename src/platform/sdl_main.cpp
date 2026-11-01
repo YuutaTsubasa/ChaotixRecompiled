@@ -2914,7 +2914,10 @@ int main(int argc, char** argv) {
                 break;
             }
             case SDL_EVENT_FINGER_UP: case SDL_EVENT_FINGER_CANCELED:
-                if (app.menu.open()) { app.menu.on_touch_up(); break; }
+                // The menu takes the touch, but a finger that was holding a
+                // button when it opened lets go of it here all the same, or
+                // the button stays held once the menu closes (issue #120).
+                if (app.menu.open()) app.menu.on_touch_up();
                 app.fingers.erase(e.tfinger.fingerID);
                 app.touch.lift(uint64_t(e.tfinger.fingerID));
                 break;
