@@ -158,6 +158,8 @@ public:
     // on it (0 for none) while a page lays out lines that must all match,
     // such as the notes beside its entries.
     int small_game_scale() const { return game_scale(Font::PixelSmall); }
+    // The scale of the menu labels' game letters (Font::Pixel).
+    int label_game_scale() const { return game_scale(Font::Pixel); }
     void cap_small_game_scale(int k) { small_cap_ = k; }
 
     // Draws a texture over r, cropped to r's shape rather than stretched, so

@@ -2149,6 +2149,34 @@ void Menu::draw_row_page(ui::Ui& g, const char* hint) {
                band_y + band_h - g.px(16) - hint_h, g.width() - g.px(16), hint, faint());
 }
 
+namespace {
+
+// Splits s into lines no wider than max_w in f, at the given separator (a
+// space for words, two for the hints' "Up/Down choose  Enter rebind"
+// groups). A piece too wide for a line keeps a line to itself.
+std::vector<std::string> wrap_lines(ui::Ui& g, ui::Font f, const std::string& s, float max_w, const std::string& sep) {
+    std::vector<std::string> lines;
+    std::string line;
+    size_t at = 0;
+    while (at <= s.size()) {
+        size_t end = s.find(sep, at);
+        if (end == std::string::npos) end = s.size();
+        const std::string piece = s.substr(at, end - at);
+        const std::string tried = line.empty() ? piece : line + sep + piece;
+        if (!line.empty() && g.text_width(f, tried) > max_w) {
+            lines.push_back(line);
+            line = piece;
+        } else {
+            line = tried;
+        }
+        at = end + sep.size();
+    }
+    if (!line.empty()) lines.push_back(line);
+    return lines;
+}
+
+} // namespace
+
 void Menu::draw_options(ui::Ui& g) {
     // Room for the selection marker inside the panel, and a margin outside
     // it; on a window too narrow for the whole panel (a portrait one, a larger
@@ -2184,12 +2212,14 @@ void Menu::draw_options(ui::Ui& g) {
     // the panel twitch. A pack's page keeps the whole width for its words.
     float need = g.px(300);
     if (!info_lines_.empty()) need = widest;
+    g.cap_small_game_scale(std::max(1, (g.label_game_scale() + 1) / 2));  // the notes' scale (below)
     for (const Item& it : items_) {
         float w = g.text_width(ui::Font::Pixel, it.label);
         if (!it.note.empty()) w += g.text_width(kNoteFont, it.note) + g.px(16);
         if (it.value) w += g.text_width(ui::Font::Pixel, it.value()) + g.px(60);
         need = std::max(need, w);
     }
+    g.cap_small_game_scale(0);
     need = std::max({need, g.text_width(kHintFont, "Up/Down choose  Left/Right change  Esc back"),
                      g.text_width(ui::Font::PixelBig, pack_heading) +
                          (g.line_height(ui::Font::PixelBig) + g.px(18)) * 0.9f + g.px(40)});
@@ -2208,33 +2238,63 @@ void Menu::draw_options(ui::Ui& g) {
     const float extra = g.px(4.0f * float(g.zoom()));
     const float row_h = g.line_height(ui::Font::Pixel) + g.px(16) + extra;
     const float head_h = g.line_height(ui::Font::PixelBig) + g.px(22);
-    const float hint_h = g.line_height(kHintFont);
     // A value too wide to sit beside its label - a controller's own name, say
     // - gets a line of its own rather than running into it.
     std::vector<bool> wrapped(items_.size(), false);
-    // The notes all come at one size: the largest at which each fits beside
-    // its label, so a narrow window does not shrink only the longest ones.
-    int note_scale = g.small_game_scale();
-    for (const Item& it : items_) {
-        if (it.note.empty()) continue;
-        const float room = column - g.text_width(ui::Font::Pixel, it.label) - g.px(16);
-        while (note_scale > 1 && float(it.note.size() * GameFont::kGlyphW * size_t(note_scale)) > room) --note_scale;
-    }
+    // The notes are captions, so their letters stay well under the labels':
+    // at most half the labels' scale, rounded up. A note too long to sit
+    // beside its label goes on lines of its own below it, wrapped at words,
+    // rather than being cut short.
+    const int note_scale = std::min(g.small_game_scale(), std::max(1, (g.label_game_scale() + 1) / 2));
     g.cap_small_game_scale(note_scale);
-    // A note sits between the label and the value, so it counts towards the
-    // room a row needs.
-    auto note_width = [&g](const Item& it) {
-        return it.note.empty() ? 0.0f : g.text_width(kNoteFont, it.note) + g.px(16);
-    };
+    const float note_gap = g.px(16), note_indent = g.px(16);
+    const float note_line_h = g.line_height(kNoteFont) + g.px(4);
+    std::vector<std::vector<std::string>> note_below(items_.size());
+    std::vector<float> row_hs(items_.size(), row_h);
     float rows_h = 0;
     for (size_t i = 0; i < items_.size(); ++i) {
-        if (items_[i].value) {
-            const float need = g.text_width(ui::Font::Pixel, items_[i].label) + note_width(items_[i]) +
-                               g.text_width(ui::Font::Pixel, items_[i].value()) + g.px(60);
-            wrapped[i] = need > column;
+        const Item& it = items_[i];
+        const float label_w = g.text_width(ui::Font::Pixel, it.label);
+        const bool note_inline = it.note.empty() || label_w + note_gap + g.text_width(kNoteFont, it.note) <= column;
+        if (!note_inline) note_below[i] = wrap_lines(g, kNoteFont, it.note, column - note_indent, " ");
+        if (it.value) {
+            const float note_w = note_inline && !it.note.empty() ? g.text_width(kNoteFont, it.note) + note_gap : 0.0f;
+            wrapped[i] = label_w + note_w + g.text_width(ui::Font::Pixel, it.value()) + g.px(60) > column;
         }
-        rows_h += wrapped[i] ? row_h * 2 : row_h;
+        row_hs[i] = row_h + float(note_below[i].size()) * note_line_h + (wrapped[i] ? row_h : 0.0f);
+        rows_h += row_hs[i];
     }
+    g.cap_small_game_scale(0);
+
+    // The hint along the foot: on one line at the largest scale it fits, or
+    // else on two, its groups ("Enter rebind") kept whole. Room is left for
+    // the marker that says more rows are below.
+    const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
+                           ? "Up/Down choose  Enter rebind  Esc back"
+                       : page_ == Page::Mods ? "Up/Down choose  Left/Right on/off  Enter details"
+                       : page_ == Page::Music ? "Up/Down choose  Enter play  Esc back"
+                                             : "Up/Down choose  Left/Right change  Esc back";
+    const float hint_room = column - g.text_width(ui::Font::Pixel, "v") - g.px(12);
+    int hint_scale = g.small_game_scale();
+    for (;; --hint_scale) {
+        g.cap_small_game_scale(hint_scale);
+        if (g.text_width(kHintFont, hint) <= hint_room || hint_scale <= 1) break;
+    }
+    std::vector<std::string> hint_lines;
+    if (g.text_width(kHintFont, hint) <= hint_room) {
+        hint_lines = {hint};
+    } else {
+        // Two lines, at the largest scale whose lines all fit.
+        for (hint_scale = g.small_game_scale(); hint_scale >= 1; --hint_scale) {
+            g.cap_small_game_scale(hint_scale);
+            hint_lines = wrap_lines(g, kHintFont, hint, hint_room, "  ");
+            bool fits = true;
+            for (const std::string& l : hint_lines) fits = fits && g.text_width(kHintFont, l) <= hint_room;
+            if (fits || hint_scale == 1) break;
+        }
+    }
+    const float hint_line_h = g.line_height(kHintFont) + g.px(2);
+    const float hint_h = float(hint_lines.size()) * hint_line_h;
     g.cap_small_game_scale(0);
 
     // A pack's page (issue #42): its description under the heading, wrapped
@@ -2290,9 +2350,23 @@ void Menu::draw_options(ui::Ui& g) {
     // follows the selection, with a marker above and below where there is
     // more; a tap on a marker steps the selection that way.
     const float rows_room = g.height() - g.px(28) - g.px(16) - g.px(30) - head_h - info_h - g.px(12) - hint_h;
+    // A row is never taller than that room: a note wrapped to more lines
+    // than it leaves keeps as many as fit, the last one shortened.
+    for (size_t i = 0; i < items_.size(); ++i) {
+        std::vector<std::string>& lines = note_below[i];
+        if (lines.empty()) continue;
+        const float spare = rows_room - row_h - (wrapped[i] ? row_h : 0.0f);
+        const size_t keep = size_t(std::max(1.0f, std::floor(spare / note_line_h)));
+        if (lines.size() <= keep) continue;
+        lines.resize(keep);
+        lines.back() += " ...";
+        rows_h -= row_hs[i];
+        row_hs[i] = row_h + float(keep) * note_line_h + (wrapped[i] ? row_h : 0.0f);
+        rows_h += row_hs[i];
+    }
     size_t first = 0, last = items_.size();  // the rows drawn: [first, last)
     if (rows_h > rows_room && !items_.empty()) {
-        auto h_of = [&](size_t i) { return wrapped[i] ? row_h * 2 : row_h; };
+        auto h_of = [&](size_t i) { return row_hs[i]; };
         const size_t sel = size_t(std::clamp(selected_, 0, int(items_.size()) - 1));
         first = std::min(size_t(std::max(scroll_, 0)), sel);
         float used = 0;
@@ -2359,21 +2433,31 @@ void Menu::draw_options(ui::Ui& g) {
                                      sel ? ui::theme::text : ui::theme::text_dim);
         if (!it.note.empty()) {
             // Smaller and dimmer than the label, on the same middle line, so
-            // it reads as a caption rather than as a second entry.
+            // it reads as a caption rather than as a second entry; or, when
+            // it does not fit there, on lines of its own just below.
             g.cap_small_game_scale(note_scale);
-            const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(kNoteFont)) * 0.5f;
-            // Shortened rather than run out of the panel on a narrow window.
-            g.text_fit(kNoteFont, x + label_w + g.px(16), ny, column - label_w - g.px(16), it.note, ui::theme::text_faint);
+            if (note_below[i].empty()) {
+                const float ny = y + (g.line_height(ui::Font::Pixel) - g.line_height(kNoteFont)) * 0.5f;
+                g.text_fit(kNoteFont, x + label_w + note_gap, ny, column - label_w - note_gap, it.note,
+                           ui::theme::text_faint);
+            } else {
+                float ny = y + g.line_height(ui::Font::Pixel) + g.px(2);
+                for (const std::string& line : note_below[i]) {
+                    g.text_fit(kNoteFont, x + note_indent, ny, column - note_indent, line, ui::theme::text_faint);
+                    ny += note_line_h;
+                }
+            }
             g.cap_small_game_scale(0);
         }
-        const float this_h = wrapped[i] ? row_h * 2 : row_h;
+        const float this_h = row_hs[i];
+        const float notes_h = float(note_below[i].size()) * note_line_h;
         Hit hit{{x - g.px(24), y - g.px(4) - extra * 0.5f, column + g.px(48), this_h}, int(i)};
         if (it.value) {
             const std::string v = it.value();
             const float vw = g.text_width(ui::Font::Pixel, v);
             // Wrapped values sit on the next line, indented, and are shortened
             // if even a whole line cannot hold them.
-            const float vy = wrapped[i] ? y + row_h : y;
+            const float vy = wrapped[i] ? y + row_h + notes_h : y;
             const float vx = wrapped[i] ? x + g.px(16) : x + column - vw;
             const float room = wrapped[i] ? column - g.px(46) : column;
             g.text_fit(ui::Font::Pixel, vx, vy, room, v,
@@ -2400,12 +2484,11 @@ void Menu::draw_options(ui::Ui& g) {
     }
 
     y -= extra * 0.5f;
-    const char* hint = page_ == Page::Keys || page_ == Page::StateKeys
-                           ? "Up/Down choose  Enter rebind  Esc back"
-                       : page_ == Page::Mods ? "Up/Down choose  Left/Right on/off  Enter details"
-                       : page_ == Page::Music ? "Up/Down choose  Enter play  Esc back"
-                                             : "Up/Down choose  Left/Right change  Esc back";
-    g.text_fit(kHintFont, x, y + g.px(8), column, hint, ui::theme::text_faint);
+    g.cap_small_game_scale(hint_scale);
+    for (size_t l = 0; l < hint_lines.size(); ++l)
+        g.text_fit(kHintFont, x, y + g.px(8) + float(l) * hint_line_h, hint_room, hint_lines[l],
+                   ui::theme::text_faint);
+    g.cap_small_game_scale(0);
     // More rows below the window: a marker at the hint's right.
     if (last < items_.size()) {
         const float mw = g.text_width(ui::Font::Pixel, "v");

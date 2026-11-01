@@ -67,11 +67,16 @@ for the selected entry and headings, about two thirds for the others), so
 the game's own colours are kept. The small pixel face -- the hints along
 the foot of a page and the notes beside its entries ("JUMP", "NOT USED BY
 THIS GAME") -- uses the small glyphs, at its size over 8 (they are as tall
-as that face, and square). A hint too wide for its line comes a scale
-smaller before it is shortened, and a page's notes all take the largest
-scale at which every one fits beside its label, so a narrow window does not
-shrink only the longest. The notes may be dimmer than the labels (down to
-about half brightness), so they read as captions. Other captions keep the
+as that face, and square). The notes are captions, so their letters are
+at most half the labels' scale, rounded up (the square letters at the
+labels' own scale looked as large as the labels). Nothing is cut short
+where it can be wrapped: a note too long to sit beside its label goes on
+lines of its own just below it, wrapped at words (only a row that would be
+taller than the screen loses lines, the last one ending "..."); the hint
+along the foot takes the largest scale at which it fits on one line beside
+the "more below" marker, or else two lines, its groups ("Enter rebind")
+kept whole. The notes may be dimmer than the labels (down to about half
+brightness). Other captions keep the
 small text face; the touch controls and notifications keep the pixel face.
 
 `chaotix_headless --game-font FILE.png` writes the atlas.
