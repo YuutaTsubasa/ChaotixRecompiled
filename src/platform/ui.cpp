@@ -154,7 +154,10 @@ void Ui::set_sizes() {
         if (is_pixel(Font(i))) {
             const PixelSize p = pixel_steps(kSizes[i], base_scale_, sized_zoom_);
             size = p.face;
-            game_scales_[i] = p.game;
+            // The small glyphs are half as tall, so twice as many pixels of
+            // them fit the face.
+            game_scales_[i] = small_game_glyphs(Font(i)) ? std::max(1, int(p.face / float(GameFont::kSmallGlyphH) + 0.5f))
+                                                         : p.game;
         }
         TTF_SetFontSize(fonts_[i], size);
         pixel_sizes_[i] = size;
@@ -209,7 +212,7 @@ float Ui::line_height(Font f) const {
     // With the game's font, a line is tall enough for either, so a label in
     // the pixel face sits in the same rows as the game's.
     if (game_font_active() && game_glyphs(f))
-        return std::max(face, float(GameFont::kGlyphH * game_scale(f)));
+        return std::max(face, float(game_glyph_h(f) * game_scale(f)));
     return face;
 }
 
@@ -239,16 +242,20 @@ bool Ui::set_game_font(const GameFont& font) {
     return true;
 }
 
-float Ui::game_text(Font f, float x, float y, const std::string& s, Color c) {
-    const int k = game_scale(f);
-    const float cw = float(GameFont::kGlyphW * k), ch = float(GameFont::kGlyphH * k);
+float Ui::game_text(Font f, float x, float y, const std::string& s, Color c, int scale) {
+    const int k = scale > 0 ? scale : game_scale(f);
+    const float cw = float(GameFont::kGlyphW * k), ch = float(game_glyph_h(f) * k);
+    const float row = small_game_glyphs(f) ? float(GameFont::kGlyphH) : 0.0f;
     // The game's colours are the point, so the colour asked for only sets
     // how bright they are: full for the selected entry and headings, dimmer
     // for the rest, as the pixel face's greys would have been.
     const int bright = std::max({int(c.r), int(c.g), int(c.b)});
     // Not below about two thirds: the shaded yellow turns muddy darker than
-    // that, and the marker already says which entry is chosen.
-    const Uint8 mod = Uint8(std::clamp(bright * 255 / int(theme::text.b), 170, 255));
+    // that, and the marker already says which entry is chosen. The small
+    // letters may go a little further, so a note beside an entry reads as
+    // its caption.
+    const int floor = small_game_glyphs(f) ? 140 : 170;
+    const Uint8 mod = Uint8(std::clamp(bright * 255 / int(theme::text.b), floor, 255));
     if (game_tint_) SDL_SetTextureColorMod(game_tex_, c.r, c.g, c.b);
     else SDL_SetTextureColorMod(game_tex_, mod, mod, mod);
     SDL_SetTextureAlphaMod(game_tex_, c.a);
@@ -259,7 +266,7 @@ float Ui::game_text(Font f, float x, float y, const std::string& s, Color c) {
         const unsigned char ch_ = static_cast<unsigned char>(s[i]);
         if (ch_ == ' ') continue;
         const int g = game_glyph_[ch_];
-        const SDL_FRect src{float(g * GameFont::kGlyphW), 0, float(GameFont::kGlyphW), float(GameFont::kGlyphH)};
+        const SDL_FRect src{float(g * GameFont::kGlyphW), row, float(GameFont::kGlyphW), float(game_glyph_h(f))};
         const SDL_FRect dst{x0 + float(i) * cw, y0, cw, ch};
         SDL_RenderTexture(renderer_, game_tex_, &src, &dst);
     }
@@ -367,6 +374,20 @@ std::string Ui::shorten(Font f, const std::string& s, float max_w, bool is_path)
 
 float Ui::text_fit(Font f, float x, float y, float max_w, const std::string& s, Color c,
                    bool is_path) {
+    // The game's small letters are square, so a line of them is wider than
+    // the pixel face's. One that does not fit comes a scale smaller before it
+    // is shortened, and is shortened at the smallest: a hint along the foot
+    // of a narrow window keeps as much of itself as it can.
+    if (small_game_glyphs(f) && uses_game_font(f, s) && text_width(f, s) > max_w && game_scale(f) > 1) {
+        int k = game_scale(f) - 1;
+        while (k > 1 && float(s.size() * GameFont::kGlyphW * size_t(k)) > max_w) --k;
+        const size_t fits = max_w > 0 ? size_t(max_w) / size_t(GameFont::kGlyphW * k) : 0;
+        if (s.size() <= fits) return game_text(f, x, y, s, c, k);
+        if (fits <= 3) return 0;
+        std::string cut = s.substr(0, fits - 3);
+        while (!cut.empty() && cut.back() == ' ') cut.pop_back();
+        return game_text(f, x, y, cut + "...", c, k);
+    }
     return text(f, x, y, shorten(f, s, max_w, is_path), c);
 }
 

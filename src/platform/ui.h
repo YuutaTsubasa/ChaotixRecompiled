@@ -10,6 +10,9 @@
 
 #include <SDL3/SDL.h>
 
+#include "renderer/game_font.h"
+
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <map>
@@ -19,10 +22,6 @@
 struct TTF_Font;
 struct TTF_Text;
 struct TTF_TextEngine;
-
-namespace chaotix {
-struct GameFont;
-}
 
 namespace chaotix::ui {
 
@@ -67,9 +66,12 @@ enum class Font {
 // snapped to whole pixels so the glyphs stay sharp. These are also the ones
 // the game's own font stands in for (set_game_font).
 constexpr bool is_pixel(Font f) { return f == Font::Pixel || f == Font::PixelBig || f == Font::PixelSmall; }
-// The pixel faces the game's own font stands in for. Not the small one: the
-// game's letters cannot be drawn smaller than 8x16, as tall as a menu row.
-constexpr bool game_glyphs(Font f) { return f == Font::Pixel || f == Font::PixelBig; }
+// The pixel faces the game's own font stands in for: all three, the small
+// one with the font's half-height glyphs (GameFont::kSmallGlyphH), since its
+// full 8x16 letters are as tall as a menu row.
+constexpr bool game_glyphs(Font f) { return is_pixel(f); }
+constexpr bool small_game_glyphs(Font f) { return f == Font::PixelSmall; }
+inline int game_glyph_h(Font f) { return small_game_glyphs(f) ? GameFont::kSmallGlyphH : GameFont::kGlyphH; }
 
 // How many screen pixels a pixel of the game's 8x16 font becomes for a pixel
 // face of this size: a whole number, so its pixels stay square and sharp,
@@ -152,6 +154,11 @@ public:
     // that colour instead (multiplied: white digits come out in it, yellow
     // letters stay yellow) -- for a choice marked in yellow, say.
     void tint_game_font(bool on) { game_tint_ = on; }
+    // The scale the small pixel face's game letters are drawn at, and a cap
+    // on it (0 for none) while a page lays out lines that must all match,
+    // such as the notes beside its entries.
+    int small_game_scale() const { return game_scale(Font::PixelSmall); }
+    void cap_small_game_scale(int k) { small_cap_ = k; }
 
     // Draws a texture over r, cropped to r's shape rather than stretched, so
     // a picture fills a window of any aspect.
@@ -193,13 +200,18 @@ private:
     void set_sizes();
     void drop_cache();
     // The game font's pixel size for f (game_font_scale of its pixel face).
-    int game_scale(Font f) const { return game_scales_[size_t(f)]; }
-    float game_text(Font f, float x, float y, const std::string& s, Color c);
+    int game_scale(Font f) const {
+        const int k = game_scales_[size_t(f)];
+        return small_game_glyphs(f) && small_cap_ > 0 ? std::min(k, small_cap_) : k;
+    }
+    // At the scale asked for, or f's own (0).
+    float game_text(Font f, float x, float y, const std::string& s, Color c, int scale = 0);
 
     SDL_Texture* game_tex_ = nullptr;
     std::array<int16_t, 128> game_glyph_{};
     bool game_on_ = false;
     bool game_tint_ = false;
+    int small_cap_ = 0;
     float pixel_sizes_[size_t(Font::Count_)] = {};
     int game_scales_[size_t(Font::Count_)] = {1, 1, 1, 1, 1, 2, 1};
 

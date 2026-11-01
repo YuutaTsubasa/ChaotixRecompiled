@@ -132,9 +132,9 @@ TEST(game_font, atlas_from_tiles_keeps_the_order_and_colours) {
     std::string why;
     const auto palette = grey_palette();
     CHECK(game_font_from_tiles(numbered_tiles(), palette, f, &why));
-    CHECK_EQ(f.glyph_count, 50);  // 47 from the ROM, ':' '<' '>' made from them
-    CHECK_EQ(f.width, 50 * GameFont::kGlyphW);
-    CHECK_EQ(f.height, GameFont::kGlyphH);
+    CHECK_EQ(f.glyph_count, 51);  // 47 from the ROM, ':' '<' '>' '/' made from them
+    CHECK_EQ(f.width, 51 * GameFont::kGlyphW);
+    CHECK_EQ(f.height, GameFont::kGlyphH + GameFont::kSmallGlyphH);
     CHECK_EQ(f.glyph_for('0'), 0);
     CHECK_EQ(f.glyph_for('9'), 9);
     CHECK_EQ(f.glyph_for('A'), 10);
@@ -155,7 +155,8 @@ TEST(game_font, atlas_from_tiles_keeps_the_order_and_colours) {
     CHECK(f.supports("4:3"));
     CHECK(f.supports("Resume"));
     CHECK(!f.supports("65%"));
-    CHECK(!f.supports("1/2"));
+    CHECK(f.supports("Up/Down"));
+    CHECK(!f.supports("(1)"));
     CHECK_EQ(f.width_of("BACK TO TITLE"), 13 * 8);
     // Too few tiles is not a font.
     GameFont none;
@@ -182,6 +183,23 @@ TEST(game_font, colon_is_the_full_stop_twice) {
     CHECK(px(colon, 2, 10) == 0);
 }
 
+TEST(game_font, the_small_glyphs_fold_each_pair_of_rows) {
+    // A glyph of colour 3 on rows 1, 3 and 5 only (one-row strokes, the
+    // rows between them empty) and the shadow colour 5 on row 15. Folding
+    // each pair keeps every stroke, and the shadow stays the bottom row.
+    std::vector<uint8_t> tiles(size_t(kGameFontTileCount) * 32, 0);
+    for (int y : {1, 3, 5}) tiles[size_t(y) * 4] = 0x03;  // glyph 0, top tile, column 1
+    tiles[size_t(1) * 32 + 7 * 4] = 0x05;                  // its bottom tile's last row
+    GameFont f;
+    std::string why;
+    CHECK(game_font_from_tiles(tiles, grey_palette(), f, &why));
+    auto small = [&f](int x, int y) { return f.pixels[size_t(GameFont::kGlyphH + y) * size_t(f.width) + size_t(x)]; };
+    const auto palette = grey_palette();
+    for (int y = 0; y < 3; ++y) CHECK_EQ(small(1, y), Vdp::cram_to_rgb(palette[3]));
+    CHECK_EQ(small(1, 3), 0u);
+    CHECK_EQ(small(1, 7), Vdp::cram_to_rgb(palette[5]));
+}
+
 #ifdef CHAOTIX_TEST_ROM
 TEST(game_font, the_rom_has_the_font) {
     Rom rom;
@@ -189,16 +207,16 @@ TEST(game_font, the_rom_has_the_font) {
     CHECK(rom.load(CHAOTIX_TEST_ROM, &err));
     GameFont f;
     CHECK(build_game_font(rom.data, f, &err));
-    CHECK_EQ(f.glyph_count, 50);
-    CHECK_EQ(f.width, 400);
-    CHECK_EQ(f.height, 16);
+    CHECK_EQ(f.glyph_count, 51);
+    CHECK_EQ(f.width, 408);
+    CHECK_EQ(f.height, 24);
     // White digits, yellow letters, as the TRAINING screen shows them.
     auto ink = [&f](char c) {
         std::set<uint32_t> colours;
         const int g = f.glyph_for(static_cast<unsigned char>(c));
         for (int y = 0; y < 16; ++y)
             for (int x = 0; x < 8; ++x)
-                if (const uint32_t p = f.pixels[size_t(y) * 400 + size_t(g * 8 + x)]) colours.insert(p);
+                if (const uint32_t p = f.pixels[size_t(y) * size_t(f.width) + size_t(g * 8 + x)]) colours.insert(p);
         return colours;
     };
     CHECK(ink('0').count(0xFFFFFFFFu) == 1);

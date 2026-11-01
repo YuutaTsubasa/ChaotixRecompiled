@@ -17,7 +17,8 @@ constexpr int kDigits = 0, kLetters = 10, kQuestion = 36, kExclaim = 37, kDash =
               kUnderscore = 43, kQuote = 45, kApostrophe = 46;
 constexpr int kRomGlyphs = kGameFontTileCount / 2;
 // Made here, after the ROM's glyphs (see game_font_from_tiles).
-constexpr int kColon = kRomGlyphs, kLess = kRomGlyphs + 1, kGreater = kRomGlyphs + 2, kGlyphTotal = kRomGlyphs + 3;
+constexpr int kColon = kRomGlyphs, kLess = kRomGlyphs + 1, kGreater = kRomGlyphs + 2, kSlash = kRomGlyphs + 3,
+              kGlyphTotal = kRomGlyphs + 4;
 // The palette entries the letters use: their yellow, and the black of the
 // drop shadow every glyph has.
 constexpr int kLetterInk = 10, kShadowInk = 5;
@@ -130,7 +131,7 @@ bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<ui
     out = GameFont{};
     out.glyph_count = kGlyphTotal;
     out.width = kGlyphTotal * GameFont::kGlyphW;
-    out.height = GameFont::kGlyphH;
+    out.height = GameFont::kGlyphH + GameFont::kSmallGlyphH;
     out.pixels.assign(size_t(out.width) * size_t(out.height), 0);
     uint32_t colour[16];
     colour[0] = 0;
@@ -180,6 +181,30 @@ bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<ui
                 if (at(g, x, y) == kLetterInk && x + 1 < 8 && y + 1 < 16 && at(g, x + 1, y + 1) == 0)
                     at(g, x + 1, y + 1) = kShadowInk;
     }
+    // '/': a stroke two pixels wide from the bottom left to the top right,
+    // as tall as a capital, with the same shadow.
+    for (int y = 1; y <= 14; ++y) {
+        const int x = 1 + (14 - y) * 5 / 13;
+        at(kSlash, x, y) = kLetterInk;
+        at(kSlash, x + 1, y) = kLetterInk;
+    }
+    for (int y = 15; y >= 0; --y)
+        for (int x = 7; x >= 0; --x)
+            if (at(kSlash, x, y) == kLetterInk && x + 1 < 8 && y + 1 < 16 && at(kSlash, x + 1, y + 1) == 0)
+                at(kSlash, x + 1, y + 1) = kShadowInk;
+    // The small glyphs. A capital fills rows 1-14 with its drop shadow on row
+    // 15 (row 0 is the gap above it), so rows 1-14 fold pairwise into seven
+    // and the shadow row stays the last. In each pair a letter pixel wins
+    // over the shadow, so strokes one row thick are kept.
+    auto ink = [](uint8_t v) { return v != 0 && v != kShadowInk; };
+    for (int g = 0; g < kGlyphTotal; ++g)
+        for (int x = 0; x < GameFont::kGlyphW; ++x) {
+            for (int y = 0; y < 7; ++y) {
+                const uint8_t a = at(g, x, 1 + 2 * y), b = at(g, x, 2 + 2 * y);
+                at(g, x, GameFont::kGlyphH + y) = ink(a) ? a : ink(b) ? b : a ? a : b;
+            }
+            at(g, x, GameFont::kGlyphH + 7) = at(g, x, 15);
+        }
     for (size_t i = 0; i < index.size(); ++i) out.pixels[i] = colour[index[i] & 15];
 
     out.glyph.fill(-1);
@@ -199,6 +224,7 @@ bool game_font_from_tiles(const std::vector<uint8_t>& tiles, const std::array<ui
     out.glyph[size_t(':')] = kColon;
     out.glyph[size_t('<')] = kLess;
     out.glyph[size_t('>')] = kGreater;
+    out.glyph[size_t('/')] = kSlash;
     return true;
 }
 
