@@ -376,10 +376,18 @@ float Ui::text_fit(Font f, float x, float y, float max_w, const std::string& s, 
                    bool is_path) {
     // The game's small letters are square, so a line of them is wider than
     // the pixel face's. One that does not fit comes a scale smaller before it
-    // is shortened: a hint along the foot of a narrow window stays whole.
-    if (small_game_glyphs(f) && uses_game_font(f, s))
-        for (int k = game_scale(f) - 1; k >= 1 && text_width(f, s) > max_w; --k)
-            if (float(s.size() * GameFont::kGlyphW * size_t(k)) <= max_w) return game_text(f, x, y, s, c, k);
+    // is shortened, and is shortened at the smallest: a hint along the foot
+    // of a narrow window keeps as much of itself as it can.
+    if (small_game_glyphs(f) && uses_game_font(f, s) && text_width(f, s) > max_w && game_scale(f) > 1) {
+        int k = game_scale(f) - 1;
+        while (k > 1 && float(s.size() * GameFont::kGlyphW * size_t(k)) > max_w) --k;
+        const size_t fits = max_w > 0 ? size_t(max_w) / size_t(GameFont::kGlyphW * k) : 0;
+        if (s.size() <= fits) return game_text(f, x, y, s, c, k);
+        if (fits <= 3) return 0;
+        std::string cut = s.substr(0, fits - 3);
+        while (!cut.empty() && cut.back() == ' ') cut.pop_back();
+        return game_text(f, x, y, cut + "...", c, k);
+    }
     return text(f, x, y, shorten(f, s, max_w, is_path), c);
 }
 
