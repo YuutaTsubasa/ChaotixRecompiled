@@ -116,6 +116,8 @@ struct App {
     // machine every frame too.
     std::shared_ptr<CharacterPalettes> character_palettes;
     SDL_AudioStream* audio = nullptr;
+    // What apply_sound_setting last made of SOUND (Config::audio).
+    bool sound_applied = false;
     std::vector<SDL_Gamepad*> pads;
     // Which triggers are pressed on each pad (left, right), so a press is
     // seen once as it crosses half way (issue #113).
@@ -672,6 +674,8 @@ bool return_to_title(App& app) {
     *app.m = *app.title_snapshot;
     std::copy(save.begin(), save.end(), app.m->sram);
     app.m->sram_dirty = save_dirty;
+    // Nor is whether it makes sound: SOUND may have changed since.
+    app.m->audio_enabled = app.audio != nullptr;
     app.m->sdram_code_epoch = std::max(sdram_epoch, app.m->sdram_code_epoch) + 1;
     for (int c = 0; c < 2; ++c) app.m->cache_code_epoch[c] = std::max(cache_epoch[c], app.m->cache_code_epoch[c]) + 1;
     // Rewinding from the title back into the game left behind is not a thing.
@@ -788,6 +792,33 @@ void save_state(App& app, int slot) {
     LOGI("state", "slot %d saved at frame %llu to %s (%zu bytes)", slot, (unsigned long long)app.m->frame_count,
          path.c_str(), bytes.size());
     notice(app, "SAVE STATE", "STATE " + std::to_string(slot) + " SAVED");
+}
+
+// SOUND (Config::audio, issue #119): opens the audio stream when it is on and
+// closes it when it is off, at start-up and whenever the menu changes it.
+// An autotest never has one.
+void apply_sound_setting(App& app) {
+    const bool want = app.cfg.audio && !app.autotest_frames;
+    if (want == app.sound_applied) return;
+    app.sound_applied = want;  // a device that will not open is not retried every frame
+    if (!want) {
+        if (app.audio) SDL_DestroyAudioStream(app.audio);
+        app.audio = nullptr;
+        app.m->audio_enabled = false;
+        return;
+    }
+    // The machine produces 16-bit stereo at the YM2612 native rate; SDL
+    // resamples to the device. Emulated time drives production, so the
+    // audio device never changes game speed.
+    SDL_AudioSpec spec{SDL_AUDIO_S16, 2, int(kAudioRate + 0.5)};
+    app.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
+    if (app.audio) {
+        SDL_SetAudioStreamGain(app.audio, float(app.cfg.volume) / 100.0f);
+        SDL_ResumeAudioStreamDevice(app.audio);
+        app.m->audio_enabled = true;
+    } else {
+        LOGW("audio", "cannot open audio device: %s", SDL_GetError());
+    }
 }
 
 // After the machine jumped in time (a state loaded): what the host keeps
@@ -2771,20 +2802,7 @@ int main(int argc, char** argv) {
     app.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_XRGB8888, SDL_TEXTUREACCESS_STREAMING, kScreenWidth, kScreenHeight);
     SDL_SetTextureScaleMode(app.texture, app.cfg.linear_filter ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     apply_window_mode(app);
-    if (app.cfg.audio && !app.autotest_frames) {
-        // The machine produces 16-bit stereo at the YM2612 native rate; SDL
-        // resamples to the device. Emulated time drives production, so the
-        // audio device never changes game speed.
-        SDL_AudioSpec spec{SDL_AUDIO_S16, 2, int(kAudioRate + 0.5)};
-        app.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, nullptr, nullptr);
-        if (app.audio) {
-            SDL_SetAudioStreamGain(app.audio, float(app.cfg.volume) / 100.0f);
-            SDL_ResumeAudioStreamDevice(app.audio);
-            app.m->audio_enabled = true;
-        } else {
-            LOGW("audio", "cannot open audio device: %s", SDL_GetError());
-        }
-    }
+    apply_sound_setting(app);
     // On: always drawn. Auto: only once the screen has actually been touched,
     // so a phone plugged into a controller is not covered in buttons nobody
     // is using. Off: never.
@@ -3157,6 +3175,7 @@ int main(int argc, char** argv) {
 
         // Audio: hand over what the machine produced; keep ~50 ms queued with a
         // gentle rate adjustment instead of dropping or stretching audio.
+        apply_sound_setting(app);
         if (app.audio) {
             // VOLUME takes effect at once, not at the next start.
             SDL_SetAudioStreamGain(app.audio, float(app.cfg.volume) / 100.0f);
