@@ -753,6 +753,9 @@ people below. Thank you all: every report here led to a fix or a feature.
 - **[GamerG](https://x.com/therealgamerg)**: asked whether the music's drums could be played from cleaner
   recordings, which became the drum sample mods
   ([PR #110](https://github.com/YuutaTsubasa/ChaotixRecompiled/pull/110)).
+- **[CaptainLibrary](https://github.com/CaptainLibrary)**: binding the
+  triggers to the game's buttons, for pads that report C and Z as triggers
+  ([#113](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/113)).
 
 ### Thanks also to
 
