@@ -6,7 +6,7 @@
   "original": { "region": "Japan, USA", "sha1": "0c2fff7bc79ed26507c08ac47464c3af19f7ced7" },
   "project": "Knuckles' Chaotix Recompiled",
   "status": "playable",
-  "targets": ["Windows", "Linux", "Android"],
+  "targets": ["Windows", "Linux", "macOS", "Android", "iOS"],
   "toolchain": "chaotix_recomp (own 68000/SH-2 recompiler)",
   "maintainers": [{ "name": "YuutaTsubasa", "link": "https://github.com/YuutaTsubasa" }],
   "links": [{ "url": "https://github.com/YuutaTsubasa/ChaotixRecompiled/releases", "label": "Releases" }]
