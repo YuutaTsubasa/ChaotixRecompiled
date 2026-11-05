@@ -44,6 +44,11 @@ public:
         std::function<void()> share_mods_folder;
         // The controller's own name, so the page can say which one it means.
         std::function<std::string(int index)> pad_name;
+        // The new version notice (issue #90): the newer release's version
+        // ("0.15.19"), empty while there is none (or it is not known yet), and
+        // opening its page.
+        std::function<std::string()> new_version;
+        std::function<void()> open_new_version;
         // Locks every achievement again and forgets the saved progress.
         std::function<void()> reset_awards;
         // Writes every frame of the characters' sprite banks as sheets to
@@ -143,6 +148,9 @@ public:
     int zoom() const;
     // The menu the title screen leads to, with the game still running behind.
     void open_front();
+    // The new version notice (issue #90) arrived after the front end was
+    // built: rebuilds it with its entry, keeping the entry selected.
+    void front_changed();
     void toggle();
     void show_achievements();
     // For screenshots and tests: "main", "options" or "awards".

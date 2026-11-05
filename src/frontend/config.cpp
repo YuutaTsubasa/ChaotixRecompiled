@@ -126,6 +126,7 @@ bool Config::load(const std::string& path) {
         if (section == "Game" && k == "RomPath") rom_path = v;
         else if (section == "Game" && k == "Installed") installed = parse_bool(v, installed);
         else if (section == "Game" && k == "RomSha1") rom_sha1 = v;
+        else if (section == "Game" && k == "CheckForUpdates") check_updates = parse_bool(v, check_updates);
         else if (section == "Video") {
             if (k == "AspectRatio") parse_aspect(v, viewport.aspect, viewport.custom_aspect);
             else if (k == "Scaling") parse_scale(v, viewport.scale);
@@ -271,7 +272,9 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "# Path to your own legally obtained ROM (never distributed with this project)\n");
     std::fprintf(f, "RomPath = %s\n", rom_path.c_str());
     std::fprintf(f, "# Set by the first-run setup once the ROM has been copied into this folder.\n");
-    std::fprintf(f, "Installed = %s\nRomSha1 = %s\n\n", installed ? "true" : "false", rom_sha1.c_str());
+    std::fprintf(f, "Installed = %s\nRomSha1 = %s\n", installed ? "true" : "false", rom_sha1.c_str());
+    std::fprintf(f, "# Ask GitHub at start whether a newer release is out, and offer it on the title menu\n");
+    std::fprintf(f, "CheckForUpdates = %s\n\n", check_updates ? "true" : "false");
     std::fprintf(f, "[Video]\n");
     std::fprintf(f, "# Auto (match window) | 4:3 | 16:9 | 16:10 | 21:9 | W:H\n");
     if (viewport.aspect == AspectMode::Custom) std::fprintf(f, "AspectRatio = %.4f\n", viewport.custom_aspect);
