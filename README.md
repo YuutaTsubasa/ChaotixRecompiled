@@ -728,11 +728,12 @@ people below. Thank you all: every report here led to a fix or a feature.
 - **[HickySnow](https://github.com/HickySnow)**: special stage progress in
   widescreen ([#27](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/27)).
 - **[lemanrush](https://github.com/lemanrush)**: the HUD at the widescreen
-  edge, choosing the menu background, and widescreen bonus stages and special
-  stage results ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
+  edge, choosing the menu background, widescreen bonus stages and special
+  stage results, and the new version notice ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
   [#37](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/37),
   [#38](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/38),
-  [#39](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/39)).
+  [#39](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/39),
+  [#90](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/90)).
 - **[DoodleDiskette](https://github.com/DoodleDiskette)**: a reachable Mods
   folder on Android ([#29](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/29)).
 - **[stuffinix](https://github.com/stuffinix)**: the touch joystick
