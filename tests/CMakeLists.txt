@@ -21,6 +21,7 @@ add_executable(chaotix_tests
     test_sample_mods.cpp
     test_cheats.cpp
     test_volumes.cpp
+    test_update_check.cpp
     test_rom_patch.cpp
     test_tile_replace.cpp
     test_text_replace.cpp

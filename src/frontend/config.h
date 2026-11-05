@@ -38,6 +38,11 @@ struct Config {
     // data directory, with the hash it was verified against.
     bool installed = false;
     std::string rom_sha1;
+    // The new version notice (issue #90, frontend/update_check.h): ask GitHub
+    // once at start whether a newer release is out, and offer it on the title
+    // menu. On by default (the user's choice, 2026-11-05), so players hear of
+    // fixes; OPTIONS > EXTRAS > CHECK FOR UPDATES turns it off.
+    bool check_updates = true;
     // [Video]
     ViewportConfig viewport;
     bool linear_filter = false;

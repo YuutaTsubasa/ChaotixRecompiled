@@ -27,7 +27,9 @@
 #include "platform/sdl_setup.h"
 #include "platform/backdrops.h"
 #include "frontend/portrait.h"
+#include "frontend/update_check.h"
 #include "platform/frame_pacing.h"
+#include "platform/http_get.h"
 #include "platform/menu.h"
 #include "platform/pad_input.h"
 #include "platform/award_art.h"
@@ -73,7 +75,9 @@
 #include <ctime>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace chaotix;
@@ -137,6 +141,19 @@ struct App {
     uint64_t autotest_frames = 0;
     std::string autotest_shot;
     std::string mods_dir;  // --mods-dir: mods from here, autotests included
+    // The new version notice (issue #90): the check at start runs on a thread
+    // of its own and leaves the latest release's tag here; new_version is
+    // that tag once the main loop has taken it and found it newer (empty:
+    // none). --latest-version gives the answer without asking, for tests.
+    struct UpdateAnswer {
+        std::mutex lock;
+        bool done = false;
+        std::string tag;
+    };
+    std::shared_ptr<UpdateAnswer> update_answer;
+    std::string new_version;
+    bool new_version_told = false;
+    std::string latest_version_arg;
     std::string mods_loaded_from;  // the Mods folder load_mods last read
     // Mod packs (issue #42) in the player's order, highest priority first,
     // as last read from the Mods folder; and what the enabled ones changed in
@@ -446,7 +463,7 @@ std::vector<std::string> rom_search_dirs(const App& app) {
 bool option_takes_value(const std::string& a) {
     static const char* with_value[] = {"--aspect", "--autotest", "--autotest-shot", "--window-size",
                                        "--press", "--user-dir", "--install", "--menu", "--keys", "--shots", "--hold", "--record-input", "--mods-dir", "--stage",
-                                       "--rewind-hold", "--netplay-host", "--netplay-join", "--menu-size"};
+                                       "--rewind-hold", "--netplay-host", "--netplay-join", "--menu-size", "--latest-version"};
     for (const char* o : with_value)
         if (a == o) return true;
     return false;
@@ -765,6 +782,57 @@ std::string states_locked(const App& app) {
     if (!app.handed_over) return "START THE GAME FIRST";
     if (app.stage_kick >= 0) return "THE STAGE IS STARTING";
     return "";
+}
+
+// The new version notice (issue #90): asks GitHub for the latest release on a
+// thread of its own, so a slow or missing network never holds up the game.
+// Not in autotests, which must not depend on the network, unless
+// --latest-version gives the answer.
+void start_update_check(App& app) {
+    if (!app.latest_version_arg.empty()) {
+        app.update_answer = std::make_shared<App::UpdateAnswer>();
+        app.update_answer->done = true;
+        app.update_answer->tag = app.latest_version_arg;
+        return;
+    }
+    if (!app.cfg.check_updates || app.autotest_frames) return;
+    app.update_answer = std::make_shared<App::UpdateAnswer>();
+    std::thread([answer = app.update_answer] {
+        std::string body, tag;
+        if (http_get(update_check::kLatestReleaseApi, &body)) tag = update_check::tag_from_json(body);
+        const std::lock_guard<std::mutex> hold(answer->lock);
+        answer->tag = tag;
+        answer->done = true;
+    }).detach();
+}
+
+void take_update_answer(App& app) {
+    // Said once, on the title screen with its menu, where the entry is.
+    if (!app.new_version.empty() && !app.new_version_told && app.menu.on_title() && app.menu.title_ready()) {
+        app.new_version_told = true;
+        app.toasts.push_back({"VERSION " + update_check::display_version(app.new_version) + " IS OUT",
+                              "Pick NEW VERSION below. Off: OPTIONS > EXTRAS.", SDL_GetTicks() + 8000,
+                              "NEW VERSION"});
+    }
+    if (!app.update_answer) return;
+    std::string tag;
+    {
+        const std::lock_guard<std::mutex> hold(app.update_answer->lock);
+        if (!app.update_answer->done) return;
+        tag = app.update_answer->tag;
+    }
+    app.update_answer.reset();
+    if (tag.empty()) {
+        LOGI("app", "update check: no answer");
+        return;
+    }
+    if (!update_check::is_newer(tag, savestate::game_version())) {
+        LOGI("app", "update check: %s is the latest (this is %s)", tag.c_str(), savestate::game_version());
+        return;
+    }
+    LOGI("app", "update check: %s is out (this is %s)", tag.c_str(), savestate::game_version());
+    app.new_version = tag;
+    app.menu.front_changed();
 }
 
 void notice(App& app, const std::string& caption, const std::string& title, const std::string& note = "") {
@@ -2343,6 +2411,7 @@ int main(int argc, char** argv) {
         else if (a == "--autotest" && i + 1 < argc) app.autotest_frames = std::strtoull(argv[++i], nullptr, 10);
         else if (a == "--autotest-shot" && i + 1 < argc) app.autotest_shot = argv[++i];
         else if (a == "--mods-dir" && i + 1 < argc) app.mods_dir = argv[++i];
+        else if (a == "--latest-version" && i + 1 < argc) app.latest_version_arg = argv[++i];
         // Opens a menu page straight away, so it can be captured without a
         // keyboard (the same reason --autotest exists).
         else if (a == "--menu" && i + 1 < argc) menu_page = argv[++i];
@@ -2658,9 +2727,14 @@ int main(int argc, char** argv) {
         hooks.character_sprite = [&app](int who, float* w, float* h) { return character_sprite(app, who, w, h); };
         hooks.music_replaced = [&app](uint8_t id) { return app.music.has(id); };
         app.start_stage = hooks.start_stage;
+        hooks.new_version = [&app] { return update_check::display_version(app.new_version); };
+        hooks.open_new_version = [&app] {
+            if (!app.new_version.empty()) SDL_OpenURL(update_check::release_page(app.new_version).c_str());
+        };
         app.menu.set_hooks(std::move(hooks));
         app.menu.set_transitions(true);
     }
+    start_update_check(app);
     // The menu is the front end, so it is up from the start: the game boots
     // behind it and its title screen and attract demo are the backdrop.
     app.menu.open_front();
@@ -2825,6 +2899,7 @@ int main(int argc, char** argv) {
     }
     bool menu_was_open = app.menu.open();
     while (app.running) {
+        take_update_answer(app);
         // The menu is where settings change: keep them the moment it closes.
         if (menu_was_open && !app.menu.open()) save_now(app);
         // Each time the menu opens it shows the next zone (MENU BACKGROUND on

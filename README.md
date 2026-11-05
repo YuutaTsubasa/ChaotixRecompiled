@@ -145,8 +145,18 @@ the first press skips to the title.
 
 OPTIONS is split into VIDEO (widescreen, aspect ratio, scaling, screen, menu size),
 SOUND (the volumes), INPUT (touch controls, fast-forward, 6-button pad), EXTRAS (cheats,
-lobby shortcuts, the menu's look, awards, and MODS, the mod packs) and GAMEPLAY (the ring
+lobby shortcuts, the menu's look, awards, the new version check, and MODS, the mod packs) and GAMEPLAY (the ring
 tether).
+
+New versions (issue #90): at start the program asks GitHub once for this
+project's latest release, on a thread of its own, so a slow or missing network
+never holds up the game. If a newer version is out, a notice says so on the
+title screen and NEW VERSION 0.x.y appears under START GAME; picking it opens
+that release's page with the downloads. Nothing about you or your game is
+sent, just the one request. It does not download or install anything itself;
+on Android the system always asks before an APK is installed, and the iOS build
+is installed by hand. OPTIONS > EXTRAS > CHECK FOR UPDATES (`CheckForUpdates`
+in `[Game]`) turns it off; the change takes effect at the next start.
 
 The menu is written in the game's own font -- the white digits and shaded
 yellow capitals of its TRAINING and DATA LOAD screens -- and shows the game's

@@ -234,6 +234,11 @@ void Menu::build_front() {
         close();
         if (hooks_.start_game) hooks_.start_game();
     }});
+    // Issue #90: a newer release, when the check at start found one, right
+    // under START GAME where the title screen shows it. Its page opens in the
+    // browser, with the downloads.
+    if (const std::string v = hooks_.new_version ? hooks_.new_version() : std::string(); !v.empty())
+        items_.push_back({"NEW VERSION " + v, {}, [this](int) { if (hooks_.open_new_version) hooks_.open_new_version(); }});
     items_.push_back({"TIME ATTACK", {}, [this](int) { set_page(Page::TimeAttack); }});
     items_.push_back({"LEVEL SELECT", {}, [this](int) { set_page(Page::LevelSelect); }});
     items_.push_back({"OPTIONS", {}, [this](int) { set_page(Page::Options); }});
@@ -1036,6 +1041,11 @@ void Menu::build_extras() {
     items_.push_back({"AWARDS",
                       [c] { return on_off(c->achievements); },
                       [c](int s) { if (s) c->achievements = !c->achievements; }});
+    // Issue #90. Takes effect at the next start, which is when it asks.
+    items_.push_back({"CHECK FOR UPDATES",
+                      [c] { return on_off(c->check_updates); },
+                      [c](int s) { if (s) c->check_updates = !c->check_updates; },
+                      "ask GitHub for a newer version at start"});
     Item reset{"RESET AWARDS",
                [this] { return confirm_reset_ ? std::string("SURE? PRESS AGAIN")
                                               : std::string("..."); },
@@ -1327,6 +1337,15 @@ bool Menu::edit_key(int key) {
         break;
     }
     return true;
+}
+
+void Menu::front_changed() {
+    if (page_ != Page::Front) return;
+    const std::string keep = selected_label();
+    build_front();
+    selected_ = 0;
+    for (size_t i = 0; i < items_.size(); ++i)
+        if (items_[i].label == keep) selected_ = int(i);
 }
 
 void Menu::refresh() {

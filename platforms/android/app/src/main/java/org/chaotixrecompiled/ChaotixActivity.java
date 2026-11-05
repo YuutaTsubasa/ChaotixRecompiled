@@ -10,6 +10,11 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.Settings;
 
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 import org.libsdl.app.SDLActivity;
 
 /** Loads SDL3 and the recompiled game (libmain.so, built from the root CMakeLists.txt). */
@@ -54,5 +59,36 @@ public class ChaotixActivity extends SDLActivity {
                                                    Manifest.permission.READ_EXTERNAL_STORAGE}, 29);
             }
         });
+    }
+
+    /**
+     * The new version notice (issue #90, src/platform/http_get.cpp): one HTTPS
+     * GET, the body of a 200 answer (at most 1 MB) or null. Called from a
+     * thread of the game's own, never the UI thread.
+     */
+    public static String httpGet(String address) {
+        HttpURLConnection c = null;
+        try {
+            URL url = new URL(address);
+            if (!"https".equals(url.getProtocol())) return null;
+            c = (HttpURLConnection) url.openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setRequestProperty("User-Agent", "ChaotixRecompiled");
+            if (c.getResponseCode() != 200) return null;
+            try (InputStream in = c.getInputStream()) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                for (int n; (n = in.read(buf)) > 0; ) {
+                    out.write(buf, 0, n);
+                    if (out.size() > (1 << 20)) return null;
+                }
+                return out.toString("UTF-8");
+            }
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (c != null) c.disconnect();
+        }
     }
 }

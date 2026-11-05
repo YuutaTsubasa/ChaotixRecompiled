@@ -82,6 +82,7 @@ add_library(chaotix_runtime STATIC
     src/renderer/game_font.cpp
     src/renderer/viewport.cpp
     src/frontend/setup.cpp
+    src/frontend/update_check.cpp
     src/frontend/time_attack.cpp
     src/frontend/level_select.cpp
     src/frontend/speedrun.cpp
@@ -231,6 +232,7 @@ if(CHAOTIX_BUILD_FRONTEND)
         src/platform/sdl_rom_import.cpp
         src/platform/menu.cpp
         src/platform/pad_input.cpp
+        src/platform/http_get.cpp
         src/platform/ui.cpp
         src/platform/award_art.cpp
         src/platform/backdrops.cpp
@@ -285,6 +287,16 @@ if(CHAOTIX_BUILD_FRONTEND)
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${CHAOTIX_APP_VERSION}"
             MACOSX_BUNDLE_INFO_PLIST ${_plist}
             XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2")
+    endif()
+    if(WIN32)
+        # The new version notice (issue #90, platform/http_get.cpp).
+        target_link_libraries(chaotix PRIVATE winhttp)
+    elseif(APPLE)
+        target_sources(chaotix PRIVATE src/platform/http_get_apple.mm)
+        set_source_files_properties(src/platform/http_get_apple.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+        target_link_libraries(chaotix PRIVATE "-framework Foundation")
+    elseif(UNIX AND NOT ANDROID)
+        target_link_libraries(chaotix PRIVATE ${CMAKE_DL_LIBS})
     endif()
     if(IOS)
         # SDL 3 has no file dialog on iOS; the system's document picker
