@@ -31,8 +31,10 @@ draw real tiles, objects and sprites in the extra area, rather than stretching
 or cropping a 4:3 image. Anything from 1.24:1 (320×240) to 2:1 (480×224) is
 filled — 426×224 at 16:9 — and the centre 320 pixels stay bit-identical to the
 unmodified game, which is checked by a test. The title screen's horizon fills
-the sides too ([issue #77](docs/ISSUE_77_WIDE_TITLE.md)); other scenes outside
-levels stay 4:3.
+the sides too ([issue #77](docs/ISSUE_77_WIDE_TITLE.md)), and so does the rock
+behind DATA LOAD, TRAINING, PLAY STYLE and PLAYER SELECT
+([issue #135](docs/ISSUE_135_WIDE_MENUS.md)); other scenes outside levels stay
+4:3.
 
 | Platform | State |
 |---|---|
@@ -730,13 +732,14 @@ people below. Thank you all: every report here led to a fix or a feature.
   widescreen ([#27](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/27)).
 - **[lemanrush](https://github.com/lemanrush)**: the HUD at the widescreen
   edge, choosing the menu background, widescreen bonus stages and special
-  stage results, the new version notice and the game's ring as the menu
-  cursor ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
+  stage results, the new version notice, the game's ring as the menu
+  cursor and the menus' rock in widescreen ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
   [#37](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/37),
   [#38](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/38),
   [#39](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/39),
   [#90](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/90),
-  [#134](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/134)).
+  [#134](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/134),
+  [#135](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/135)).
 - **[DoodleDiskette](https://github.com/DoodleDiskette)**: a reachable Mods
   folder on Android ([#29](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/29)).
 - **[stuffinix](https://github.com/stuffinix)**: the touch joystick

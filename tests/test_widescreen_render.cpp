@@ -6,6 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <new>
+#include <vector>
 
 using namespace chaotix;
 
@@ -243,6 +244,57 @@ TEST(widescreen_render, the_title_shows_its_margins_without_patching_the_game) {
     CHECK(!m->wide_special);
     CHECK(!m->clip_overridden);
     CHECK(std::memcmp(sdram, m->sdram + patches::kClipRectSdram, sizeof sdram) == 0);
+}
+
+TEST(widescreen_render, the_menus_carry_their_tiled_backdrop_into_the_margins) {
+    // Issue #135: DATA LOAD ($60), TRAINING and PLAY STYLE ($68) and PLAYER
+    // SELECT ($48) have a 32X backdrop tiled every 64 px. The margins carry
+    // it on, a pixel's place in the tile taken from most of the tiles, so a
+    // character on one tile stays where it is.
+    auto m = level_machine();
+    auto mode = [&](uint16_t v) { m->wram[patches::kGameMode] = uint8_t(v >> 8); m->wram[patches::kGameMode + 1] = uint8_t(v); };
+    for (uint16_t v : {0x00, 0x08, 0x18, 0x20, 0x38, 0x48, 0x58, 0x60, 0x68}) {
+        mode(v);
+        CHECK_EQ(patches::menu_margins(*m), v == 0x48 || v == 0x60 || v == 0x68);
+    }
+    // A packed-pixel picture: every line at 0x200, pixel x the colour
+    // 1 + x % 64, and on tile 1 (x 64-127) a "character" in colour 200.
+    m->mars.adapter_ctrl = 1;
+    m->mars.bitmap_mode = 1;
+    m->mars.screen_shift = 0;
+    m->mars.fb_display = 0;
+    uint8_t* fb = m->mars.fb[0];
+    for (int ln = 0; ln < kActiveLines; ++ln) {
+        const uint32_t line = 0x100 + uint32_t(ln) * 0x100;
+        fb[ln * 2] = uint8_t(line >> 8);
+        fb[ln * 2 + 1] = uint8_t(line);
+        for (int x = 0; x < kNativeWidth; ++x) fb[line * 2 + uint32_t(x)] = uint8_t(1 + x % patches::kMenuTile);
+    }
+    for (int i = 0; i < 256; ++i) m->mars.pal[i] = uint16_t(i * 97);  // all different
+    CHECK(patches::menu_backdrop_tiled(*m));
+    const uint32_t row0 = 0x100 * 2;
+    for (int x = 70; x < 110; ++x) fb[row0 + uint32_t(x)] = 200;
+    const int extra = 53, n = kNativeWidth + 2 * extra;
+    std::vector<uint32_t> out(size_t(n), 0);
+    m->render_line32x(0, out.data(), extra, false, nullptr, nullptr, patches::kMenuTile);
+    bool tiled = true;
+    for (int x = -extra; x < 0; ++x) tiled = tiled && out[size_t(extra + x)] == out[size_t(extra + x + 192)];
+    for (int x = kNativeWidth; x < kNativeWidth + extra; ++x) tiled = tiled && out[size_t(extra + x)] == out[size_t(extra + x - 128)];
+    CHECK(tiled);
+    // Where the character is, the margin has the backdrop, not the character.
+    // (x -44 is the place in the tile of x 84, where the character is.)
+    CHECK(out[size_t(extra + 84)] != out[size_t(extra - 44)]);
+    CHECK_EQ(out[size_t(extra - 44)], out[size_t(extra + 84 + 64)]);
+    // Without repeat, the margins stay transparent.
+    std::vector<uint32_t> plain(size_t(n), 1);
+    m->render_line32x(0, plain.data(), extra, false);
+    CHECK_EQ(plain[0], 0u);
+    CHECK_EQ(plain[size_t(n - 1)], 0u);
+    // A picture that is not tiled (the title, still up as the mode begins)
+    // is not carried on.
+    for (int ln = 0; ln < kActiveLines; ++ln)
+        for (int x = 0; x < kNativeWidth; ++x) fb[0x200 + uint32_t(ln) * 0x200 + uint32_t(x)] = uint8_t((x * 7 + ln) % 251);
+    CHECK(!patches::menu_backdrop_tiled(*m));
 }
 
 TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {

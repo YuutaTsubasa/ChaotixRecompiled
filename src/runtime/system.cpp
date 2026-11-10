@@ -403,8 +403,39 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // alpha 0xFE; 0xFD means "only where the MD pixel is the backdrop".
     // With the Mega Drive line as CRAM indices (bit 6 for the backdrop) as
     // wide as the 32X's, render_line32x merges each pixel as it goes.
-    const bool merged = indexed && debug_layer == 0 && n == kNativeWidth + 2 * extra;
-    render_line32x(src_line, row, extra, wide_active, merged ? top : nullptr, cram_rgb);
+    // DATA LOAD, TRAINING, PLAY STYLE and PLAYER SELECT (issue #135): the 32X
+    // backdrop is tiled, so it goes on into the margins.
+    if (src_line == 0) menu_tiled = extra && wide_enabled && patches::menu_margins(*this) && patches::menu_backdrop_tiled(*this);
+    const bool menu = menu_tiled && extra && !wide_active && !wide_special && !stage;
+    const bool merged = indexed && debug_layer == 0 && n == kNativeWidth + 2 * extra && !menu;
+    render_line32x(src_line, row, extra, wide_active, merged ? top : nullptr, cram_rgb,
+                   menu ? patches::kMenuTile : 0);
+    if (menu) {
+        // Their Mega Drive planes are 512 px wide, and a banner running off
+        // one side of the screen comes round again on the other. In the
+        // margins the planes are shown only where they carry on from the
+        // screen's edge without a gap on the line (the banner going on past
+        // the edge); anything else there is the backdrop.
+        const uint8_t bd = uint8_t(vdp.reg[7] & 0x3F);
+        auto shows = [&](int x) { return indexed ? !(top[x] & 0x40) : bg[x] == 0; };
+        auto clear = [&](int x) {
+            if (indexed) top[x] = uint8_t(0x40 | bd);
+            else {
+                bg[x] = 1;
+                md[x] = Vdp::cram_to_rgb(vdp.cram[bd]);
+            }
+        };
+        bool on = shows(extra);
+        for (int x = extra - 1; x >= 0; --x) {
+            on = on && shows(x);
+            if (!on) clear(x);
+        }
+        on = shows(extra + kNativeWidth - 1);
+        for (int x = extra + kNativeWidth; x < n; ++x) {
+            on = on && shows(x);
+            if (!on) clear(x);
+        }
+    }
     if (merged) {
         // Done.
     } else if (indexed && debug_layer == 0) {
@@ -446,6 +477,7 @@ void Machine::render_output_line(int src_line, int dst_row) {
         // The title's horizon (issue #77): the game draws it wider than the
         // screen, so its margins are shown as they are.
         else if (wide_enabled && patches::title_margins(*this)) cut = patches::MarginCut{};
+        else if (menu) cut = patches::MarginCut{};
         for (int x = 0; x < cut.left; ++x) row[x] = 0xFF000000u;
         for (int x = 0; x < cut.right; ++x) row[n - 1 - x] = 0xFF000000u;
     }
