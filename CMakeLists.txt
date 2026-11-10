@@ -62,6 +62,7 @@ add_library(chaotix_runtime STATIC
     src/runtime/sprite_text.cpp
     src/runtime/sprite_record.cpp
     src/runtime/sprite_replace.cpp
+    src/runtime/start_glide.cpp
     src/runtime/character_mods.cpp
     src/runtime/mod_packs.cpp
     src/renderer/compositor.cpp

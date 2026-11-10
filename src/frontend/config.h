@@ -60,6 +60,11 @@ struct Config {
     bool wide_everywhere = false;
     // In widened levels, the HUD at the picture's left edge (issue #28).
     bool wide_hud = true;
+    // SMOOTH START (issue #136, runtime/start_glide.h): as a level begins,
+    // the characters glide from the whirlwind to their start point instead
+    // of jumping there, as the original does. Only the picture changes. On
+    // by default (the user's choice, 2026-11-10).
+    bool smooth_start = true;
     // Issue #8: the menu's labels in the game's own font (read from the ROM)
     // rather than the bundled pixel face, and pictures of the game's zones
     // (rendered from the ROM and cached) behind it rather than plain colour.

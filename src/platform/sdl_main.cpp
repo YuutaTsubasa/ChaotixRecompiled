@@ -1827,15 +1827,16 @@ std::vector<std::string> mod_folders(const App& app, const char* kind) {
 }
 
 // Puts the 32X sprite recorder on the machine when it is needed (a sprite
-// pack, or the dump on) and takes it off when not: recording costs a little
-// every frame. Called every frame, as a copy of the machine put back (the
-// title snapshot) may carry another one.
+// pack, the dump, or SMOOTH START on) and takes it off when not: recording
+// costs a little every frame. Called every frame, as a copy of the machine
+// put back (the title snapshot) may carry another one.
 void update_sprite_recorder(App& app) {
-    const bool want = app.sprite_pack || app.cfg.dump_graphics;
+    const bool want = app.sprite_pack || app.cfg.dump_graphics || app.cfg.smooth_start;
     if (!want) app.sprites.reset();
     else if (!app.sprites) app.sprites = std::make_shared<SpriteRecorder>();
     if (app.sprites) {
         app.sprites->set_pack(app.sprite_pack);
+        app.sprites->set_start_glide(app.cfg.smooth_start);
         app.sprites->dumping = app.cfg.dump_graphics;
     }
     if (app.m->sprites != app.sprites) app.m->sprites = app.sprites;

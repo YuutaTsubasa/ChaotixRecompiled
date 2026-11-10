@@ -29,6 +29,7 @@ add_executable(chaotix_tests
     test_image_io.cpp
     test_sprite_record.cpp
     test_sprite_replace.cpp
+    test_start_glide.cpp
     test_sprite_sheet.cpp
     test_character_mods.cpp
     test_game_font.cpp

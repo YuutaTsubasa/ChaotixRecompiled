@@ -325,23 +325,26 @@ const std::vector<uint8_t>* SpriteLayer::graphic_for(const SpriteDraw& d, const 
     return it->second.empty() ? nullptr : &it->second;
 }
 
-bool SpriteLayer::compose(const Machine& m, int b, const SpriteList& list, const SpritePack& pack) {
+bool SpriteLayer::compose(const Machine& m, int b, const SpriteList& list, const SpritePack* pack,
+                          const std::vector<SpriteMove>* moves) {
     b &= 1;
     const Track& t = track_[b];
     if (!t.complete) return false;
     std::vector<const std::vector<uint8_t>*> rep(list.draws.size(), nullptr);
-    size_t replaced = 0;
+    size_t replaced = 0, moved = 0;
     for (size_t j = 0; j < list.draws.size(); ++j) {
         const SpriteDraw& d = list.draws[j];
         if (!d.size) continue;
-        const SpriteImage* img = pack.find(d);
+        if (moves && j < moves->size() && (*moves)[j].on) ++moved;
+        const SpriteImage* img = pack ? pack->find(d) : nullptr;
         if (!img) continue;
         rep[j] = graphic_for(d, list.bytes(d), *img);
         if (rep[j]) ++replaced;
         else ++draws_rejected;
     }
-    if (!replaced) return false;
+    if (!replaced && !moved) return false;
     draws_replaced += replaced;
+    draws_moved += moved;
 
     if (++pass_ == 0) {
         std::fill(drawn_.begin(), drawn_.end(), 0u);
@@ -370,13 +373,30 @@ bool SpriteLayer::compose(const Machine& m, int b, const SpriteList& list, const
         const SpriteDraw& d = list.draws[j];
         const uint8_t* warp = d.kind == SpriteKind::Warped ? list.pool.data() + d.warp : nullptr;
         Replay r{this, &t, uint32_t(std::min<size_t>(j, 0xFFFF)), d.route, false, true};
-        if (rep[j]) {
-            // The original's bytes and the replacement's are composed again.
+        const SpriteMove* mv = moves && j < moves->size() && (*moves)[j].on ? &(*moves)[j] : nullptr;
+        if (rep[j] || mv) {
+            // The original's bytes and those drawn in its place (the
+            // replacement, or the draw moved: start_glide.h) are composed
+            // again.
+            SpriteDraw at = d;
+            if (mv) {
+                at.x = mv->x;
+                at.y = mv->y;
+                if (d.kind != SpriteKind::Warped && (mv->sx != 0x100 || mv->sy != 0x100 || d.kind == SpriteKind::Scaled)) {
+                    at.kind = SpriteKind::Scaled;
+                    at.sx = mv->sx;
+                    at.sy = mv->sy;
+                    // The game's limits were for its own scales.
+                    at.clip.scale_min = int16_t(std::min<int32_t>({at.clip.scale_min, mv->sx, mv->sy}));
+                    at.clip.scale_max = int16_t(std::max<int32_t>({at.clip.scale_max, mv->sx, mv->sy}));
+                }
+            }
             r.mark = true;
             r.write = false;
             rasterise_sprite(d, list.bytes(d), d.size, sink, &r, warp);
             r.write = true;
-            rasterise_sprite(d, rep[j]->data(), uint32_t(rep[j]->size()), sink, &r, warp);
+            if (rep[j]) rasterise_sprite(at, rep[j]->data(), uint32_t(rep[j]->size()), sink, &r, warp);
+            else rasterise_sprite(at, list.bytes(d), d.size, sink, &r, warp);
         } else {
             rasterise_sprite(d, list.bytes(d), d.size, sink, &r, warp);
         }

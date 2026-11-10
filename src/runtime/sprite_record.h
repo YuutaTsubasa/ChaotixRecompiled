@@ -22,6 +22,8 @@
 // with a pack set, the recorder also tracks what lies under each blitter
 // write, and composes the displayed picture again with the replacements.
 #pragma once
+#include "runtime/start_glide.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -127,7 +129,14 @@ public:
     void set_pack(std::shared_ptr<const SpritePack> pack);
     const SpritePack* pack() const { return pack_.get(); }
     void shown(const Machine& m, const uint8_t*& fb, const uint8_t*& margin);
-    uint64_t pictures_composed = 0;  // displayed lists drawn with replacements
+    uint64_t pictures_composed = 0;  // displayed lists drawn with replacements or moves
+
+    // The glide into a level's start (issue #136, start_glide.h): the
+    // characters' draws composed elsewhere for a few pictures, the same way.
+    // The writes are followed only while a glide may come.
+    void set_start_glide(bool on);
+    bool start_glide() const { return glide_on_; }
+    const StartGlide& glide() const { return glide_; }
 
     // Dumping: each graphic drawn, once (by its name), into `pending` for
     // the frontend to write.
@@ -168,7 +177,14 @@ private:
 
     SpriteList lists_[2];
     std::shared_ptr<const SpritePack> pack_;
+    void update_layer();
+
     std::unique_ptr<SpriteLayer> layer_;
+    bool glide_on_ = false;
+    StartGlide glide_;
+    std::vector<SpriteMove> moves_;  // for the displayed list, one per draw
+    uint64_t moves_key_ = ~0ull;
+    bool moves_on_ = false;
     uint64_t shown_key_ = ~0ull;
     bool shown_composed_ = false;
     std::unordered_set<uint32_t> dumped_slots_;  // bank << 8 | frame
