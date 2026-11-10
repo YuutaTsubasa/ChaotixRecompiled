@@ -31,7 +31,7 @@ inline uint32_t encode(uint16_t c, bool pri) {
 } // namespace
 
 void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src, const uint8_t* md_top,
-                             const uint32_t* md_rgb) {
+                             const uint32_t* md_rgb, int repeat) {
     const int n = kNativeWidth + 2 * extra;
     // With md_top, each pixel goes out merged with the Mega Drive's as
     // render_output_line merges them, instead of encoded.
@@ -119,6 +119,30 @@ void Machine::render_line32x(int ln, uint32_t* all, int extra, bool wide_src, co
         }
         break;
     }
+    }
+    // A backdrop tiled every `repeat` pixels across the picture goes on into
+    // the margins. Each margin pixel is the one its place in the tile has in
+    // most of the picture's tiles, so a character standing on one tile (the
+    // PLAYER SELECT column) is not carried out with it; with no majority,
+    // the nearest tile's. Done on the encoded pixels, so only unmerged.
+    if (repeat > 0 && repeat <= kNativeWidth && !wide_src && !md_top) {
+        const int tiles = kNativeWidth / repeat;
+        auto tile_pixel = [&](int phase, bool from_right) {
+            uint32_t best = 0;
+            int best_n = 0;
+            for (int k = 0; k < tiles; ++k) {
+                const int t = from_right ? tiles - 1 - k : k;
+                const uint32_t v = out[t * repeat + phase];
+                int count = 0;
+                for (int j = 0; j < tiles; ++j) count += out[j * repeat + phase] == v;
+                if (count > best_n) best = v, best_n = count;
+            }
+            return best;
+        };
+        const int r0 = kNativeWidth - tiles * repeat;  // where the last whole tile ends
+        for (int x = -extra; x < 0; ++x) all[extra + x] = tile_pixel(((x % repeat) + repeat) % repeat, false);
+        for (int x = kNativeWidth; x < kNativeWidth + extra; ++x)
+            all[extra + x] = tile_pixel(((x - r0) % repeat + repeat) % repeat, true);
     }
 }
 

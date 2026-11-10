@@ -164,6 +164,9 @@ public:
     // changes while a level runs; the ring shift is latched at a level load
     // and must not, or resizing the window leaves that level in 4:3.
     bool wide_enabled = false;
+    // Host only: the menu's 32X picture is its tiled backdrop this frame
+    // (patches::menu_backdrop_tiled), worked out on its first line.
+    bool menu_tiled = false;
     // The former WIDE LOBBY option (issue #21). It no longer changes anything
     // (runtime/patches.h, wide_zone: the lobby is widened without it, and the
     // INTRODUCTION Eggman scene stays 4:3); kept so that recordings, ghosts
@@ -397,9 +400,11 @@ public:
     // mode; see patches.h), otherwise they are transparent. With md_top (the
     // Mega Drive line as Vdp::render_line_indexed gives it, as wide) and its
     // colours md_rgb, the pixels are written merged with it instead. Public
-    // for tests.
+    // for tests. With `repeat` (and not wide_src) the margins repeat the
+    // picture's edge every `repeat` pixels instead (issue #135, the menus'
+    // tiled backdrop; patches::menu_margins).
     void render_line32x(int ln, uint32_t* out, int extra, bool wide_src, const uint8_t* md_top = nullptr,
-                        const uint32_t* md_rgb = nullptr);
+                        const uint32_t* md_rgb = nullptr, int repeat = 0);
 
 private:
     void run_slice(uint64_t end_mclk);

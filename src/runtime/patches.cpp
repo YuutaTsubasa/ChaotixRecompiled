@@ -600,6 +600,26 @@ void lobby_margins(Machine& m, int e) {
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
 
+bool menu_margins(const Machine& m) {
+    const uint16_t mode = wram16(m, kGameMode);
+    return mode == 0x60 || mode == 0x68 || mode == 0x48;
+}
+
+bool menu_backdrop_tiled(const Machine& m) {
+    if ((m.mars.bitmap_mode & 3) != 1) return false;  // packed pixels only
+    const uint8_t* fb = m.mars.fb[m.mars.fb_display];
+    int same = 0, total = 0;
+    for (int ln = 0; ln < kActiveLines; ln += 8) {
+        const uint32_t line = (uint32_t(fb[ln * 2]) << 8) | fb[ln * 2 + 1];
+        const uint32_t p = line * 2 + (m.mars.screen_shift & 1);
+        for (int x = 0; x + kMenuTile < kNativeWidth; x += 2) {
+            ++total;
+            same += fb[(p + uint32_t(x)) & 0x1FFFF] == fb[(p + uint32_t(x + kMenuTile)) & 0x1FFFF];
+        }
+    }
+    return same * 4 >= total * 3;
+}
+
 bool special_stage_entry(const Machine& m) {
     const uint16_t mode = wram16(m, kGameMode);
     return (mode == kModeLevel || mode == kModeStageSelectSpecial) && m.vdp.reg[16] == kSpecialPlaneSize &&
