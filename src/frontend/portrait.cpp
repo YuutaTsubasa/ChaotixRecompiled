@@ -21,28 +21,6 @@ uint32_t argb_of(uint16_t c) {
     return 0xFF000000u | (r << 16) | (g << 8) | b;
 }
 
-// The colours a character is shown in, its mod's where it sets them.
-std::array<uint32_t, 256> shown_palette(const SpriteBank& bank, const CharacterMod* mod) {
-    std::array<uint32_t, 256> palette = bank.palette;
-    if (mod)
-        for (int p = 1; p <= characters::kColours; ++p)
-            if (mod->palette_set[size_t(p - 1)]) palette[size_t(p)] = argb_of(mod->palette[size_t(p - 1)]);
-    palette[0] = 0;
-    // The sheet's guide colours (0xFE, 0xFF) are not the character's.
-    palette[kSheetGrid] = palette[kSheetOutside] = 0;
-    return palette;
-}
-
-// A sprite replacement for that bank and frame, if `pack` has a usable one.
-const SpriteImage* replacement(const SpritePack* pack, int bank, int frame) {
-    if (!pack) return nullptr;
-    SpriteDraw d;
-    d.bank = int16_t(bank);
-    d.frame = int16_t(frame);
-    const SpriteImage* r = pack->find(d);
-    return r && r->width > 0 && r->height > 0 && r->px.size() == size_t(r->width) * size_t(r->height) ? r : nullptr;
-}
-
 } // namespace
 
 std::vector<PortraitPiece> portrait_pieces(int id) {
@@ -71,7 +49,13 @@ bool character_portrait(const Rom& rom, int id, const SpritePack* pack, const Ch
     if (!read_rom_bank(rom.data, id, banks[0], why)) return false;
     const bool has_second = read_rom_bank(rom.data, id + 8, banks[1], nullptr);
 
-    const std::array<uint32_t, 256> palette = shown_palette(banks[0], mod);
+    std::array<uint32_t, 256> palette = banks[0].palette;
+    if (mod)
+        for (int p = 1; p <= characters::kColours; ++p)
+            if (mod->palette_set[size_t(p - 1)]) palette[size_t(p)] = argb_of(mod->palette[size_t(p - 1)]);
+    palette[0] = 0;
+    // The sheet's guide colours (0xFE, 0xFF) are not the character's.
+    palette[kSheetGrid] = palette[kSheetOutside] = 0;
 
     // Each piece's image and where its top left goes, from its hotspot box.
     struct Placed { const SpriteImage* image; int x, y; };
@@ -87,9 +71,15 @@ bool character_portrait(const Rom& rom, int id, const SpritePack* pack, const Ch
         if (g < 0 || g >= int(bank.frames.size()) || bank.frames[size_t(g)].kind != BankFrame::Graphic) continue;
         const BankFrame& f = bank.frames[size_t(g)];
         const SpriteImage* image = &f.image;
-        if (const SpriteImage* r = replacement(pack, id + (pc.second ? 8 : 0), pc.frame)) {
-            image = r;
-            out.replaced = true;
+        if (pack) {
+            SpriteDraw d;
+            d.bank = int16_t(id + (pc.second ? 8 : 0));
+            d.frame = int16_t(pc.frame);
+            if (const SpriteImage* r = pack->find(d); r && r->width > 0 && r->height > 0 &&
+                                                      r->px.size() == size_t(r->width) * size_t(r->height)) {
+                image = r;
+                out.replaced = true;
+            }
         }
         placed.push_back({image, pc.dx + f.x0, pc.dy + f.y0});
         if (&pc == &pieces.front()) {
@@ -115,51 +105,6 @@ bool character_portrait(const Rom& rom, int id, const SpritePack* pack, const Ch
                 const uint32_t c = palette[p.image->px[size_t(y) * size_t(p.image->width) + size_t(x)]];
                 if (c) out.argb[size_t(p.y - y0 + y) * size_t(out.width) + size_t(p.x - x0 + x)] = c;
             }
-    return true;
-}
-
-bool ring_frames(const Rom& rom, const SpritePack* pack, const CharacterMod* knuckles, std::vector<Portrait>& out,
-                 std::string* why) {
-    constexpr int kKnuckles = 2, kBank = kKnuckles + 8;
-    out.clear();
-    SpriteBank colours, bank;
-    if (!read_rom_bank(rom.data, kKnuckles, colours, why) || !read_rom_bank(rom.data, kBank, bank, why)) return false;
-    const std::array<uint32_t, 256> palette = shown_palette(colours, knuckles);
-
-    // Each frame's image and its top left from the hotspot; the box takes the
-    // farthest reach either side of it.
-    struct Placed { const SpriteImage* image; int x, y; bool replaced; };
-    std::vector<Placed> placed;
-    int half_w = 0, half_h = 0;
-    for (int i = 0; i < kRingFrames; ++i) {
-        int g = i;
-        if (g < int(bank.frames.size()) && bank.frames[size_t(g)].kind == BankFrame::Same) g = bank.frames[size_t(g)].same;
-        if (g < 0 || g >= int(bank.frames.size()) || bank.frames[size_t(g)].kind != BankFrame::Graphic) {
-            if (why) *why = "no ring in bank 10";
-            return false;
-        }
-        const BankFrame& f = bank.frames[size_t(g)];
-        const SpriteImage* image = replacement(pack, kBank, i);
-        placed.push_back({image ? image : &f.image, f.x0, f.y0, image != nullptr});
-        image = placed.back().image;
-        half_w = std::max({half_w, -f.x0, f.x0 + image->width});
-        half_h = std::max({half_h, -f.y0, f.y0 + image->height});
-    }
-    for (const Placed& p : placed) {
-        Portrait r;
-        r.width = half_w * 2;
-        r.height = half_h * 2;
-        r.bank = kBank;
-        r.frame = int(out.size());
-        r.replaced = p.replaced;
-        r.argb.assign(size_t(r.width) * size_t(r.height), 0);
-        for (int y = 0; y < p.image->height; ++y)
-            for (int x = 0; x < p.image->width; ++x) {
-                const uint32_t c = palette[p.image->px[size_t(y) * size_t(p.image->width) + size_t(x)]];
-                if (c) r.argb[size_t(p.y + half_h + y) * size_t(r.width) + size_t(p.x + half_w + x)] = c;
-            }
-        out.push_back(std::move(r));
-    }
     return true;
 }
 

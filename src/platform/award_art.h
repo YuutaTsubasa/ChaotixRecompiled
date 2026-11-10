@@ -39,8 +39,9 @@ void emblem(ui::Ui& g, float cx, float cy, float r, const std::string& icon, boo
             unsigned seed = 0);
 
 // A gold ring on its own, as the emblems draw it: radius r, turned by `turn`
-// (0-1) about its upright axis. The cursor uses it when the game's own ring
-// (issue #134, Menu::draw_ring) is not to be had.
+// (0-1) about its upright axis. The front end's cursor is a pair of them, the
+// two rings of the game's combi. Once the Ui has the game's giant ring
+// (Ui::set_portal_ring, issue #134) that is drawn instead.
 void ring(ui::Ui& g, float cx, float cy, float r, float turn);
 
 // A page's title, as AWARDS has it: the words on a slanted purple banner

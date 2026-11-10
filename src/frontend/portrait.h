@@ -50,14 +50,4 @@ std::vector<PortraitPiece> portrait_pieces(int id);
 bool character_portrait(const Rom& rom, int id, const SpritePack* pack, const CharacterMod* mod, Portrait& out,
                         std::string* why);
 
-// The front end's cursor (issue #134): the ring Knuckles holds, as the game
-// spins it in his hand, frames 00-03 of his second bank (10): front on, then
-// turning, to its edge. Read like a portrait (a sprite replacement for one of
-// those frames is drawn instead, a Knuckles mod's colours are used), each
-// frame as large as the largest with the hotspot in the middle, so the ring
-// stays in place as it turns. False (and `why`) for a ROM without them.
-constexpr int kRingFrames = 4;
-bool ring_frames(const Rom& rom, const SpritePack* pack, const CharacterMod* knuckles, std::vector<Portrait>& out,
-                 std::string* why);
-
 } // namespace chaotix

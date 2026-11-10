@@ -220,6 +220,48 @@ the recompiled machine while a backdrop is made on another thread, and the
 frames must hash the same as a run without it; `lockstep_*` and the golden
 frame tests are unchanged.
 
+## The cursor's ring (issue #134)
+
+The menu's cursor rings (the pair at the ends of the front end's plaque, and
+the one beside the chosen row of every other page) were drawn from shapes and
+looked smooth beside the game's pixel letters. They are now the giant ring a
+level hides, from the player's ROM; nothing of it is in the repository.
+
+- **Where it is.** 32X sprite bank 0x23 (the ROM's bank table at 0x0A0000),
+  frames 0x29-0x2F: the ring's top half, 52 pixels wide and 31 lines tall,
+  from front on to edge on. The game draws each frame twice, the second time
+  flipped upside down under the first, and mirrors the frames to turn the
+  ring the rest of the way (found with `--sprites-log` on a giant ring poked
+  into BOTANIC BASE 1, as `docs/ISSUE_38_BONUS_STAGE.md` does).
+- **Packed.** Unlike the characters' banks, this one is stored packed and
+  unpacked into SDRAM when a scene starts, by the SH-2 routine at 0x06000464
+  (each frame) and 0x0600075A (a graphic), which `unpack_sprite_graphic`
+  (`renderer/portal_ring.*`) does the same way: a word that is the unpacked
+  size, the byte `B`, six signed bytes (the base and bit width of the
+  columns, of the lines and of the pixels), then fields read most
+  significant bit first by the routine at 0x06000856: the box's right edge
+  and bottom line, then spans (first column, end column; where they differ,
+  the line and a pixel a column) until a span whose columns are equal.
+  Non-zero pixels get the scene's colour offset added (0 for this bank). A
+  graphic not marked `B` is copied as it is; the ring's are all packed.
+  `portal_ring.the_rom_ring_is_what_the_game_unpacks` checks the result
+  byte for byte against what the game itself left in SDRAM in BOTANIC
+  BASE 1.
+- **Colours.** The level's sprite colours 0-15, the 32X palette words at ROM
+  0x001922 (the ring uses white, four golds and a dark red).
+- **Drawn** as a 7-frame atlas of whole rings (52x62), turned as the drawn
+  ring was (`portal_ring_frame`: front on to edge on, then mirrored back,
+  twice a turn), with nearest neighbour so its pixels stay sharp: a whole
+  number of screen pixels a pixel where there is room for the game's size,
+  and below that rows and columns dropped evenly (a 720-line window's plaque
+  is about 45 pixels tall; smoothing it down blurred it). The size and place
+  are the drawn ring's, so the layout is unchanged.
+- A ROM whose bank table, frame table, packed graphics or sizes are not as
+  expected keeps the drawn ring (the program logs why). The AWARDS emblems
+  keep their drawn rings: they are medals, not a cursor.
+
+![The plaque before (left) and with the giant ring (right)](images/issue-134-cursor-ring.png)
+
 ## TIME ATTACK and LEVEL SELECT: the zone showcase (issue #53)
 
 Both pages share one layout (`Menu::draw_showcase`). The entries are the
@@ -316,11 +358,12 @@ A.I.R. builds its menus into the game. Since then:
   it that keeps the entries either side of the selection in view. The plaque
   stays on PUSH START, in the smaller letters if the large ones would make it
   much taller than the box.
-- **The cursor** is a pair of spinning rings at the plaque's ends, a
-  quarter turn apart: the two rings of the game's combi. Since issue #134 they
-  are the game's own ring, read from the ROM (see "The cursor ring" below).
-  Plaque, stripe and banners are `award_art`'s shapes (`banner`,
-  `heading`, `arrowhead`), the same as the AWARDS page's.
+- **The cursor** is a pair of spinning gold rings at the plaque's ends, a
+  quarter turn apart: the two rings of the game's combi. They are the game's
+  own giant ring, read from the ROM (see "The cursor's ring" below); with a
+  ROM that does not have it there, `award_art::ring` draws one from shapes.
+  Plaque, stripe and banners are `award_art`'s shapes (`banner`, `heading`,
+  `arrowhead`), the same as the AWARDS page's.
 - **The title stays** while the front end is open: the game never goes into
   its attract demo under it, and before PUSH START is up (the boot screens,
   the intro and the logo's zoom) the front end shows only its hint. See
@@ -466,36 +509,3 @@ and characters without arms on the PLAYER and PARTNER cards.
   BASE 1, at the places the game puts the pieces (`portrait_pieces`,
   measured with `--sprites-log 1180`). A sprite mod for a piece still
   replaces that piece, and a character mod's colours apply to all of them.
-
-## The cursor ring (issue #134)
-
-Asked for in [#134](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/134):
-the cursor's rings were smooth gold shapes (`award_art::ring`) among the
-pixel art. They are now the game's own ring, made from the player's ROM
-when the menu first draws one, so nothing of the game is in the program:
-
-- **Which ring.** The one Knuckles holds, which the game spins in his hand at
-  the start of a level: frames 00-03 of his second bank (10), front on,
-  turning, and edge on (docs/CHARACTERS.md). It is read like the character
-  cards' portraits (`ring_frames` in `frontend/portrait.h`), in Knuckles'
-  colours as the player sees them, so its dark rim is the green of his
-  palette, as in play. A sprite mod for one of those frames (Mods/Textures,
-  `32x_0a_<frame>.png` or a sheet's cell) is drawn instead, and a Knuckles
-  character mod's colours are used.
-- **The spin.** The four frames are a quarter of a turn; the rest of the turn
-  is the same frames back to front on, then mirrored, so it is front on and
-  edge on where the drawn ring was (`Menu::draw_ring`). Every frame is made as
-  large as the largest, with the hotspot in the middle, so the ring turns in
-  place.
-- **The size.** Square pixels at the whole-number scale nearest the drawn
-  ring's size (1 in a 720p list, 2 or 3 on the plaque), at whole-pixel
-  positions, sampled nearest-neighbour.
-- **Where.** Both cursors: the pair on the front end's plaque and the one
-  beside the selected row of the pages behind it. A ROM whose bank 10 does not
-  read as graphics keeps the drawn ring. The AWARDS emblems keep theirs.
-
-Tested in `tests/test_menu.cpp`: the cursor asks for a frame of the spin, and
-with the ROM the four frames are as large as each other, narrower one after
-another, centred, and a sprite mod replaces only its own frame.
-
-![The plaque before (left) and after (right)](images/issue-134-cursor-ring.png)

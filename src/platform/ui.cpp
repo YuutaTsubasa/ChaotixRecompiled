@@ -108,6 +108,8 @@ void Ui::shutdown() {
     drop_cache();
     if (game_tex_) SDL_DestroyTexture(game_tex_);
     game_tex_ = nullptr;
+    if (ring_tex_) SDL_DestroyTexture(ring_tex_);
+    ring_tex_ = nullptr;
     for (auto*& f : fonts_) {
         if (f) TTF_CloseFont(f);
         f = nullptr;
@@ -244,6 +246,37 @@ bool Ui::set_game_font(const GameFont& font) {
     // pixel square.
     SDL_SetTextureScaleMode(game_tex_, SDL_SCALEMODE_NEAREST);
     game_glyph_ = font.glyph;
+    return true;
+}
+
+bool Ui::set_portal_ring(const PortalRing& ring) {
+    if (ring_tex_) SDL_DestroyTexture(ring_tex_);
+    ring_tex_ = nullptr;
+    if (!renderer_ || ring.empty()) return false;
+    ring_tex_ = SDL_CreateTexture(renderer_, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC, ring.width,
+                                  ring.height);
+    if (!ring_tex_) {
+        LOGW("ui", "giant ring texture: %s", SDL_GetError());
+        return false;
+    }
+    SDL_UpdateTexture(ring_tex_, nullptr, ring.pixels.data(), ring.width * 4);
+    SDL_SetTextureBlendMode(ring_tex_, SDL_BLENDMODE_BLEND);
+    return true;
+}
+
+bool Ui::portal_ring(float cx, float cy, float r, float turn) {
+    if (!ring_tex_ || r <= 0) return false;
+    bool mirrored = false;
+    const int f = portal_ring_frame(turn, &mirrored);
+    constexpr float cw = float(PortalRing::kCellW), ch = float(PortalRing::kCellH);
+    // At least the game's size, a whole number of screen pixels a pixel;
+    // smaller, nearest neighbour drops rows and columns evenly, and the ring
+    // is thick enough to keep its look (smoothing it blurs it).
+    float k = 2.0f * r / ch;
+    if (k >= 1.0f) k = std::floor(k);
+    const float w = std::round(cw * k), h = std::round(ch * k);
+    const SDL_FRect dst{std::round(cx - w * 0.5f), std::round(cy - h * 0.5f), w, h};
+    image(ring_tex_, {float(f) * cw, 0, cw, ch}, dst, false, mirrored);
     return true;
 }
 
