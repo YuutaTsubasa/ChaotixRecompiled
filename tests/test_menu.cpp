@@ -2470,7 +2470,73 @@ TEST(showcase, it_asks_for_the_picture_and_sprites_of_what_is_chosen) {
     CHECK(std::find(sprites.begin(), sprites.end(), 5) != sprites.end());
 }
 
+TEST(showcase, the_cursor_asks_for_the_games_ring) {
+    // Issue #134: the cursor ring is the game's, a frame of its spin; with
+    // none to be had the menu draws its own (and still draws the page).
+    Drawn d(1280, 720);
+    CHECK(d.ok);
+    if (!d.ok) return;
+    Config cfg;
+    cfg.set_defaults();
+    Menu m;
+    m.bind(cfg);
+    std::vector<int> frames;
+    Menu::Hooks hooks;
+    hooks.ring_sprite = [&](int frame, float*, float*) -> SDL_Texture* {
+        frames.push_back(frame);
+        return nullptr;
+    };
+    m.set_hooks(hooks);
+    CHECK(m.show_page("options"));
+    d.draw(m);
+    CHECK(!frames.empty());
+    for (int f : frames) CHECK(f >= 0 && f < kRingFrames);
+}
+
 #ifdef CHAOTIX_TEST_ROM
+TEST(showcase, the_cursor_ring_comes_from_the_rom) {
+    Rom rom;
+    std::string err;
+    CHECK(rom.load(CHAOTIX_TEST_ROM, &err));
+    std::vector<Portrait> rings;
+    std::string why;
+    CHECK(ring_frames(rom, nullptr, nullptr, rings, &why));
+    CHECK_EQ(int(rings.size()), kRingFrames);
+    if (int(rings.size()) != kRingFrames) return;
+    // Front on, turning, edge on: all as large as the largest, each narrower
+    // than the one before, and the game's own.
+    int last = 1 << 30;
+    for (const Portrait& r : rings) {
+        CHECK_EQ(r.width, rings[0].width);
+        CHECK_EQ(r.height, rings[0].height);
+        CHECK(r.width >= 12 && r.width <= 24 && r.height >= 12 && r.height <= 24);
+        CHECK(!r.replaced);
+        int lo = r.width, hi = -1;
+        for (int y = 0; y < r.height; ++y)
+            for (int x = 0; x < r.width; ++x)
+                if (r.argb[size_t(y) * size_t(r.width) + size_t(x)]) lo = std::min(lo, x), hi = std::max(hi, x);
+        CHECK(hi >= lo);
+        CHECK(hi - lo + 1 < last);
+        last = hi - lo + 1;
+        // Centred on the hotspot, give or take a pixel.
+        CHECK(std::abs((lo + hi + 1) - r.width) <= 2);
+    }
+    // A sprite mod's image for one frame replaces that frame only.
+    SpritePack pack;
+    SpriteImage box;
+    box.width = 4;
+    box.height = 4;
+    box.px.assign(16, 1);
+    pack.add(10, 2, box);
+    std::vector<Portrait> modded;
+    CHECK(ring_frames(rom, &pack, nullptr, modded, nullptr));
+    CHECK_EQ(int(modded.size()), kRingFrames);
+    if (int(modded.size()) == kRingFrames) {
+        CHECK(!modded[1].replaced);
+        CHECK(modded[2].replaced);
+    }
+}
+
 TEST(showcase, character_portraits_come_from_the_rom_with_the_mods) {
     Rom rom;
     std::string err;

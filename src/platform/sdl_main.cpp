@@ -169,6 +169,9 @@ struct App {
     // (portrait_mods: their colours), and made again when those change.
     std::map<int, Preview> portraits;
     std::vector<CharacterMod> portrait_mods;
+    // The cursor's ring (issue #134), frames 0-3, made with the portraits.
+    std::vector<Preview> ring_sprites;
+    bool ring_sprites_made = false;
     struct Press { uint64_t frame, duration; uint16_t buttons; };
     std::vector<Press> script;
     // --hold: the same thing but fed into the host's own input path, so it
@@ -1846,6 +1849,10 @@ void drop_portraits(App& app) {
     for (auto& entry : app.portraits)
         if (entry.second.texture) SDL_DestroyTexture(entry.second.texture);
     app.portraits.clear();
+    for (auto& pv : app.ring_sprites)
+        if (pv.texture) SDL_DestroyTexture(pv.texture);
+    app.ring_sprites.clear();
+    app.ring_sprites_made = false;
 }
 
 // Graphics replacements (issue #35), in Mods/Textures: Mega Drive tiles as
@@ -1966,6 +1973,40 @@ SDL_Texture* character_sprite(App& app, int who, float* w, float* h) {
     *w = it->second.w;
     *h = it->second.h;
     return it->second.texture;
+}
+
+// The cursor's ring (issue #134, frontend/portrait.h ring_frames): frame
+// 0-3 of the ring Knuckles holds, with the sprite mods and his colours;
+// made when first asked for. Null without it (the menu draws its own).
+SDL_Texture* ring_sprite(App& app, int frame, float* w, float* h) {
+    if (!app.m || !app.renderer) return nullptr;
+    if (!app.ring_sprites_made) {
+        app.ring_sprites_made = true;
+        const CharacterMod* mod = nullptr;
+        for (const CharacterMod& c : app.portrait_mods)
+            if (c.id == 2) mod = &c;
+        std::vector<Portrait> frames;
+        std::string why;
+        if (!ring_frames(app.m->rom, app.sprite_pack.get(), mod, frames, &why))
+            LOGI("menu", "no ring sprite for the cursor: %s", why.c_str());
+        for (const Portrait& p : frames) {
+            App::Preview pv;
+            pv.texture = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STATIC,
+                                           p.width, p.height);
+            if (pv.texture) {
+                SDL_UpdateTexture(pv.texture, nullptr, p.argb.data(), p.width * 4);
+                SDL_SetTextureBlendMode(pv.texture, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(pv.texture, SDL_SCALEMODE_NEAREST);
+                pv.w = float(p.width);
+                pv.h = float(p.height);
+            }
+            app.ring_sprites.push_back(pv);
+        }
+    }
+    if (frame < 0 || frame >= int(app.ring_sprites.size())) return nullptr;
+    *w = app.ring_sprites[size_t(frame)].w;
+    *h = app.ring_sprites[size_t(frame)].h;
+    return app.ring_sprites[size_t(frame)].texture;
 }
 
 // Character mods (docs/CHARACTER_MODS.md): Mods/Characters/<name>.ini, read
@@ -2725,6 +2766,7 @@ int main(int argc, char** argv) {
             return shown.texture;
         };
         hooks.character_sprite = [&app](int who, float* w, float* h) { return character_sprite(app, who, w, h); };
+        hooks.ring_sprite = [&app](int frame, float* w, float* h) { return ring_sprite(app, frame, w, h); };
         hooks.music_replaced = [&app](uint8_t id) { return app.music.has(id); };
         app.start_stage = hooks.start_stage;
         hooks.new_version = [&app] { return update_check::display_version(app.new_version); };
