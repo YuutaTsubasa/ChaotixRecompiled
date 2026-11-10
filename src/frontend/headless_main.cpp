@@ -533,7 +533,7 @@ int main(int argc, char** argv) {
     // recorder; --sprites-log FRAME[,FRAME...] prints the displayed buffer's
     // draw list at those frames; --sprites-check rebuilds every new picture's
     // sprites host-side and compares them with the emulated frame buffer.
-    bool want_sprites = false, sprites_check = false;
+    bool want_sprites = false, sprites_check = false, start_glide = false;
     std::set<uint64_t> sprites_log;
     // --sprites-oracle N[:SEED]: N random blitter calls, game code vs rebuild.
     int oracle_calls = 0;
@@ -692,6 +692,9 @@ int main(int argc, char** argv) {
         else if (a == "--game-font") game_font_png = next();
         else if (a == "--layer") debug_layer = next() == "md" ? 1 : 2;  // md | 32x: one layer in the shots
         else if (a == "--sprites") want_sprites = true;
+        // The glide into a level's start (issue #136), as the app's VIDEO >
+        // SMOOTH START.
+        else if (a == "--start-glide") want_sprites = start_glide = true;
         else if (a == "--sprites-check") want_sprites = sprites_check = true;
         else if (a == "--sprites-oracle") {
             const std::vector<std::string> parts = split(next(), ':');
@@ -1046,6 +1049,7 @@ int main(int argc, char** argv) {
         m->sprites = std::make_shared<SpriteRecorder>();
         m->sprites->track_writes = sprites_check;
         m->sprites->set_pack(sprite_pack);
+        m->sprites->set_start_glide(start_glide);
         m->sprites->dumping = !dump_tiles_dir.empty();
     }
     if (six_button >= 0) m->input.six_button[0] = m->input.six_button[1] = six_button != 0;
@@ -1095,6 +1099,7 @@ int main(int argc, char** argv) {
         if (want_sprites) {
             ref->sprites = std::make_shared<SpriteRecorder>();
             ref->sprites->set_pack(sprite_pack);
+            ref->sprites->set_start_glide(start_glide);
         }
         if (!rs.active) std::printf("warning: --lockstep without generated code compares the interpreter with itself\n");
     }
@@ -1888,6 +1893,9 @@ int main(int argc, char** argv) {
                     (unsigned long long)sr.bad_graphics, (unsigned long long)sr.flips);
         if (sr.pack())
             std::printf("sprites: %llu pictures composed with replacements\n", (unsigned long long)sr.pictures_composed);
+        if (sr.start_glide())
+            std::printf("start glide: %llu glide(s), %llu pictures composed\n", (unsigned long long)sr.glide().glides,
+                        (unsigned long long)sr.pictures_composed);
         if (sr.dumping) std::printf("sprites: %d graphics dumped\n", sprites_dumped);
     }
     if (sprites_check)

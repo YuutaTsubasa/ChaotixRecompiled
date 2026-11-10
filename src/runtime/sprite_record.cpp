@@ -207,10 +207,34 @@ void SpriteRecorder::flipped(const Machine& m) {
     ++flips;
     const int back = (m.mars.fb_display ^ 1) & 1;
     if (dumping) collect_dumps(m, lists_[back ^ 1]);
+    // The glide looks at each picture as it goes on display, and before the
+    // next one is drawn: the layer must follow that one from its start.
+    moves_on_ = false;
+    if (glide_on_) {
+        const SpriteList& shown = lists_[back ^ 1];
+        moves_on_ = glide_.picture(shown, moves_);
+        moves_key_ = shown.serial << 1 | uint64_t(back ^ 1);
+    }
+    update_layer();
     lists_[back].clear();
     if (track_writes) std::fill(owner_[back].begin(), owner_[back].end(), uint8_t(kNone));
     shadowed_[back] = 0;
     if (layer_) layer_->restart(back);
+}
+
+void SpriteRecorder::update_layer() {
+    const bool want = pack_ || (glide_on_ && glide_.watching());
+    if (!want) layer_.reset();
+    else if (!layer_) layer_ = std::make_unique<SpriteLayer>();
+}
+
+void SpriteRecorder::set_start_glide(bool on) {
+    if (on == glide_on_) return;
+    glide_on_ = on;
+    glide_.reset();
+    moves_on_ = false;
+    shown_key_ = ~0ull;
+    update_layer();
 }
 
 void SpriteRecorder::reset() {
@@ -222,6 +246,8 @@ void SpriteRecorder::reset() {
     }
     recolour_ = Recolour{};
     shown_key_ = ~0ull;
+    glide_.reset();
+    moves_on_ = false;
 }
 
 void SpriteRecorder::set_pack(std::shared_ptr<const SpritePack> pack) {
@@ -231,9 +257,8 @@ void SpriteRecorder::set_pack(std::shared_ptr<const SpritePack> pack) {
     shown_key_ = ~0ull;
     // A layer starts with nothing tracked: the lists drawn before it are
     // shown as they are until the next flip of each buffer.
-    if (!pack_) layer_.reset();
-    else if (!layer_) layer_ = std::make_unique<SpriteLayer>();
-    else layer_->clear_cache();
+    if (layer_) layer_->clear_cache();
+    update_layer();
 }
 
 void SpriteRecorder::shown(const Machine& m, const uint8_t*& fb, const uint8_t*& margin) {
@@ -244,7 +269,8 @@ void SpriteRecorder::shown(const Machine& m, const uint8_t*& fb, const uint8_t*&
     const uint64_t key = list.serial << 1 | uint64_t(b);
     if (key != shown_key_) {
         shown_key_ = key;
-        shown_composed_ = layer_->compose(m, b, list, *pack_);
+        const std::vector<SpriteMove>* moves = moves_on_ && moves_key_ == key ? &moves_ : nullptr;
+        shown_composed_ = layer_->compose(m, b, list, pack_.get(), moves);
         if (shown_composed_) ++pictures_composed;
     }
     if (!shown_composed_) return;

@@ -87,9 +87,12 @@ public:
     void fill(const Machine& m, int b, uint32_t addr, uint32_t words, uint16_t data, uint32_t draws);
 
     // Composes buffer `b` (on display) from its list with the pack's
-    // replacements: false if nothing in it is replaced, or the buffer was
-    // not tracked from its start; then the emulated buffers are shown.
-    bool compose(const Machine& m, int b, const SpriteList& list, const SpritePack& pack);
+    // replacements, and with the draws `moves` puts elsewhere (one entry per
+    // draw; start_glide.h): false if nothing in it is replaced or moved, or
+    // the buffer was not tracked from its start; then the emulated buffers
+    // are shown. Either may be null.
+    bool compose(const Machine& m, int b, const SpriteList& list, const SpritePack* pack,
+                 const std::vector<SpriteMove>* moves = nullptr);
     const uint8_t* fb() const { return out_.data(); }
     const uint8_t* margin() const { return out_.data() + kPlane; }
 
@@ -99,6 +102,7 @@ public:
 
     uint64_t draws_replaced = 0;   // draws composed with a replacement
     uint64_t draws_rejected = 0;   // replacements that could not be drawn
+    uint64_t draws_moved = 0;      // draws composed elsewhere (start_glide.h)
 
     static constexpr uint32_t kPlane = 0x20000;  // the frame buffer, then the margin shadow
 

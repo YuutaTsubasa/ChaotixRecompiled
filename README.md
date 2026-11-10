@@ -491,6 +491,12 @@ EXTRAS > MODS > MODS FOLDER opens Android's "All files access" page), and
 In widescreen levels the HUD keeps to the left edge of the picture; OPTIONS >
 VIDEO > WIDE HUD puts it back at its 4:3 place.
 
+As a level starts, the characters glide from the whirlwind to their start
+point instead of jumping there, as they do on the 32X
+([issue #136](docs/ISSUE_136_SMOOTH_START.md)). Only the picture changes, so
+replays, ghosts and netplay are unaffected. OPTIONS > VIDEO > SMOOTH START
+turns it off.
+
 ## Mod packs
 
 Every kind of mod below can come as a *pack*: a folder of its own in `Mods`,
@@ -733,13 +739,14 @@ people below. Thank you all: every report here led to a fix or a feature.
 - **[lemanrush](https://github.com/lemanrush)**: the HUD at the widescreen
   edge, choosing the menu background, widescreen bonus stages and special
   stage results, the new version notice, the game's ring as the menu
-  cursor and the menus' rock in widescreen ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
+  cursor, the menus' rock in widescreen and the glide into a level's start ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
   [#37](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/37),
   [#38](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/38),
   [#39](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/39),
   [#90](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/90),
   [#134](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/134),
-  [#135](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/135)).
+  [#135](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/135),
+  [#136](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/136)).
 - **[DoodleDiskette](https://github.com/DoodleDiskette)**: a reachable Mods
   folder on Android ([#29](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/29)).
 - **[stuffinix](https://github.com/stuffinix)**: the touch joystick

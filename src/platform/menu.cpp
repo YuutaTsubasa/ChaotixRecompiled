@@ -868,6 +868,11 @@ void Menu::build_video() {
                       [c] { return on_off(c->wide_hud); },
                       [c](int s) { if (s) c->wide_hud = !c->wide_hud; },
                       "score, time and rings at the screen edge"});
+    // Issue #136: the characters glide to their start instead of jumping.
+    items_.push_back({"SMOOTH START",
+                      [c] { return on_off(c->smooth_start); },
+                      [c](int s) { if (s) c->smooth_start = !c->smooth_start; },
+                      "characters glide into place as a level starts"});
     items_.push_back({"ASPECT RATIO",
                       [c] { return std::string(kAspectNames[int(c->viewport.aspect)]); },
                       [c](int s) { if (s) cycle(c->viewport.aspect, 5, s); }});

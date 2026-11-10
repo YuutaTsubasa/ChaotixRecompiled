@@ -141,6 +141,7 @@ bool Config::load(const std::string& path) {
             else if (k == "Widescreen") widescreen = parse_bool(v, widescreen);
             else if (k == "WidescreenEverywhere") wide_everywhere = parse_bool(v, wide_everywhere);
             else if (k == "WidescreenHud") wide_hud = parse_bool(v, wide_hud);
+            else if (k == "SmoothStart") smooth_start = parse_bool(v, smooth_start);
             else if (k == "MenuFont") menu_game_font = !(v == "Pixel" || v == "pixel");
             else if (k == "MenuBackground") menu_background = parse_menu_background(v);
             else if (k == "MenuSize") menu_size = parse_menu_size(v);
@@ -284,6 +285,9 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Widescreen = %s\n", widescreen ? "true" : "false");
     std::fprintf(f, "# true: in widescreen levels, the HUD keeps to the left edge of the picture\n");
     std::fprintf(f, "WidescreenHud = %s\n", wide_hud ? "true" : "false");
+    std::fprintf(f, "# true: as a level starts, the characters glide to their start point (the picture\n");
+    std::fprintf(f, "# only); false: they jump there, as in the original\n");
+    std::fprintf(f, "SmoothStart = %s\n", smooth_start ? "true" : "false");
     std::fprintf(f, "# The menu's font: Game (read from your ROM) | Pixel (the bundled pixel face)\n");
     std::fprintf(f, "MenuFont = %s\n", menu_game_font ? "Game" : "Pixel");
     std::fprintf(f, "# Behind the menu, pictures of the game's zones made from your ROM: Cycle (each in\n");
