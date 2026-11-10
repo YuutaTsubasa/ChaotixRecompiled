@@ -32,6 +32,7 @@ add_executable(chaotix_tests
     test_sprite_sheet.cpp
     test_character_mods.cpp
     test_game_font.cpp
+    test_portal_ring.cpp
     test_save_state.cpp
     test_mod_packs.cpp
     test_ghost.cpp

@@ -2815,6 +2815,10 @@ int main(int argc, char** argv) {
         std::string why;
         if (build_game_font(app.m->rom.data, font, &why)) app.ui.set_game_font(font);
         else LOGW("menu", "the game's font: %s; the menu keeps the pixel face", why.c_str());
+        // Issue #134: its cursor rings are the game's giant ring.
+        PortalRing ring;
+        if (build_portal_ring(app.m->rom.data, ring, &why)) app.ui.set_portal_ring(ring);
+        else LOGW("menu", "the game's giant ring: %s; the menu keeps the drawn ring", why.c_str());
     }
     app.backdrops.configure(app.m->rom, app.store.root() + "Cache/Backdrops/");
     app.backdrops.choose(app.cfg.menu_backdrop_zone());

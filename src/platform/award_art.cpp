@@ -135,6 +135,7 @@ void emblem(ui::Ui& g, float cx, float cy, float r, const std::string& icon, boo
 }
 
 void ring(ui::Ui& g, float cx, float cy, float r, float turn) {
+    if (g.portal_ring(cx, cy, r, turn)) return;  // the game's own, from the ROM (issue #134)
     using namespace color;
     gold_ring(g, cx, cy, r, turn, gold, gold_dark, cream, ink);
 }

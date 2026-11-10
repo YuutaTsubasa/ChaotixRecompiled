@@ -11,6 +11,7 @@
 #include <SDL3/SDL.h>
 
 #include "renderer/game_font.h"
+#include "renderer/portal_ring.h"
 
 #include <algorithm>
 #include <array>
@@ -166,6 +167,16 @@ public:
     int label_game_scale() const { return game_scale(Font::Pixel); }
     void cap_small_game_scale(int k) { small_cap_ = k; }
 
+    // The game's giant ring (renderer/portal_ring.h, issue #134), for the
+    // menu's cursor. Once set, portal_ring draws it in place of a drawn ring;
+    // false (drawing nothing) until then. Returns false if the texture could
+    // not be made.
+    bool set_portal_ring(const PortalRing& ring);
+    // The ring as tall as 2r, centred on (cx, cy), turned by `turn` (0-1, as
+    // award_art::ring), its pixels kept sharp: whole-number scales from the
+    // game's size up, nearest neighbour below it.
+    bool portal_ring(float cx, float cy, float r, float turn);
+
     // Draws a texture over r, cropped to r's shape rather than stretched, so
     // a picture fills a window of any aspect.
     void image_cover(SDL_Texture* tex, float tex_w, float tex_h, const SDL_FRect& r, uint8_t alpha = 255);
@@ -214,6 +225,7 @@ private:
     float game_text(Font f, float x, float y, const std::string& s, Color c, int scale = 0);
 
     SDL_Texture* game_tex_ = nullptr;
+    SDL_Texture* ring_tex_ = nullptr;
     std::array<int16_t, 128> game_glyph_{};
     bool game_on_ = false;
     bool game_tint_ = false;
