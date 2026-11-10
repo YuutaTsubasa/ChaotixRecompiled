@@ -135,7 +135,8 @@ The menu is the front end: it is up as soon as the program starts, drawn on the
 game's own title screen, which fills the window as the game does in play. The
 entries — START GAME, TIME ATTACK, LEVEL SELECT, OPTIONS, CONTROLS, MUSIC PLAYER,
 AWARDS, NETPLAY, QUIT — step through the box where the title shows PUSH START,
-the chosen one on a purple plaque between two spinning rings, the others under
+the chosen one on a purple plaque between two spinning rings (the game's own,
+from your ROM; issue #134), the others under
 it (on a portrait screen, under the picture) (issue #3;
 [docs/MENU_ART.md](docs/MENU_ART.md)). The title is the
 game drawing its own screen, from your ROM, so nothing is extracted or shipped.
@@ -729,11 +730,13 @@ people below. Thank you all: every report here led to a fix or a feature.
   widescreen ([#27](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/27)).
 - **[lemanrush](https://github.com/lemanrush)**: the HUD at the widescreen
   edge, choosing the menu background, widescreen bonus stages and special
-  stage results, and the new version notice ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
+  stage results, the new version notice and the game's ring as the menu
+  cursor ([#28](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/28),
   [#37](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/37),
   [#38](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/38),
   [#39](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/39),
-  [#90](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/90)).
+  [#90](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/90),
+  [#134](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/134)).
 - **[DoodleDiskette](https://github.com/DoodleDiskette)**: a reachable Mods
   folder on Android ([#29](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/29)).
 - **[stuffinix](https://github.com/stuffinix)**: the touch joystick

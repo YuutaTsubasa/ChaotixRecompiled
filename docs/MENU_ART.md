@@ -260,6 +260,8 @@ level hides, from the player's ROM; nothing of it is in the repository.
   expected keeps the drawn ring (the program logs why). The AWARDS emblems
   keep their drawn rings: they are medals, not a cursor.
 
+![The plaque before (left) and with the giant ring (right)](images/issue-134-cursor-ring.png)
+
 ## TIME ATTACK and LEVEL SELECT: the zone showcase (issue #53)
 
 Both pages share one layout (`Menu::draw_showcase`). The entries are the
