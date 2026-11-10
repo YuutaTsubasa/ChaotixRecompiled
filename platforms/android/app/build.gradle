@@ -21,7 +21,7 @@ android {
         minSdk 26
         targetSdk 34
         versionCode 59
-        versionName '0.15.19'
+        versionName '0.15.20'
         // -PABIS=arm64-v8a,x86_64 to add the emulator ABI.
         ndk { abiFilters((project.findProperty('ABIS') ?: 'arm64-v8a').split(',')) }
         externalNativeBuild {
