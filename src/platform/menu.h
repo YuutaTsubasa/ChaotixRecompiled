@@ -126,9 +126,6 @@ public:
         // graphics.
         std::function<SDL_Texture*(const stage_select::Request&, float* w, float* h, int* state)> stage_picture;
         std::function<SDL_Texture*(int character, float* w, float* h)> character_sprite;
-        // The cursor's ring (issue #134, frontend/portrait.h ring_frames):
-        // frame 0-3 of the ring Knuckles holds, from the ROM; null without it.
-        std::function<SDL_Texture*(int frame, float* w, float* h)> ring_sprite;
     };
 
     static constexpr int kPictureMaking = 0, kPictureReady = 1, kPictureNone = 2;
@@ -339,10 +336,6 @@ private:
     // The game's picture as set_picture gave it, or that 4:3 picture.
     SDL_FRect picture_rect(ui::Ui& g) const;
     void draw_front(ui::Ui& g);
-    // A cursor ring of radius r at (cx, cy), turned by `turn` (0-1): the
-    // game's own (hooks_.ring_sprite) at a whole-number scale, or else the
-    // drawn one (award_art::ring).
-    void draw_ring(ui::Ui& g, float cx, float cy, float r, float turn);
     void draw_row_page(ui::Ui& g, const char* hint);
     void draw_options(ui::Ui& g);
     // The music player's keyboards (issue #102), in r.

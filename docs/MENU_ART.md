@@ -316,11 +316,11 @@ A.I.R. builds its menus into the game. Since then:
   it that keeps the entries either side of the selection in view. The plaque
   stays on PUSH START, in the smaller letters if the large ones would make it
   much taller than the box.
-- **The cursor** is a pair of spinning rings at the plaque's ends, a
-  quarter turn apart: the two rings of the game's combi. Since issue #134 they
-  are the game's own ring, read from the ROM (see "The cursor ring" below).
-  Plaque, stripe and banners are `award_art`'s shapes (`banner`,
-  `heading`, `arrowhead`), the same as the AWARDS page's.
+- **The cursor** is a pair of spinning gold rings at the plaque's ends, a
+  quarter turn apart: the two rings of the game's combi. Plaque, stripe and
+  banners are `award_art`'s shapes (`banner`, `ring`, `heading`,
+  `arrowhead`), the same as the AWARDS page's; no picture is taken from the
+  game.
 - **The title stays** while the front end is open: the game never goes into
   its attract demo under it, and before PUSH START is up (the boot screens,
   the intro and the logo's zoom) the front end shows only its hint. See
@@ -466,36 +466,3 @@ and characters without arms on the PLAYER and PARTNER cards.
   BASE 1, at the places the game puts the pieces (`portrait_pieces`,
   measured with `--sprites-log 1180`). A sprite mod for a piece still
   replaces that piece, and a character mod's colours apply to all of them.
-
-## The cursor ring (issue #134)
-
-Asked for in [#134](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/134):
-the cursor's rings were smooth gold shapes (`award_art::ring`) among the
-pixel art. They are now the game's own ring, made from the player's ROM
-when the menu first draws one, so nothing of the game is in the program:
-
-- **Which ring.** The one Knuckles holds, which the game spins in his hand at
-  the start of a level: frames 00-03 of his second bank (10), front on,
-  turning, and edge on (docs/CHARACTERS.md). It is read like the character
-  cards' portraits (`ring_frames` in `frontend/portrait.h`), in Knuckles'
-  colours as the player sees them, so its dark rim is the green of his
-  palette, as in play. A sprite mod for one of those frames (Mods/Textures,
-  `32x_0a_<frame>.png` or a sheet's cell) is drawn instead, and a Knuckles
-  character mod's colours are used.
-- **The spin.** The four frames are a quarter of a turn; the rest of the turn
-  is the same frames back to front on, then mirrored, so it is front on and
-  edge on where the drawn ring was (`Menu::draw_ring`). Every frame is made as
-  large as the largest, with the hotspot in the middle, so the ring turns in
-  place.
-- **The size.** Square pixels at the whole-number scale nearest the drawn
-  ring's size (1 in a 720p list, 2 or 3 on the plaque), at whole-pixel
-  positions, sampled nearest-neighbour.
-- **Where.** Both cursors: the pair on the front end's plaque and the one
-  beside the selected row of the pages behind it. A ROM whose bank 10 does not
-  read as graphics keeps the drawn ring. The AWARDS emblems keep theirs.
-
-Tested in `tests/test_menu.cpp`: the cursor asks for a frame of the spin, and
-with the ROM the four frames are as large as each other, narrower one after
-another, centred, and a sprite mod replaces only its own frame.
-
-![The plaque before (left) and after (right)](images/issue-134-cursor-ring.png)

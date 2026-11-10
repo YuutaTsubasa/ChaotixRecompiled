@@ -1935,25 +1935,6 @@ void Menu::draw(ui::Ui& g, achievements::Tracker& ach) {
 // only the hint is drawn (set_title_ready), and while the front end is open
 // the app keeps the title from giving way to the attract demo
 // (runtime/title_hold.h), so the plaque is only ever over the title.
-void Menu::draw_ring(ui::Ui& g, float cx, float cy, float r, float turn) {
-    // The game's four frames go from front on to the edge; the rest of a
-    // turn is the same frames back again and then mirrored, as the drawn
-    // ring is front on at 0 and 0.5 and edge on at 0.25 and 0.75.
-    const int step = int(std::floor((turn - std::floor(turn)) * 16.0f)) & 15;
-    const int quarter = step / 4, k = step % 4;
-    const int frame = quarter % 2 ? 3 - k : k;
-    float w = 0, h = 0;
-    SDL_Texture* tex = hooks_.ring_sprite ? hooks_.ring_sprite(frame, &w, &h) : nullptr;
-    if (!tex || w <= 0 || h <= 0) {
-        award_art::ring(g, cx, cy, r, turn);
-        return;
-    }
-    // Square pixels: the whole scale nearest the drawn ring's size.
-    const float s = std::max(1.0f, std::round(r * 2.0f / h));
-    const SDL_FRect dst{std::round(cx - w * s * 0.5f), std::round(cy - h * s * 0.5f), w * s, h * s};
-    g.image(tex, {0, 0, w, h}, dst, false, quarter == 1 || quarter == 2);
-}
-
 void Menu::draw_front(ui::Ui& g) {
     namespace art = award_art;
     namespace col = award_art::color;
@@ -2103,9 +2084,9 @@ void Menu::draw_front(ui::Ui& g) {
     const float ring_x = lean * 0.5f + edge + g.px(6) + ring_r;
     if (rings) {
         const float turn = anim_ * 0.12f;
-        draw_ring(g, plaque.x + ring_x, cy, ring_r, turn);
+        art::ring(g, plaque.x + ring_x, cy, ring_r, turn);
         if (!(markers && inside))
-            draw_ring(g, plaque.x + plaque.w - ring_x, cy, ring_r, turn + 0.25f);  // a quarter turn behind
+            art::ring(g, plaque.x + plaque.w - ring_x, cy, ring_r, turn + 0.25f);  // a quarter turn behind
     }
     const float text_w = std::max(0.0f, plaque.w - lean - left_room - right_room - g.px(12));
     const float mid = plaque.x + lean * 0.5f + g.px(6) + left_room + text_w * 0.5f;
@@ -2502,7 +2483,7 @@ void Menu::draw_options(ui::Ui& g) {
         if (sel) {
             // The cursor is a spinning ring, as on the title screen.
             const float rr = g.line_height(ui::Font::Pixel) * 0.36f;
-            draw_ring(g, x - g.px(10) - rr, y + g.line_height(ui::Font::Pixel) * 0.5f, rr, anim_ * 0.12f);
+            award_art::ring(g, x - g.px(10) - rr, y + g.line_height(ui::Font::Pixel) * 0.5f, rr, anim_ * 0.12f);
         }
         const float label_w = g.text_fit(ui::Font::Pixel, x, y, column, it.label,
                                      sel ? ui::theme::text : ui::theme::text_dim);
