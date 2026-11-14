@@ -168,7 +168,9 @@ TEST(music_mods, the_machine_hands_replaced_music_to_the_player) {
     CHECK(m->music_events.empty());
 }
 
-TEST(music_mods, a_jingle_holds_the_piece_and_asking_again_resumes_it) {
+TEST(music_mods, every_request_starts_the_piece_over_as_the_driver_does) {
+    // Issue #143: the driver starts a piece from its beginning whenever the
+    // game asks for it (test_jukebox measures it), so the file does too.
     auto m = std::make_unique<Machine>();
     MusicMods music;
     music.set_volume(100);
@@ -179,7 +181,14 @@ TEST(music_mods, a_jingle_holds_the_piece_and_asking_again_resumes_it) {
     CHECK_EQ(music.playing(), uint8_t(0));
     CHECK_EQ(out[0], 0);
     out = frame(music, *m, {5});  // the game asks for it again ($88E962)
-    CHECK_EQ(out[0], 4);
+    CHECK_EQ(music.playing(), uint8_t(5));
+    CHECK_EQ(out[0], 0);
+    CHECK_EQ(out[2], 1);
+    out = frame(music, *m, {});
+    CHECK_EQ(out[0], 4);  // carries on between requests
+    out = frame(music, *m, {5});  // asked for again while it plays
+    CHECK_EQ(out[0], 0);
+    CHECK_EQ(out[2], 1);
     out = frame(music, *m, {patches::kSoundStopMusic});
     CHECK_EQ(out[0], 0);
     out = frame(music, *m, {5});  // stopped: starts over

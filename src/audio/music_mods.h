@@ -6,9 +6,10 @@
 // stop its music instead, so the game's sound effects still play, and the
 // request reaches this player, which mixes the file into the machine's audio
 // output at the same rate. Everything else follows the game:
-//  - another piece without a file: the file pauses and the driver plays;
-//    when the game asks for the replaced piece again (it does, after a
-//    jingle or invincibility, $88E962), it carries on where it stopped
+//  - every request starts the piece from the beginning, as the driver does
+//    (measured, issue #143): asked for again while it plays, or after
+//    another piece without a file (a jingle, invincibility) that the driver
+//    played; the game asks for the level's music again then ($88E962)
 //  - $F0 fades the music out over about five seconds, as the driver does;
 //    $F1 stops it
 //  - while the game is paused (the driver's flag at Z80 RAM $1C10) the file
@@ -96,8 +97,7 @@ private:
     int volume_ = mixed_percent(25);
     uint8_t current_ = 0;
     size_t position_ = 0;
-    uint8_t held_ = 0;            // the piece a jingle interrupted
-    size_t held_position_ = 0;
+    uint8_t held_ = 0;            // the piece a jingle interrupted, kept decoded
     int fade_frames_ = 0;         // > 0 while fading out
     int fade_left_ = 0;
 };

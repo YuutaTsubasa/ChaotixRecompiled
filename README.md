@@ -585,8 +585,9 @@ Put WAV files in `Mods/Music` (see above for where `Mods` is),
 named after the game's music id in hex: `05.wav` replaces BOTANIC BASE's
 music. The game's sound effects still play. Loops come from the WAV's sampler
 chunk or a `05.loop` text file, and `ModMusicVolume` in `[Audio]` sets their
-level. Every music request is logged with its id, so playing the game shows
-which file to make; see [docs/MUSIC_MODS.md](docs/MUSIC_MODS.md). Only music
+level. A file starts from its beginning whenever the game asks for the piece,
+as the game's own music does. Every music request is logged with its id, so
+playing the game shows which file to make; see [docs/MUSIC_MODS.md](docs/MUSIC_MODS.md). Only music
 you have the right to use, please.
 
 The music's drums can be replaced one at a time instead: WAV files in
@@ -722,9 +723,11 @@ people below. Thank you all: every report here led to a fix or a feature.
 - **[mechasalesman](https://github.com/mechasalesman)**: widescreen in the
   lobby, and cheats ([#13](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/13),
   [#20](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/20)).
-- **[Abdouxgo](https://github.com/Abdouxgo)**: 32-bit Android, and the icon
-  suggestion ([#19](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/19),
-  [#22](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/22)).
+- **[Abdouxgo](https://github.com/Abdouxgo)**: 32-bit Android, the icon
+  suggestion, and replaced music starting over when the game asks for it again
+  ([#19](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/19),
+  [#22](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/22),
+  [#143](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/143)).
 - **[ZacOnGH](https://github.com/ZacOnGH)**: the Linux build
   ([#23](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/23)).
 - **[CooliKnucx](https://github.com/CooliKnucx)**: touch control images, the

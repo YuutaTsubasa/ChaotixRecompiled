@@ -115,3 +115,44 @@ TEST(jukebox, labels_and_times) {
     CHECK_STR(repeat_name(Repeat::Once), "ONCE");
     CHECK_STR(repeat_name(Repeat::All), "ALL");
 }
+
+#ifdef CHAOTIX_TEST_ROM
+#include "game/recomp_dispatch.h"
+#include "runtime/system.h"
+#include <cmath>
+#include <memory>
+// Issue #143: the driver starts a piece from its beginning whenever the game
+// asks for it, whether it is playing or another piece interrupted it. The
+// music mods follow this rule (test_music_mods), so it is measured here.
+// TUBE PANIC (14) for ten seconds, then nothing or SURGING POWER (12) for
+// five, then 14 again: the next three seconds match its start, not where it
+// had got to.
+TEST(jukebox, the_driver_starts_a_piece_over_when_asked_again_with_local_rom) {
+    auto m = std::make_unique<Machine>();
+    std::string err;
+    CHECK(m->load_rom(CHAOTIX_TEST_ROM, &err));
+    m->reset();
+    install_recompiled_code(*m, true);  // what each player binds back to
+    auto corr = [](const std::vector<int16_t>& a, size_t ao, const std::vector<int16_t>& b, size_t bo, size_t n) {
+        double ab = 0, aa = 0, bb = 0;
+        for (size_t i = 0; i < n; ++i) { const double x = a[ao + i], y = b[bo + i]; ab += x * y; aa += x * x; bb += y * y; }
+        return ab / std::sqrt(aa * bb + 1e-9);
+    };
+    std::vector<int16_t> start, on;
+    size_t at600 = 0, at900 = 0;
+    { Player p; CHECK(p.start(m->rom, nullptr, true, &err)); p.play(0x14); p.run_frames(240, start); p.stop(); }
+    { Player p; CHECK(p.start(m->rom, nullptr, true, &err)); p.play(0x14); p.run_frames(600, on); at600 = on.size();
+      p.run_frames(300, on); at900 = on.size(); p.run_frames(300, on); p.stop(); }
+    const size_t n = start.size() * 3 / 4;
+    for (uint8_t between : {uint8_t(0), uint8_t(0x12)}) {
+        std::vector<int16_t> g;
+        size_t at = 0;
+        { Player p; CHECK(p.start(m->rom, nullptr, true, &err)); p.play(0x14); p.run_frames(600, g);
+          if (between) p.play(between);
+          p.run_frames(300, g); at = g.size(); p.play(0x14); p.run_frames(240, g); p.stop(); }
+        CHECK(corr(g, at, start, 0, n) > 0.7);   // measured 0.78 and 0.84
+        CHECK(corr(g, at, on, at600, n) < 0.5);  // 0.34, 0.33
+        CHECK(corr(g, at, on, at900, n) < 0.5);  // 0.30, 0.29
+    }
+}
+#endif
