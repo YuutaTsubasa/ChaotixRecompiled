@@ -60,10 +60,12 @@ afterwards play). The player (`audio/music_mods.{h,cpp}`) mixes the file
 into the machine's own audio output, so it runs on emulated time like the
 rest of the sound:
 
-- Another piece without a file (a jingle, invincibility): the file pauses,
-  the driver plays. The game asks for the level's music again afterwards
-  (`$88E962` replays `$FFFCFC`, the current music), and the file carries on
-  from where it stopped.
+- Every request starts the file from its beginning, as the driver starts
+  its own music (measured, issue #143): the same piece asked for while it
+  plays (a second invincibility, the next act), or asked for again after
+  another piece without a file (a jingle, invincibility) that the driver
+  played. The game asks for the level's music again then (`$88E962` replays
+  `$FFFCFC`, the current music).
 - `$F0`: the driver fades its music out over about five seconds (measured
   second by second); the file fades the same way. `$F1`: stop.
 - Pause: the driver holds its music while Z80 RAM `$1C10` is non-zero; the
@@ -77,8 +79,14 @@ with a pause, checked). Without files nothing changes: no request is altered.
 
 - `music_mods.*` unit tests: WAV decoding (8/16/24-bit PCM, float, mono to
   stereo, resampling), loops from `smpl` and from `.loop`, rejected files, and
-  the player's rules: play, carry on, a jingle holding the piece and the next
-  request resuming it, stop, pause, loop, the five-second fade.
+  the player's rules: play, carry on, every request starting the piece over
+  (after a jingle, or while it plays), stop, pause, loop, the five-second
+  fade.
+- With the local ROM, `the_driver_starts_a_piece_over_when_asked_again`
+  (test_jukebox): the driver plays TUBE PANIC for ten seconds, then nothing
+  or SURGING POWER for five, then TUBE PANIC again. The next three seconds
+  correlate 0.78 and 0.84 with the piece's start and about 0.3 with where it
+  had got to: the driver starts over, and so does the file.
 - With the local ROM, `replaced_music_silences_the_driver`: BOTANIC BASE 1 is
   above 800 RMS with its own music and below 50 with `05` replaced by
   silence. With the substitution removed from the patch, this test fails.

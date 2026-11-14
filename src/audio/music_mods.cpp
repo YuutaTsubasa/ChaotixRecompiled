@@ -266,23 +266,21 @@ void MusicMods::on_request(uint8_t id) {
         return;
     }
     if (!has(id)) {
-        // The driver plays this one; keep our place in the replaced piece.
+        // The driver plays this one. Keep the replaced piece decoded: the
+        // game asks for it again afterwards ($88E962).
         LOGI("music", "the game asks for music %02X", id);
-        if (current_) { held_ = current_; held_position_ = position_; }
+        if (current_) held_ = current_;
         current_ = 0;
         fade_frames_ = 0;
         return;
     }
     LOGI("music", "the game asks for music %02X: playing %02X.wav instead", id, id);
+    // Every request starts the piece from the beginning, as the driver does
+    // (measured, issue #143): asked for again while it plays, or after a
+    // jingle or invincibility interrupted it.
     fade_frames_ = 0;
-    if (id == current_) return;
-    if (id == held_) {
-        current_ = id;
-        position_ = held_position_;
-    } else {
-        current_ = id;
-        position_ = 0;
-    }
+    current_ = id;
+    position_ = 0;
     held_ = 0;
     if (!track(id)) current_ = 0;
 }
@@ -299,7 +297,7 @@ std::vector<uint8_t> MusicMods::save_position() const {
     put(current_, 1);
     put(held_, 1);
     put(position_, 8);
-    put(held_position_, 8);
+    put(0, 8);  // was where a jingle interrupted the piece
     put(uint32_t(fade_frames_), 4);
     put(uint32_t(fade_left_), 4);
     return b;
@@ -312,7 +310,7 @@ void MusicMods::load_position(const std::vector<uint8_t>& b) {
     current_ = uint8_t(get(1));
     held_ = uint8_t(get(1));
     position_ = size_t(get(8));
-    held_position_ = size_t(get(8));
+    get(8);
     fade_frames_ = int(int32_t(get(4)));
     fade_left_ = int(int32_t(get(4)));
     // A piece that has no file now (the folder changed) plays nothing; one
