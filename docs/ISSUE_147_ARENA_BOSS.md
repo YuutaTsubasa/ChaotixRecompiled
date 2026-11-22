@@ -37,8 +37,12 @@ working through that queue.
 `begin_frame` widens only the screen's own bounds. The sides are widened
 when they are the screen's (0 and 320) or ones the patch wrote; the bottom
 gets the extra rows when it is the screen's (223) or one the patch wrote.
-Bounds the game set itself are left as they are. The letterbox now closes
-and opens as in 4:3, with the sides widened, and the boss fights.
+Bounds the game set itself are left as they are. Putting the 4:3 rectangle
+back (widescreen turned off, or the level left) follows the same rule: only
+the bounds the patch wrote go back, so turning widescreen off in the middle
+of the letterbox (frame 2391 below) does not show the sprite either. The
+letterbox now closes and opens as in 4:3, with the sides widened, and the
+boss fights.
 
 ![0.15.23, widescreen](images/issue-147-after-0.15.23.png)
 
@@ -57,5 +61,7 @@ there:
 
 The boss (`$FF8040`) keeps its step at `$24`. Before: `0202` from frame 2395
 on, and the master SH-2 at `$06001478` for good. After: `0210` at frame 3200,
-as in 4:3. Tests: `widescreen_amazing_arena_boss_fights` (the ROM run above)
-and `widescreen_render.a_letterbox_the_game_sets_keeps_its_bounds`.
+as in 4:3. Tests: `widescreen_amazing_arena_boss_fights` (the ROM run above),
+`widescreen_off_during_amazing_arena_letterbox` (the same with
+`--wide-at 2391:0`) and
+`widescreen_render.a_letterbox_the_game_sets_keeps_its_bounds`.

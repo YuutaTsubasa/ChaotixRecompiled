@@ -406,6 +406,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --peek-every 3200:8064:2)
     set_tests_properties(widescreen_amazing_arena_boss_fights PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
+    # The same, with widescreen turned off (frame 2391) while the letterbox is
+    # closed: putting the 4:3 rectangle back keeps the game's bounds too.
+    add_test(NAME widescreen_off_during_amazing_arena_letterbox
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53 --wide-at 2391:0
+                --level-select --stage 300:2:5:0:2:7:0
+                --poke 1500:C21D:20
+                --poke 1500:AD50:0E --poke 1500:AD51:80 --poke 1500:AD54:01 --poke 1500:AD55:00
+                --poke 1500:AE10:0E --poke 1500:AE11:60 --poke 1500:AE14:01 --poke 1500:AE15:00
+                --peek-every 3200:8064:2)
+    set_tests_properties(widescreen_off_during_amazing_arena_letterbox PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
     # ...but not the ending's scenes (levels 3-6): their sprites are staged
     # for the 4:3 screen, and widened their left margin was black (left of the
     # layout) beside a white picture. No margins at all.

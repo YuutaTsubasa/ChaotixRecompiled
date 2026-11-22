@@ -127,6 +127,19 @@ TEST(widescreen_render, a_letterbox_the_game_sets_keeps_its_bounds) {
     patches::begin_frame(*m);
     CHECK_EQ(left(), -56);
     CHECK_EQ(right(), 376);
+    // Widescreen turned off in the middle of the letterbox: the sides go back
+    // to the screen's, the game's bottom stays.
+    put32(4, 0x43u << 8);
+    put32(8, 0x9Cu << 8);
+    patches::begin_frame(*m);
+    m->level_seen_frame = ~0ull;
+    patches::begin_frame(*m);
+    CHECK(!m->wide_active);
+    CHECK(!m->clip_overridden);
+    CHECK_EQ(left(), 0);
+    CHECK_EQ(right(), 320);
+    CHECK_EQ(read32(clip + 4), 0x43u << 8);
+    CHECK_EQ(read32(clip + 8), 0x9Cu << 8);
 }
 
 TEST(widescreen_render, extra_rows_display_shadow_sprites_including_centre) {
