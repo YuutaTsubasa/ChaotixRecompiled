@@ -203,6 +203,16 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
 }
 
+// The level rectangle as it is now (top is never changed by the patches).
+struct ClipRect { int16_t left, right; uint32_t bottom; };
+ClipRect read_clip(const Machine& m) {
+    const uint8_t* p = m.sdram + kClipRectSdram;
+    return {int16_t((p[0] << 8) | p[1]), int16_t((p[2] << 8) | p[3]),
+            uint32_t(p[8]) << 24 | uint32_t(p[9]) << 16 | uint32_t(p[10]) << 8 | p[11]};
+}
+// The widest the level clip gets on a side: kMaxWideExtra in steps of 8.
+constexpr int kMaxWideClip = (kMaxWideExtra + 7) & ~7;
+
 void write_clip(Machine& m, int16_t left, int16_t right, uint32_t bottom) {
     uint8_t* p = m.sdram + kClipRectSdram;
     p[0] = uint8_t(uint16_t(left) >> 8);
@@ -761,6 +771,19 @@ void begin_frame(Machine& m) {
     }
     if (level && in_lobby(m)) lobby_margins(m, e);
     else m.lobby_alt = false;
+    // Only the screen's own bounds are widened, and only those are put back.
+    // A scene can narrow the rectangle itself: AMAZING ARENA's boss closes it
+    // from the top and bottom into a letterbox and opens it again (issue
+    // #147). Those bounds are the game's and stay, whether widescreen is on
+    // or turned off meanwhile; overwritten, the 32X drew what the letterbox
+    // hides, and the SH-2 hung drawing it.
+    const ClipRect now = read_clip(m);
+    const bool ours_x = now.left <= 0 && now.left >= -kMaxWideClip && now.left % 8 == 0 &&
+                        now.right >= 320 && now.right <= 320 + kMaxWideClip && now.right % 8 == 0;
+    // The SH-2 blitters compare vertical bounds in 24.8 fixed point.
+    const bool ours_bottom = now.bottom >= uint32_t(kActiveLines - 1) << 8 &&
+                             now.bottom <= uint32_t(kActiveLines - 1 + kMaxWideExtraBottom) << 8 &&
+                             (now.bottom & 0xFF) == 0;
     if (level) {
         // The blitters write 16-bit words at clip-aligned addresses: an odd
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
@@ -772,16 +795,17 @@ void begin_frame(Machine& m) {
         // or more late.
         const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;
         const int cr = in_lobby(m) ? (e - m.lobby_cut_right + 7) & ~7 : ce;
-        // The SH-2 blitters compare vertical bounds in 24.8 fixed point.
-        write_clip(m, int16_t(-cl), int16_t(320 + cr),
-                   uint32_t(kActiveLines - 1 + eb) << 8);
+        write_clip(m, ours_x ? int16_t(-cl) : now.left, ours_x ? int16_t(320 + cr) : now.right,
+                   ours_bottom ? uint32_t(kActiveLines - 1 + eb) << 8 : now.bottom);
         m.clip_overridden = true;
     } else if (m.clip_overridden) {
-        // Restore the native rectangle from the SDRAM image in the ROM.
+        // Put the native bounds back from the SDRAM image in the ROM, where
+        // they are still the patch's.
         const uint8_t* r = m.rom.data.data() + kClipRectRom;
         const uint32_t bottom = (uint32_t(r[8]) << 24) | (uint32_t(r[9]) << 16) |
                                 (uint32_t(r[10]) << 8) | r[11];
-        write_clip(m, int16_t((r[0] << 8) | r[1]), int16_t((r[2] << 8) | r[3]), bottom);
+        write_clip(m, ours_x ? int16_t((r[0] << 8) | r[1]) : now.left,
+                   ours_x ? int16_t((r[2] << 8) | r[3]) : now.right, ours_bottom ? bottom : now.bottom);
         m.clip_overridden = false;
     }
     // The HUD keeps to the left edge of what the margin shows of the level.

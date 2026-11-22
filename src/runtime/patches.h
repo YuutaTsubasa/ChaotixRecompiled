@@ -191,6 +191,9 @@ constexpr bool is_sh2_hook(uint32_t pc) {
 // (x < 0 at the end of the previous line). Some zones keep data in that
 // padding, so those writes are redirected to a host-side shadow
 // (Machine::fb_margin) that the compositor reads for the margins.
+// Only the screen's own bounds are widened (issue #147): a scene may narrow
+// the rectangle itself (AMAZING ARENA's boss letterboxes its entrance), and
+// what it then hides includes a sprite the clipping blitter cannot draw.
 constexpr uint32_t kClipRectSdram = 0x3834;
 // Level frame buffer layout (line table: line y at byte 0x200 + y * 0x200).
 constexpr uint32_t kFbLineBase = 0x200;
