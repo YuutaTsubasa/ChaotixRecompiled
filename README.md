@@ -34,7 +34,9 @@ unmodified game, which is checked by a test. The title screen's horizon fills
 the sides too ([issue #77](docs/ISSUE_77_WIDE_TITLE.md)), and so does the rock
 behind DATA LOAD, TRAINING, PLAY STYLE and PLAYER SELECT
 ([issue #135](docs/ISSUE_135_WIDE_MENUS.md)); other scenes outside levels stay
-4:3.
+4:3. Where a level narrows the 32X picture itself, as AMAZING ARENA's boss
+does for its entrance, the game's own bounds are kept
+([issue #147](docs/ISSUE_147_ARENA_BOSS.md)).
 
 | Platform | State |
 |---|---|
@@ -721,8 +723,10 @@ people below. Thank you all: every report here led to a fix or a feature.
   [#33](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/33),
   [#35](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/35)).
 - **[mechasalesman](https://github.com/mechasalesman)**: widescreen in the
-  lobby, and cheats ([#13](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/13),
-  [#20](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/20)).
+  lobby, cheats, and AMAZING ARENA's boss freezing in widescreen
+  ([#13](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/13),
+  [#20](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/20),
+  [#147](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/147)).
 - **[Abdouxgo](https://github.com/Abdouxgo)**: 32-bit Android, the icon
   suggestion, and replaced music starting over when the game asks for it again
   ([#19](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/19),

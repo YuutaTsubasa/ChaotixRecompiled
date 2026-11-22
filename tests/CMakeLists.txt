@@ -390,6 +390,22 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --press 1600:right:300 --press 1700:c:10 --press 2000:left:200 --press 2300:c:10)
     set_tests_properties(lockstep_final_boss_widescreen PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
+    # Issue #147: AMAZING ARENA 5's boss, widescreen. The goal is reached with
+    # the lights on (FFC21D bit 5; the switch is somewhere in the level) by
+    # putting both characters by the goal (player $FFAD48, partner $FFAE08,
+    # +8 X, +C Y). The boss closes the 32X clip into a letterbox for its
+    # entrance; widened, it showed a sprite the letterbox hides, the SH-2
+    # hung drawing it, and nothing moved again. The boss ($FF8040, +$24) is
+    # at its fight's step $0210 by frame 3200, as in 4:3.
+    add_test(NAME widescreen_amazing_arena_boss_fights
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3200 --wide 53
+                --level-select --stage 300:2:5:0:2:7:0
+                --poke 1500:C21D:20
+                --poke 1500:AD50:0E --poke 1500:AD51:80 --poke 1500:AD54:01 --poke 1500:AD55:00
+                --poke 1500:AE10:0E --poke 1500:AE11:60 --poke 1500:AE14:01 --poke 1500:AE15:00
+                --peek-every 3200:8064:2)
+    set_tests_properties(widescreen_amazing_arena_boss_fights PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
     # ...but not the ending's scenes (levels 3-6): their sprites are staged
     # for the 4:3 screen, and widened their left margin was black (left of the
     # layout) beside a white picture. No margins at all.

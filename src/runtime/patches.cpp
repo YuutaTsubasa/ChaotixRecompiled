@@ -203,6 +203,16 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     }
 }
 
+// The level rectangle as it is now (top is never changed by the patches).
+struct ClipRect { int16_t left, right; uint32_t bottom; };
+ClipRect read_clip(const Machine& m) {
+    const uint8_t* p = m.sdram + kClipRectSdram;
+    return {int16_t((p[0] << 8) | p[1]), int16_t((p[2] << 8) | p[3]),
+            uint32_t(p[8]) << 24 | uint32_t(p[9]) << 16 | uint32_t(p[10]) << 8 | p[11]};
+}
+// The widest the level clip gets on a side: kMaxWideExtra in steps of 8.
+constexpr int kMaxWideClip = (kMaxWideExtra + 7) & ~7;
+
 void write_clip(Machine& m, int16_t left, int16_t right, uint32_t bottom) {
     uint8_t* p = m.sdram + kClipRectSdram;
     p[0] = uint8_t(uint16_t(left) >> 8);
@@ -772,9 +782,21 @@ void begin_frame(Machine& m) {
         // or more late.
         const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;
         const int cr = in_lobby(m) ? (e - m.lobby_cut_right + 7) & ~7 : ce;
+        // Only the screen's own bounds are widened. A scene can narrow the
+        // rectangle itself: AMAZING ARENA's boss closes it from the top and
+        // bottom into a letterbox and opens it again (issue #147). Those
+        // bounds are the game's and stay; widening them showed what the
+        // letterbox hides, and the SH-2 hung drawing it.
+        const ClipRect now = read_clip(m);
+        const bool ours_x = now.left <= 0 && now.left >= -kMaxWideClip && now.left % 8 == 0 &&
+                            now.right >= 320 && now.right <= 320 + kMaxWideClip && now.right % 8 == 0;
         // The SH-2 blitters compare vertical bounds in 24.8 fixed point.
-        write_clip(m, int16_t(-cl), int16_t(320 + cr),
-                   uint32_t(kActiveLines - 1 + eb) << 8);
+        const uint32_t native_bottom = uint32_t(kActiveLines - 1) << 8;
+        const bool ours_bottom = now.bottom >= native_bottom &&
+                                 now.bottom <= uint32_t(kActiveLines - 1 + kMaxWideExtraBottom) << 8 &&
+                                 (now.bottom & 0xFF) == 0;
+        write_clip(m, ours_x ? int16_t(-cl) : now.left, ours_x ? int16_t(320 + cr) : now.right,
+                   ours_bottom ? uint32_t(kActiveLines - 1 + eb) << 8 : now.bottom);
         m.clip_overridden = true;
     } else if (m.clip_overridden) {
         // Restore the native rectangle from the SDRAM image in the ROM.

@@ -85,6 +85,50 @@ TEST(widescreen_render, bottom_clip_tracks_extra_rows_in_fixed_point_and_restore
     CHECK(std::equal(std::begin(native_clip), std::end(native_clip), clip));
 }
 
+TEST(widescreen_render, a_letterbox_the_game_sets_keeps_its_bounds) {
+    // Issue #147: AMAZING ARENA's boss closes the clip into a letterbox (top
+    // and bottom move in, left and right stay 0 and 320) and opens it again.
+    // The sides are still widened; the top and bottom are the game's.
+    auto m = level_machine();
+    auto* clip = m->sdram + patches::kClipRectSdram;
+    auto put32 = [&](int at, uint32_t v) {
+        for (int i = 0; i < 4; ++i) clip[at + i] = uint8_t(v >> (24 - 8 * i));
+    };
+    auto put16 = [&](int at, int16_t v) { clip[at] = uint8_t(uint16_t(v) >> 8); clip[at + 1] = uint8_t(v); };
+    auto left = [&] { return int16_t(clip[0] << 8 | clip[1]); };
+    auto right = [&] { return int16_t(clip[2] << 8 | clip[3]); };
+    // The game's letterbox, as measured: 0, 320, 0x43 << 8, 0x9C << 8.
+    put16(0, 0);
+    put16(2, 320);
+    put32(4, 0x43u << 8);
+    put32(8, 0x9Cu << 8);
+    patches::begin_frame(*m);
+    CHECK(m->wide_active);
+    CHECK_EQ(left(), -56);
+    CHECK_EQ(right(), 376);
+    CHECK_EQ(read32(clip + 4), 0x43u << 8);
+    CHECK_EQ(read32(clip + 8), 0x9Cu << 8);
+    // Next frame, with the patch's own sides in place: the bottom still stays.
+    patches::begin_frame(*m);
+    CHECK_EQ(read32(clip + 8), 0x9Cu << 8);
+    // Opened again to the screen's bottom: the extra rows are added back.
+    put32(4, 0);
+    put32(8, 223u << 8);
+    patches::begin_frame(*m);
+    CHECK_EQ(read32(clip + 8), 239u << 8);
+    // Sides the game narrows itself are left as they are too.
+    put16(0, 32);
+    put16(2, 288);
+    patches::begin_frame(*m);
+    CHECK_EQ(left(), 32);
+    CHECK_EQ(right(), 288);
+    put16(0, 0);
+    put16(2, 320);
+    patches::begin_frame(*m);
+    CHECK_EQ(left(), -56);
+    CHECK_EQ(right(), 376);
+}
+
 TEST(widescreen_render, extra_rows_display_shadow_sprites_including_centre) {
     auto m = level_machine();
     std::memset(m->fb_margin, 0, sizeof m->fb_margin);
