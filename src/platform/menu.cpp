@@ -987,6 +987,9 @@ void Menu::build_extras() {
     items_.push_back({"CHEATS", [c] { return c->cheats.empty() && c->cheat_codes.empty() ? std::string("OFF") : std::string("ON"); },
                       [this](int step) { if (step == 0) set_page(Page::Cheats); }});
     items_.back().pressed = true;
+    items_.push_back({"CHAOS FORMS", [c] { return on_off(c->chaos_forms); },
+                      [c](int s) { if (s) c->chaos_forms = !c->chaos_forms; },
+                      "6 Chaos Rings, 50 rings, jump in the air"});
     // Issue #44: a page of its own, as CHEATS is, so this one stays short.
     items_.push_back({"LOBBY SHORTCUTS", [c] { return on_off(c->lobby_shortcuts); },
                       [this](int step) { if (step == 0) set_page(Page::Lobby); },

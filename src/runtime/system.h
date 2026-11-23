@@ -241,6 +241,15 @@ public:
     // Latched by the SOLO partner's hook: CALL brought the partner back, so
     // it stays until the next scene. In save states.
     bool tether_called = false;
+    // Chaos Forms (runtime/chaos_forms.h). `chaos_forms` is a setting the app
+    // gives before every frame (off: the original game); the rest is the
+    // form's own bookkeeping and is in save states. `chaos_pal` is output
+    // only: the palette render_line32x shows while a form is on.
+    bool chaos_forms = false;
+    bool chaos_jump_prev = false;
+    uint8_t chaos_drain = 0;
+    uint16_t chaos_last_tick = 0;
+    uint16_t chaos_pal[256] = {};
     // FOLLOW's note of where the player stood before the game put one of the
     // two back on the tether's circle; used and dropped by the next
     // instruction's hook, within the same routine, so never in a save state.

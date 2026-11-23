@@ -9,6 +9,22 @@
 
 using namespace chaotix;
 
+TEST(cheats, chaos_rings_only_raises_the_count) {
+    const cheats::Cheat* chaos = nullptr;
+    for (const auto& c : cheats::builtin())
+        if (std::string(c.key) == "chaosrings") chaos = &c;
+    CHECK(chaos != nullptr);
+    if (!chaos) return;
+    auto m = std::make_unique<Machine>();
+    m->wram[0xE01A] = 0;
+    m->wram[0xE01B] = 2;
+    cheats::apply(*m, chaos->writes);
+    CHECK_EQ(int(m->wram[0xE01B]), 6);  // raised to all six
+    m->wram[0xE01B] = 9;
+    cheats::apply(*m, chaos->writes);
+    CHECK_EQ(int(m->wram[0xE01B]), 9);  // never lowered
+}
+
 TEST(cheats, parses_action_replay_codes) {
     std::vector<cheats::Write> w;
     CHECK(cheats::parse_codes("FFE009:63", w));

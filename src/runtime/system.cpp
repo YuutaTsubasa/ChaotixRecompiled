@@ -2,6 +2,7 @@
 #include "log.h"
 #include "cpu/m68k/m68k_interp.h"
 #include "runtime/patches.h"
+#include "runtime/chaos_forms.h"
 #include "runtime/divide.h"
 #include "audio/gain_ramp.h"
 #include "cpu/sh2/sh2_interp.h"
@@ -508,6 +509,7 @@ void machine_sh2_hook(sh2::State* c, uint32_t pc) {
 } // namespace
 
 void Machine::run_frame() {
+    chaos_forms::begin_frame(*this);
     patches::begin_frame(*this);
     // The sprite recorder's hooks, on the master SH-2 (the only one that
     // draws). Set every frame: a copy of a machine shares the recorder but

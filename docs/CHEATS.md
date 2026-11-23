@@ -22,6 +22,7 @@ OPTIONS > EXTRAS > CHEATS switches the built-in ones on and off:
 | --- | --- | --- | --- |
 | `rings` | 99 RINGS | the ring count stays at 99 (`FFE009:63`) | the HUD and RAM read 99 throughout a level |
 | `speed` | SPEED SHOES | both characters keep speed shoes (`FFADFC:01`, `FFAEBC:01`) | holding right in BOTANIC BASE 1 takes the camera over 100 px further than without |
+| `chaosrings` | ALL CHAOS RINGS | you hold all six Chaos Rings (`FFE01B` raised to 6, never lowered) | with `ChaosForms` on, 50 rings and a jump in the air transform both characters |
 
 Any other codes go in `Config/chaotix.ini`:
 

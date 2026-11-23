@@ -1086,6 +1086,10 @@ void apply_tether(App& app) {
     app.recorded_tether.push_back({app.m->frame_count, strength, partner});
 }
 
+// Chaos Forms (runtime/chaos_forms.h): the setting, given before each frame.
+// Off for TIME ATTACK runs, whose times and ghosts compare like with like.
+void apply_chaos_forms(App& app) { app.m->chaos_forms = app.cfg.chaos_forms && !app.ta.running; }
+
 // Settings and the cartridge save, written now. Android ends an app without
 // a quit event when it is swiped away, so waiting for the exit lost every
 // setting there (issue #26): this runs whenever the menu closes and whenever
@@ -3185,6 +3189,7 @@ int main(int argc, char** argv) {
             apply_cheats(app);
             apply_lobby_shortcuts(app);
             apply_tether(app);
+            apply_chaos_forms(app);
             apply_title_hold(app);
             audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
                                                float(app.cfg.effects_volume) / 100.0f);

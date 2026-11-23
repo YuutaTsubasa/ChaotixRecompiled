@@ -438,6 +438,15 @@ SOLO. TIME ATTACK always plays the original tether, and achievements are not
 earned while any of these is changed (NONE included). See
 [docs/RING_TETHER.md](docs/RING_TETHER.md) for how the tether works.
 
+## Chaos Forms
+
+With all six Chaos Rings, 50 rings and a jump pressed again in the air, both
+characters turn into their Chaos Forms: invincibility and speed shoes together,
+no music, a pulsing new palette, and one ring lost every second until none are
+left. OPTIONS > EXTRAS > CHAOS FORMS turns it off. See
+[docs/CHAOS_FORMS.md](docs/CHAOS_FORMS.md); the ALL CHAOS RINGS cheat is in
+OPTIONS > EXTRAS > CHEATS.
+
 ## Netplay (online two-player)
 
 NETPLAY on the front menu plays the game's two-player mode with a friend on

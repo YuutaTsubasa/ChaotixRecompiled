@@ -22,6 +22,9 @@ namespace chaotix::cheats {
 struct Write {
     uint16_t addr;
     uint8_t value;
+    // false: the byte is set to `value`. true: it is only raised to it, so a
+    // count that is already higher (Chaos Rings go on to 11) is left alone.
+    bool at_least = false;
 };
 
 struct Cheat {

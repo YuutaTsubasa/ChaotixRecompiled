@@ -201,6 +201,7 @@ bool Config::load(const std::string& path) {
             else if (k.rfind("Pad.", 0) == 0) pads[k.substr(4)] = v;
         } else if (section == "Extras") {
             if (k == "Rewind") rewind = parse_bool(v, rewind);
+            else if (k == "ChaosForms") chaos_forms = parse_bool(v, chaos_forms);
             else if (k == "StateSlot") state_slot = std::clamp(std::atoi(v.c_str()), 1, kStateSlots);
         } else if (section == "Lobby") {
             if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
@@ -309,7 +310,7 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "ModMusicVolume = %d\n", mod_music_volume);
     std::fprintf(f, "# The game's music and its sound effects, in percent of Volume\n");
     std::fprintf(f, "MusicVolume = %d\nEffectsVolume = %d\n\n", music_volume, effects_volume);
-    std::fprintf(f, "[Cheats]\n# Built-in: rings, speed (also in OPTIONS > CHEATS). Codes: Action Replay codes,\n");
+    std::fprintf(f, "[Cheats]\n# Built-in: rings, speed, chaosrings (also in OPTIONS > CHEATS). Codes: Action Replay codes,\n");
     std::fprintf(f, "# e.g. FFE009:63 + FFADFC:01. Awards and time attack records are not earned with any on.\n");
     std::string enabled;
     for (const auto& k : cheats) enabled += (enabled.empty() ? "" : ", ") + k;
@@ -359,6 +360,7 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Rewind = %s\n# The save state slot quick save and quick load use, 1-%d (States/ in this folder)\n",
                  rewind ? "true" : "false", kStateSlots);
     std::fprintf(f, "StateSlot = %d\n", state_slot);
+    std::fprintf(f, "# Chaos Forms: all six Chaos Rings, 50 rings, then jump again in the air (not in TIME ATTACK).\nChaosForms = %s\n", chaos_forms ? "true" : "false");
     std::fprintf(f, "\n[Lobby]\n# Story mode: choose the partner and the time of day instead of the Combi Catcher and the clock.\n");
     std::fprintf(f, "# Partner: -1 the catcher's, else 0 Mighty 2 Knuckles 3 Charmy 4 Vector 5 Bomb 6 Heavy 7 Espio;\n");
     std::fprintf(f, "# -2 none (the attractions played as with [Tether] Partner = Solo, whatever that says).\n");

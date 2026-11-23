@@ -43,7 +43,7 @@ class Machine;
 namespace savestate {
 
 // Bumped whenever the raw layout changes (a field added, moved or removed).
-constexpr uint32_t kFormatVersion = 2;  // 2: tether_called (issue #43)
+constexpr uint32_t kFormatVersion = 3;  // 2: tether_called (issue #43); 3: Chaos Forms
 
 // The output picture (framebuffer) is optional: a file keeps it so the
 // game is on screen at once after a load; rewind snapshots leave it out and

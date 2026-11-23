@@ -448,6 +448,7 @@ int main(int argc, char** argv) {
     std::string mods_dir;
     mod_packs::Order mods_order;
     std::vector<cheats::Write> cheat_writes;  // --cheat, set before every frame
+    bool chaos_forms = false;                  // --chaos: Chaos Forms on (runtime/chaos_forms.h)
     uint64_t wide_live_frames = 0;
     int wide_stretches = 0;
     // The way into the special stage, shown wide (issue #91).
@@ -705,6 +706,7 @@ int main(int argc, char** argv) {
             want_sprites = true;
             for (auto& s : split(next(), ',')) sprites_log.insert(std::strtoull(s.c_str(), nullptr, 10));
         }
+        else if (a == "--chaos") chaos_forms = true;
         else if (a == "--cheat") {
             // A built-in cheat by its key, or Action Replay codes.
             const std::string c = next();
@@ -1462,6 +1464,8 @@ int main(int argc, char** argv) {
             }
         cheats::apply(*m, cheat_writes);
         if (ref) cheats::apply(*ref, cheat_writes);
+        m->chaos_forms = chaos_forms;
+        if (ref) ref->chaos_forms = chaos_forms;
         {
             auto th = title_hold_events.find(f);
             if (th != title_hold_events.end()) title_holding = th->second;
