@@ -225,10 +225,19 @@ void begin_frame(Machine& m) {
         if (jump) m.input.pad[0] &= uint16_t(~PAD_C);
         else m.chaos_drain &= kDrainMask;
     }
-    if (!m.chaos_forms || !in_level(m)) return;
+    if (!in_level(m)) return;
 
     const uint16_t ps = status_of(m, 0), qs = status_of(m, 1);
     if (!ps) return;
+    if (!m.chaos_forms) {
+        // Turned off (OPTIONS > EXTRAS > MODS, or a TIME ATTACK run) in the
+        // middle of a form: it ends at once, or it would run on for minutes
+        // with awards and records no longer paused. A monitor's timers are
+        // under kMark and are left alone.
+        release(m, ps);
+        if (qs) release(m, qs);
+        return;
+    }
     int rings = int16_t(rd16(m, kRings));
 
     if (level_over(m)) {
