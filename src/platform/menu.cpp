@@ -111,8 +111,15 @@ void Menu::set_page(Page p) {
     else if (p == Page::Netplay) build_netplay();
     else if (p == Page::Mods) {
         build_mods();
-        // Back from a pack's page: on that pack again.
-        if (from == Page::ModInfo && mod_index_ < items_.size()) selected_ = int(mod_index_);
+        // Back from a pack's page: on that pack again. The built-in mods are
+        // one row further down, under their heading.
+        const std::vector<mod_packs::Pack>* list = packs();
+        if (from == Page::ModInfo && list && mod_index_ < list->size()) {
+            const size_t row = mod_index_ + ((*list)[mod_index_].builtin ? 1 : 0);
+            if (row < items_.size()) selected_ = int(row);
+        }
+        // Never on a heading: with no packs the page starts with BUILT-IN MODS.
+        while (selected_ + 1 < int(items_.size()) && items_[size_t(selected_)].read_only) ++selected_;
     } else if (p == Page::ModInfo) build_mod_info();
     else if (p == Page::Music) {
         // Back to where it was opened from: the front end or SOUND.

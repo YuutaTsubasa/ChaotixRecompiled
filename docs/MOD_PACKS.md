@@ -114,6 +114,8 @@ they replace nothing a pack does.
 | --- | --- | --- |
 | Chaos Forms | [mechasalesman](https://github.com/mechasalesman) | super forms with all six Chaos Rings ([CHAOS_FORMS.md](CHAOS_FORMS.md)) |
 
+![BUILT-IN MODS on OPTIONS > EXTRAS > MODS](images/issue-146-built-in-mods.png)
+
 The ones turned on are kept by id:
 
 ```ini

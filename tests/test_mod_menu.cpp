@@ -180,6 +180,30 @@ TEST(mod_menu, built_in_mods_are_listed_with_their_author_and_kept) {
     CHECK(!mod_packs::builtin_enabled(c.mod_order, mod_packs::kChaosForms));
 }
 
+TEST(mod_menu, with_only_built_in_mods_the_page_starts_on_one) {
+    // Issue #146: with no packs the page starts with the BUILT-IN MODS
+    // heading, which is never the selection; back from a built-in mod's page
+    // the selection is on that mod again, below the heading.
+    Config cfg;
+    cfg.set_defaults();
+    std::vector<mod_packs::Pack> packs = mod_packs::with_builtins({}, cfg.mod_order);
+    Menu m;
+    m.bind(cfg);
+    Menu::Hooks h;
+    h.mod_packs = [&packs] { return &packs; };
+    m.set_hooks(std::move(h));
+    CHECK(m.show_page("mods"));
+    CHECK_STR(m.selected_label(), "CHAOS FORMS");
+    m.on_key(SDLK_RIGHT);
+    CHECK_STR(m.selected_value(), "ON");
+    m.on_key(SDLK_RETURN);
+    CHECK_STR(m.page_name(), "modinfo");
+    CHECK(select_label(m, "BACK"));
+    m.on_key(SDLK_RETURN);
+    CHECK_STR(m.page_name(), "mods");
+    CHECK_STR(m.selected_label(), "CHAOS FORMS");
+}
+
 TEST(mod_menu, no_packs_says_so) {
     Config cfg;
     cfg.set_defaults();

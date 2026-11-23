@@ -6,6 +6,10 @@ working patch in [issue #146](https://github.com/YuutaTsubasa/ChaotixRecompiled/
 (Archie's "Chaos Knuckles" is the model). Off until turned on in
 OPTIONS > EXTRAS > MODS, under BUILT-IN MODS (see MOD_PACKS.md).
 
+![Chaos Forms in BOTANIC BASE 1](images/issue-146-chaos-forms-in-play.png)
+
+![Its page under OPTIONS > EXTRAS > MODS](images/issue-146-chaos-forms-page.png)
+
 ## How to transform
 
 1. Hold all six Chaos Rings (win the six special stages, or use the
