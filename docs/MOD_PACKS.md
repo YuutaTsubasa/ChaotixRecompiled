@@ -100,6 +100,34 @@ setting for when it comes back. A config from before packs has none of these
 keys: every pack is on, and the loose files are on. Folder names containing
 commas cannot be listed; avoid them.
 
+### Built-in mods
+
+Issue #146. Some mods change the game's code rather than its files, so they
+cannot be packs. When their authors agree, they come with the game instead:
+listed at the end of the same page under **BUILT-IN MODS**, each with its
+author's name, and **off until turned on**. They are switched like packs
+(Left / Right, or ENABLED on their page), which also says who made them and
+links to where they were proposed; they have no place in the order, since
+they replace nothing a pack does.
+
+| Mod | Author | What it does |
+| --- | --- | --- |
+| Chaos Forms | [mechasalesman](https://github.com/mechasalesman) | super forms with all six Chaos Rings ([CHAOS_FORMS.md](CHAOS_FORMS.md)) |
+
+![BUILT-IN MODS on OPTIONS > EXTRAS > MODS](images/issue-146-built-in-mods.png)
+
+The ones turned on are kept by id:
+
+```ini
+[Mods]
+BuiltIn = chaos_forms
+```
+
+A built-in mod that changes how the game plays pauses awards and speedrun
+bests while it is on, as cheats do, is off in TIME ATTACK, and in netplay
+follows the host's setting. A new one is added to `mod_packs::builtins()`
+with its author, and stays off by default.
+
 ## When two packs replace the same thing
 
 The higher pack in the list wins, for every kind:

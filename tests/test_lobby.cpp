@@ -121,3 +121,21 @@ TEST(lobby, none_keeps_the_game_partner_and_travels_to_a_netplay_guest) {
     CHECK_EQ(g->lobby_partner, lobby::kPartnerNone);
     CHECK_EQ(int(g->tether_partner), 2);
 }
+
+TEST(lobby, chaos_forms_travel_to_a_netplay_guest) {
+    // Issue #146: Chaos Forms change the game, so a guest plays with the
+    // host's setting; a host from before them sends none, which is off.
+    auto m = std::make_unique<Machine>();
+    m->chaos_forms = true;
+    net::NetSettings guest;
+    std::string why;
+    CHECK(guest.decode(net::NetSettings::of(*m).encode(), &why));
+    CHECK(guest.chaos_forms);
+    auto g = std::make_unique<Machine>();
+    guest.apply(*g);
+    CHECK(g->chaos_forms);
+    std::string old = net::NetSettings::of(*m).encode();
+    old = old.substr(0, old.find(";chaos="));
+    CHECK(guest.decode(old, &why));
+    CHECK(!guest.chaos_forms);
+}

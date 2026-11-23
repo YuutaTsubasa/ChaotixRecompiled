@@ -1,5 +1,6 @@
 #include "game/cheats.h"
 #include "game/recomp_dispatch.h"
+#include "runtime/chaos_forms.h"
 #include "runtime/patches.h"
 #include "runtime/system.h"
 #include "test_framework.h"
@@ -8,6 +9,22 @@
 #include <vector>
 
 using namespace chaotix;
+
+TEST(cheats, chaos_rings_only_raises_the_count) {
+    const cheats::Cheat* chaos = nullptr;
+    for (const auto& c : cheats::builtin())
+        if (std::string(c.key) == "chaosrings") chaos = &c;
+    CHECK(chaos != nullptr);
+    if (!chaos) return;
+    auto m = std::make_unique<Machine>();
+    m->wram[0xE01A] = 0;
+    m->wram[0xE01B] = 2;
+    cheats::apply(*m, chaos->writes);
+    CHECK_EQ(int(m->wram[0xE01B]), 6);  // raised to all six
+    m->wram[0xE01B] = 9;
+    cheats::apply(*m, chaos->writes);
+    CHECK_EQ(int(m->wram[0xE01B]), 9);  // never lowered
+}
 
 TEST(cheats, parses_action_replay_codes) {
     std::vector<cheats::Write> w;
@@ -71,3 +88,52 @@ TEST(cheats, speed_shoes_and_rings_work_with_local_rom) {
     CHECK_EQ(rings_with, 99);
 }
 #endif
+
+TEST(cheats, chaos_forms_end_at_once_when_turned_off) {
+    // Issue #146 (Codex review): a form must not outlive the setting, or it
+    // would run on with awards and records no longer paused. A monitor's
+    // timers (under kMark) are the game's and stay.
+    auto m = std::make_unique<Machine>();
+    auto w16 = [&](uint32_t a, uint16_t v) { m->wram[a] = uint8_t(v >> 8); m->wram[a + 1] = uint8_t(v); };
+    auto r16 = [&](uint32_t a) { return uint16_t(m->wram[a] << 8 | m->wram[a + 1]); };
+    w16(0xDFDE, 0x18);   // a level
+    w16(0xDFF2, 0);      // BOTANIC BASE
+    w16(0xE034, 0xAD48); // the player's object
+    w16(0xE036, 0xAE08); // the partner's
+    w16(0xAD48 + 0x3A, 0xB000);
+    w16(0xAE08 + 0x3A, 0xB040);
+    w16(0xB000 + 0x32, 0x7000);  // the player in a form
+    w16(0xB000 + 0x34, 0x7000);
+    w16(0xB040 + 0x32, 0x0300);  // the partner with a monitor's invincibility
+    m->chaos_forms = true;
+    m->wram[0xE009] = 60;
+    chaos_forms::begin_frame(*m);
+    CHECK(chaos_forms::active(*m, 0));
+    CHECK(chaos_forms::active(*m, 1));  // the partner is held in the form too
+    w16(0xB040 + 0x32, 0x0300);         // say the partner only had a monitor's
+    m->chaos_forms = false;
+    chaos_forms::begin_frame(*m);
+    CHECK(!chaos_forms::active(*m, 0));
+    // The partner's monitor was running when the form began, so its music is
+    // on: the form's timers end at 1, for the game to run them out itself
+    // the next frame and ask for the level's music again.
+    CHECK_EQ(int(r16(0xB000 + 0x32)), 1);
+    CHECK_EQ(int(r16(0xB000 + 0x34)), 1);
+    CHECK_EQ(int(r16(0xB040 + 0x32)), 0x0300);
+
+    // No monitor at all: the timers are cleared, and the music left alone.
+    // (The game would have run the 1s above out by now; no game runs here.)
+    w16(0xB040 + 0x32, 0);
+    w16(0xB040 + 0x34, 0);
+    w16(0xB000 + 0x32, 0x7000);
+    w16(0xB000 + 0x34, 0x7000);
+    m->chaos_drain = 0x80;  // as a transformation leaves it
+    m->chaos_forms = true;
+    chaos_forms::begin_frame(*m);
+    CHECK(chaos_forms::active(*m, 1));
+    m->chaos_forms = false;
+    chaos_forms::begin_frame(*m);
+    CHECK_EQ(int(r16(0xB000 + 0x32)), 0);
+    CHECK_EQ(int(r16(0xB000 + 0x34)), 0);
+    CHECK_EQ(int(r16(0xB040 + 0x32)), 0);
+}

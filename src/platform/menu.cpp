@@ -111,8 +111,15 @@ void Menu::set_page(Page p) {
     else if (p == Page::Netplay) build_netplay();
     else if (p == Page::Mods) {
         build_mods();
-        // Back from a pack's page: on that pack again.
-        if (from == Page::ModInfo && mod_index_ < items_.size()) selected_ = int(mod_index_);
+        // Back from a pack's page: on that pack again. The built-in mods are
+        // one row further down, under their heading.
+        const std::vector<mod_packs::Pack>* list = packs();
+        if (from == Page::ModInfo && list && mod_index_ < list->size()) {
+            const size_t row = mod_index_ + ((*list)[mod_index_].builtin ? 1 : 0);
+            if (row < items_.size()) selected_ = int(row);
+        }
+        // Never on a heading: with no packs the page starts with BUILT-IN MODS.
+        while (selected_ + 1 < int(items_.size()) && items_[size_t(selected_)].read_only) ++selected_;
     } else if (p == Page::ModInfo) build_mod_info();
     else if (p == Page::Music) {
         // Back to where it was opened from: the front end or SOUND.
@@ -1389,6 +1396,13 @@ void Menu::build_mods() {
     if (std::vector<mod_packs::Pack>* list = packs()) {
         for (size_t i = 0; i < list->size(); ++i) {
             const mod_packs::Pack& p = (*list)[i];
+            // Issue #146: the mods that come with the game, after the packs,
+            // under a heading of their own.
+            if (p.builtin && (i == 0 || !(*list)[i - 1].builtin)) {
+                Item head{"BUILT-IN MODS", {}, {}, "by the community, off until turned on"};
+                head.read_only = true;
+                items_.push_back(std::move(head));
+            }
             Item it{upper(p.title()),
                     [this, i] {
                         const std::vector<mod_packs::Pack>* l = packs();
@@ -1407,7 +1421,10 @@ void Menu::build_mods() {
                         if (hooks_.mods_changed) hooks_.mods_changed();
                         refresh();
                     },
-                    p.loose ? std::string("your own files") : p.too_new ? std::string("NEEDS A NEWER GAME") : p.info.version};
+                    p.loose ? std::string("your own files")
+                    : p.builtin ? "by " + p.info.author
+                    : p.too_new ? std::string("NEEDS A NEWER GAME")
+                                : p.info.version};
             // Enter opens the pack's page rather than switching it.
             it.pressed = true;
             items_.push_back(std::move(it));
@@ -1423,7 +1440,7 @@ void Menu::build_mods() {
                       },
                       restart ? "patches and stats: restart the game" : "read the Mods folder again"});
     const std::vector<mod_packs::Pack>* list = packs();
-    if (!list || list->empty()) {
+    if (!list || std::none_of(list->begin(), list->end(), [](const mod_packs::Pack& p) { return !p.builtin; })) {
         Item none{"NO MODS YET", {}, {}, "a folder per mod in Mods, see README"};
         none.read_only = true;
         items_.push_back(std::move(none));
@@ -1463,8 +1480,11 @@ void Menu::build_mod_info() {
         if (!p.info.url.empty()) info_lines_.push_back(p.info.url);
         if (!p.has_ini) info_lines_.push_back("(no mod.ini: named after its folder, " + p.id + ")");
     }
-    info_lines_.push_back("Has: " + pack_contents(p) + ". Place " + std::to_string(mod_index_ + 1) + " of " +
-                          std::to_string(list->size()) + ", the first winning.");
+    if (p.builtin)
+        info_lines_.push_back("Built into the game: a change to its code, not files. Off unless turned on here.");
+    else
+        info_lines_.push_back("Has: " + pack_contents(p) + ". Place " + std::to_string(mod_index_ + 1) + " of " +
+                              std::to_string(list->size()) + ", the first winning.");
     if (p.too_new) info_lines_.push_back("Made for version " + p.info.min_version + " or later; it may not work.");
     if (p.changes_game())
         info_lines_.push_back("Patches and character stats apply when the game is started again.");
@@ -1482,7 +1502,7 @@ void Menu::build_mod_info() {
                           mods_dirty_ = true;
                           if (hooks_.mods_changed) hooks_.mods_changed();
                       }});
-    if (!p.loose) {
+    if (!p.loose && !p.builtin) {
         auto mover = [this](int delta) {
             return [this, delta](int step) {
                 std::vector<mod_packs::Pack>* l = packs();

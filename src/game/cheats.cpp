@@ -1,6 +1,7 @@
 // See cheats.h.
 #include "game/cheats.h"
 #include "runtime/system.h"
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 
@@ -12,6 +13,10 @@ const std::vector<Cheat>& builtin() {
     static const std::vector<Cheat> kCheats = {
         {"rings", "99 RINGS", "the ring count stays at 99", {{0xE008, 0x00}, {0xE009, 0x63}}},
         {"speed", "SPEED SHOES", "both characters keep speed shoes", {{0xADFC, 0x01}, {0xAEBC, 0x01}}},
+        // The Chaos Rings held are the word at $FFE01A (special stages won, 6
+        // is all of them); the high byte is left as the game has it.
+        {"chaosrings", "ALL CHAOS RINGS", "you hold all six Chaos Rings",
+         {{0xE01B, 0x06, true}}},
     };
     return kCheats;
 }
@@ -55,7 +60,10 @@ bool parse_codes(const std::string& text, std::vector<Write>& out) {
 }
 
 void apply(Machine& m, const std::vector<Write>& writes) {
-    for (const Write& w : writes) m.wram[w.addr] = w.value;
+    for (const Write& w : writes) {
+        if (w.at_least) m.wram[w.addr] = std::max(m.wram[w.addr], w.value);
+        else m.wram[w.addr] = w.value;
+    }
 }
 
 } // namespace chaotix::cheats

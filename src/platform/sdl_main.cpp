@@ -1086,6 +1086,13 @@ void apply_tether(App& app) {
     app.recorded_tether.push_back({app.m->frame_count, strength, partner});
 }
 
+// Chaos Forms (runtime/chaos_forms.h, issue #146), a built-in mod: the
+// setting, given before each frame. Off for TIME ATTACK runs, whose times and
+// ghosts compare like with like.
+void apply_chaos_forms(App& app) {
+    app.m->chaos_forms = mod_packs::builtin_enabled(app.cfg.mod_order, mod_packs::kChaosForms) && !app.ta.running;
+}
+
 // Settings and the cartridge save, written now. Android ends an app without
 // a quit event when it is swiped away, so waiting for the exit lost every
 // setting there (issue #26): this runs whenever the menu closes and whenever
@@ -1455,8 +1462,9 @@ void speedrun_reset(App& app) {
 }
 
 void follow_speedrun(App& app) {
-    // A run with a cheat or a changed ring tether (issue #43) is not kept as a best.
-    const bool assisted = app.cheating || tether::any(*app.m);
+    // A run with a cheat, a changed ring tether (issue #43) or Chaos Forms on
+    // (issue #146) is not kept as a best.
+    const bool assisted = app.cheating || tether::any(*app.m) || app.m->chaos_forms;
     if (assisted) app.run.mark_cheated();
     const unsigned ev = app.run.update(*app.m, host_seconds());
     if (assisted) app.run.mark_cheated();
@@ -1812,8 +1820,8 @@ void load_touch_skin(App& app, const std::string& dir, const std::vector<std::st
 // list, and the order in the settings is brought up to date.
 void scan_packs(App& app) {
     std::vector<std::string> messages;
-    app.packs = mod_packs::arrange(mod_packs::discover(mods_root(app), savestate::game_version(), &messages),
-                                   app.cfg.mod_order);
+    app.packs = mod_packs::with_builtins(mod_packs::arrange(mod_packs::discover(mods_root(app), savestate::game_version(), &messages),
+                                   app.cfg.mod_order), app.cfg.mod_order);
     for (const auto& msg : messages) LOGW("mods", "%s", msg.c_str());
     mod_packs::remember(app.cfg.mod_order, app.packs);
     for (const auto& p : app.packs)
@@ -3185,6 +3193,7 @@ int main(int argc, char** argv) {
             apply_cheats(app);
             apply_lobby_shortcuts(app);
             apply_tether(app);
+            apply_chaos_forms(app);
             apply_title_hold(app);
             audio::set_music_and_effect_levels(*app.m, float(app.cfg.music_volume) / 100.0f,
                                                float(app.cfg.effects_volume) / 100.0f);
@@ -3221,7 +3230,7 @@ int main(int argc, char** argv) {
                 rewind_push(app);
             // Not with the ring tether changed either (issue #43): the game
             // plays differently.
-            if (app.achievements_on && !app.cheating && !tether::any(*app.m) && !app.ls.running) {
+            if (app.achievements_on && !app.cheating && !tether::any(*app.m) && !app.m->chaos_forms && !app.ls.running) {
                 app.achievements_paused = false;
                 app.achievements.update(*app.m, [&](const achievements::Achievement& a) {
                     App::Toast t{a.title, a.description, SDL_GetTicks() + 5000, "AWARD GET!"};

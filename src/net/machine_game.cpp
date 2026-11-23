@@ -42,6 +42,7 @@ NetSettings NetSettings::of(const Machine& m) {
     s.lobby_time = m.lobby_time;
     s.tether_strength = m.tether_strength;
     s.tether_partner = m.tether_partner;
+    s.chaos_forms = m.chaos_forms;
     return s;
 }
 
@@ -57,14 +58,16 @@ void NetSettings::apply(Machine& m) const {
     m.lobby_time = lobby_time;
     m.tether_strength = uint8_t(tether_strength);
     m.tether_partner = uint8_t(tether_partner);
+    m.chaos_forms = chaos_forms;
 }
 
 std::string NetSettings::encode() const {
     char buf[256];
     std::snprintf(buf, sizeof buf,
-                  "wide=%d;wide_bottom=%d;wide_on=%d;wide_everywhere=%d;hud_edges=%d;six=%d%d;lobby=%d,%d;tether=%d,%d",
+                  "wide=%d;wide_bottom=%d;wide_on=%d;wide_everywhere=%d;hud_edges=%d;six=%d%d;lobby=%d,%d;tether=%d,%d;chaos=%d",
                   wide_extra, wide_extra_bottom, int(wide_enabled), int(wide_everywhere), int(wide_hud_edges),
-                  int(six_button[0]), int(six_button[1]), lobby_partner, lobby_time, tether_strength, tether_partner);
+                  int(six_button[0]), int(six_button[1]), lobby_partner, lobby_time, tether_strength, tether_partner,
+                  int(chaos_forms));
     return buf;
 }
 
@@ -93,6 +96,8 @@ bool NetSettings::decode(const std::string& s, std::string* why) {
         if (why) *why = "the host's ring tether setting is unreadable";
         return false;
     }
+    // Issue #146: a host from before Chaos Forms sends no "chaos"; it is off.
+    n.chaos_forms = f.count("chaos") && f.at("chaos") == "1";
     if (n.wide_extra < 0 || n.wide_extra > 256 || n.wide_extra_bottom < 0 || n.wide_extra_bottom > 64) {
         if (why) *why = "the host's widescreen margins are out of range";
         return false;

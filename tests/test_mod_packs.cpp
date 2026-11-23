@@ -248,3 +248,34 @@ TEST(mod_packs, a_character_file_comes_whole_from_the_highest_pack) {
         CHECK(m.stats.empty());  // the lower file's stats went with it
     }
 }
+
+TEST(mod_packs, built_in_mods_come_last_off_and_stay_put) {
+    // Issue #146: the mods that come with the game, after the packs, each
+    // off until turned on, with its author; never moved, never in Order.
+    std::vector<mod_packs::Pack> found(2);
+    found[0].loose = true;
+    found[1].id = "A";
+    mod_packs::Order order;
+    auto packs = mod_packs::with_builtins(mod_packs::arrange(found, order), order);
+    CHECK_EQ(packs.size(), size_t(2 + mod_packs::builtins().size()));
+    const size_t b = 2;
+    CHECK(packs[b].builtin);
+    CHECK_STR(packs[b].id, mod_packs::kChaosForms);
+    CHECK_STR(packs[b].info.author, "mechasalesman");
+    CHECK(!packs[b].enabled);
+    CHECK(!mod_packs::builtin_enabled(order, mod_packs::kChaosForms));
+    mod_packs::set_enabled(order, packs, b, true);
+    CHECK(packs[b].enabled);
+    CHECK(mod_packs::builtin_enabled(order, mod_packs::kChaosForms));
+    CHECK(order.disabled.empty());
+    CHECK_STR(mod_packs::join_list(order.order), "");  // not set_enabled's remember either
+    CHECK(!mod_packs::move(order, packs, b, -1));
+    CHECK(!mod_packs::move(order, packs, 1, +1));
+    mod_packs::remember(order, packs);
+    CHECK_STR(mod_packs::join_list(order.order), "A");
+    CHECK(mod_packs::with_builtins(mod_packs::arrange(found, order), order)[b].enabled);
+    mod_packs::set_enabled(order, packs, b, false);
+    CHECK(!mod_packs::builtin_enabled(order, mod_packs::kChaosForms));
+    // A built-in mod has no files: nothing for the loaders.
+    for (const char* kind : mod_packs::kKinds) CHECK(mod_packs::folders(packs, kind).empty() || !packs[b].has(kind));
+}
