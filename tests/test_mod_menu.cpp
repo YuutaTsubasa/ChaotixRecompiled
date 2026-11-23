@@ -153,6 +153,33 @@ TEST(mod_menu, reload_mods_reads_the_folder_at_once) {
     CHECK_STR(f.menu.selected_label(), "RELOAD MODS");
 }
 
+TEST(mod_menu, built_in_mods_are_listed_with_their_author_and_kept) {
+    // Issue #146: after the packs, under their own heading, off by default.
+    Fixture f;
+    f.packs = mod_packs::with_builtins(f.packs, f.cfg.mod_order);
+    CHECK(f.menu.show_page("mods"));
+    CHECK(select_label(f.menu, "CHAOS FORMS"));
+    CHECK_STR(f.menu.selected_value(), "OFF");
+    CHECK_STR(f.menu.selected_note(), "by mechasalesman");
+    f.menu.on_key(SDLK_RIGHT);
+    CHECK_STR(f.menu.selected_value(), "ON");
+    CHECK(mod_packs::builtin_enabled(f.cfg.mod_order, mod_packs::kChaosForms));
+    f.menu.on_key(SDLK_RETURN);
+    CHECK_STR(f.menu.page_name(), "modinfo");
+    CHECK(!select_label(f.menu, "MOVE UP"));  // built in: it has no place to move to
+
+    const std::string path = (fs::temp_directory_path() / "chaotix_mod_menu_builtin.ini").u8string();
+    CHECK(f.cfg.save(path));
+    Config b;
+    CHECK(b.load(path));
+    CHECK(mod_packs::builtin_enabled(b.mod_order, mod_packs::kChaosForms));
+    // A config from before built-in mods: all of them off.
+    std::ofstream(path, std::ios::trunc) << "[Mods]\nLooseFiles = true\n";
+    Config c;
+    CHECK(c.load(path));
+    CHECK(!mod_packs::builtin_enabled(c.mod_order, mod_packs::kChaosForms));
+}
+
 TEST(mod_menu, no_packs_says_so) {
     Config cfg;
     cfg.set_defaults();

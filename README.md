@@ -443,7 +443,8 @@ earned while any of these is changed (NONE included). See
 With all six Chaos Rings, 50 rings and a jump pressed again in the air, both
 characters turn into their Chaos Forms: invincibility and speed shoes together,
 no music, a pulsing new palette, and one ring lost every second until none are
-left. OPTIONS > EXTRAS > CHAOS FORMS turns it off. See
+left. A built-in mod by mechasalesman, off until turned on in OPTIONS > EXTRAS >
+MODS (BUILT-IN MODS). See
 [docs/CHAOS_FORMS.md](docs/CHAOS_FORMS.md); the ALL CHAOS RINGS cheat is in
 OPTIONS > EXTRAS > CHEATS.
 
@@ -732,9 +733,11 @@ people below. Thank you all: every report here led to a fix or a feature.
   [#33](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/33),
   [#35](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/35)).
 - **[mechasalesman](https://github.com/mechasalesman)**: widescreen in the
-  lobby, cheats, and AMAZING ARENA's boss freezing in widescreen
+  lobby, cheats, AMAZING ARENA's boss freezing in widescreen, and the
+  Chaos Forms built-in mod, which they wrote
   ([#13](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/13),
   [#20](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/20),
+  [#146](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/146),
   [#147](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/147)).
 - **[Abdouxgo](https://github.com/Abdouxgo)**: 32-bit Android, the icon
   suggestion, and replaced music starting over when the game asks for it again

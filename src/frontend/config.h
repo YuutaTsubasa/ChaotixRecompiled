@@ -184,9 +184,6 @@ struct Config {
     // SOLO, whatever [Tether] says) and the time of day (0 MORNING .. 3
     // NIGHT, -1 the game's own) each time the game starts the lobby or an
     // attraction. Off: the game as it was.
-    // [Extras] Chaos Forms (runtime/chaos_forms.h): with all six Chaos Rings, 50
-    // rings and a jump in the air, both characters transform.
-    bool chaos_forms = true;
     bool lobby_shortcuts = false;
     int lobby_partner = -1;
     int lobby_time = -1;

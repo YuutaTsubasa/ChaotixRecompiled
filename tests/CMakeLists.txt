@@ -390,6 +390,31 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --press 1600:right:300 --press 1700:c:10 --press 2000:left:200 --press 2300:c:10)
     set_tests_properties(lockstep_final_boss_widescreen PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
+    # Issue #146: Chaos Forms, a built-in mod. BOTANIC BASE 1, all six Chaos
+    # Rings (the cheat), 60 rings put in at frame 800, jump at 900 and again
+    # in the air at 912: both characters transform and a ring goes every
+    # second (60 at 900, 59 by 1020, 58 by 1080). Off (no --chaos), the same
+    # jumps change nothing.
+    add_test(NAME chaos_forms_transform_and_cost_a_ring_a_second
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080 --chaos
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+                --peek-every 1080:E008:2)
+    set_tests_properties(chaos_forms_transform_and_cost_a_ring_a_second PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 1080 E008 003A")
+    add_test(NAME chaos_forms_are_off_unless_turned_on
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+                --peek-every 1080:E008:2)
+    set_tests_properties(chaos_forms_are_off_unless_turned_on PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 1080 E008 003C")
+    add_test(NAME lockstep_chaos_forms
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1500 --chaos --lockstep
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6 --press 960:right:500)
+    set_tests_properties(lockstep_chaos_forms PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 1500 frames bit-identical")
     # Issue #147: AMAZING ARENA 5's boss, widescreen. The goal is reached with
     # the lights on (FFC21D bit 5; the switch is somewhere in the level) by
     # putting both characters by the goal (player $FFAD48, partner $FFAE08,

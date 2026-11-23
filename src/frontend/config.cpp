@@ -164,6 +164,10 @@ bool Config::load(const std::string& path) {
                 const std::vector<std::string> off = mod_packs::split_list(v);
                 mod_order.disabled = std::set<std::string>(off.begin(), off.end());
             } else if (k == "LooseFiles") mod_order.loose = parse_bool(v, mod_order.loose);
+            else if (k == "BuiltIn") {
+                const std::vector<std::string> on = mod_packs::split_list(v);
+                mod_order.builtin_on = std::set<std::string>(on.begin(), on.end());
+            }
         } else if (section == "Audio") {
             if (k == "Enabled") audio = parse_bool(v, audio);
             else if (k == "Volume") volume = std::clamp(std::atoi(v.c_str()), 0, 100);
@@ -201,7 +205,6 @@ bool Config::load(const std::string& path) {
             else if (k.rfind("Pad.", 0) == 0) pads[k.substr(4)] = v;
         } else if (section == "Extras") {
             if (k == "Rewind") rewind = parse_bool(v, rewind);
-            else if (k == "ChaosForms") chaos_forms = parse_bool(v, chaos_forms);
             else if (k == "StateSlot") state_slot = std::clamp(std::atoi(v.c_str()), 1, kStateSlots);
         } else if (section == "Lobby") {
             if (k == "Shortcuts") lobby_shortcuts = parse_bool(v, lobby_shortcuts);
@@ -325,7 +328,10 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Order = %s\n", mod_packs::join_list(mod_order.order).c_str());
     std::fprintf(f, "Disabled = %s\n",
                  mod_packs::join_list(std::vector<std::string>(mod_order.disabled.begin(), mod_order.disabled.end())).c_str());
-    std::fprintf(f, "LooseFiles = %s\n\n", mod_order.loose ? "true" : "false");
+    std::fprintf(f, "LooseFiles = %s\n", mod_order.loose ? "true" : "false");
+    std::fprintf(f, "# Built-in mods turned on, all off by default (docs/MOD_PACKS.md): %s\n", mod_packs::kChaosForms);
+    std::fprintf(f, "BuiltIn = %s\n\n",
+                 mod_packs::join_list(std::vector<std::string>(mod_order.builtin_on.begin(), mod_order.builtin_on.end())).c_str());
     std::fprintf(f, "[Input]\n# Auto | On | Off\nTouchControls = %s\n", touch == TouchMode::On ? "On" : touch == TouchMode::Off ? "Off" : "Auto");
     std::fprintf(f, "SixButtonPad = %s\n", six_button ? "true" : "false");
     std::fprintf(f, "# The touch directions as a joystick instead of a d-pad\nTouchStick = %s\n", touch_stick ? "true" : "false");
@@ -360,7 +366,6 @@ bool Config::save(const std::string& path) const {
     std::fprintf(f, "Rewind = %s\n# The save state slot quick save and quick load use, 1-%d (States/ in this folder)\n",
                  rewind ? "true" : "false", kStateSlots);
     std::fprintf(f, "StateSlot = %d\n", state_slot);
-    std::fprintf(f, "# Chaos Forms: all six Chaos Rings, 50 rings, then jump again in the air (not in TIME ATTACK).\nChaosForms = %s\n", chaos_forms ? "true" : "false");
     std::fprintf(f, "\n[Lobby]\n# Story mode: choose the partner and the time of day instead of the Combi Catcher and the clock.\n");
     std::fprintf(f, "# Partner: -1 the catcher's, else 0 Mighty 2 Knuckles 3 Charmy 4 Vector 5 Bomb 6 Heavy 7 Espio;\n");
     std::fprintf(f, "# -2 none (the attractions played as with [Tether] Partner = Solo, whatever that says).\n");

@@ -50,6 +50,9 @@ struct Pack {
     std::string dir;    // its folder, ending in '/'
     Info info;
     bool loose = false;
+    // A mod that comes with the game (builtins()): code rather than files,
+    // off until the player turns it on, and not moved in the list.
+    bool builtin = false;
     bool has_ini = false;
     bool enabled = true;
     // Which kinds of mod it holds (a folder of that name with a file in it
@@ -70,7 +73,19 @@ struct Order {
     std::vector<std::string> order;   // pack ids, highest priority first
     std::set<std::string> disabled;   // pack ids turned off
     bool loose = true;                // the loose files on
+    std::set<std::string> builtin_on; // built-in mods turned on (all off by default)
 };
+
+// Built-in mods (issue #146): mods the community made that come with the
+// game, written into its code. Each is off until the player turns it on, in
+// the same list as the packs (after them), with its author's name on it.
+inline constexpr const char* kChaosForms = "chaos_forms";
+// Every built-in mod, as packs: id, name, author, description, link.
+std::vector<Pack> builtins();
+// `arranged` with the built-in mods after it, each on as `order` says.
+std::vector<Pack> with_builtins(std::vector<Pack> arranged, const Order& order);
+// Whether the built-in mod `id` is turned on.
+inline bool builtin_enabled(const Order& order, const char* id) { return order.builtin_on.count(id) != 0; }
 
 // The packs in the Mods folder `root` (ending in '/'), sorted by id, after
 // the loose files when the Mods folder's own folders hold any. A pack is a

@@ -1,6 +1,10 @@
 # Chaos Forms
 
-The classic "super form", powered by the game's Chaos Rings.
+The classic "super form", powered by the game's Chaos Rings. A built-in mod
+by [mechasalesman](https://github.com/mechasalesman), proposed with a
+working patch in [issue #146](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/146)
+(Archie's "Chaos Knuckles" is the model). Off until turned on in
+OPTIONS > EXTRAS > MODS, under BUILT-IN MODS (see MOD_PACKS.md).
 
 ## How to transform
 
@@ -40,10 +44,14 @@ still does not see it until you let go.
 
 ## Settings
 
-OPTIONS > EXTRAS > CHAOS FORMS (`[Extras] ChaosForms = true`, on by default).
-It does nothing until you hold all six Chaos Rings. It is off during TIME
-ATTACK, so records compare like with like. `chaotix_headless --chaos` turns it
-on for tests.
+OPTIONS > EXTRAS > MODS > CHAOS FORMS (`[Mods] BuiltIn = chaos_forms`), off
+by default. Once on, it does nothing until you hold all six Chaos Rings.
+
+* It is off during TIME ATTACK, so records compare like with like.
+* While it is on, awards are not earned and a speedrun is not kept as a best,
+  as with cheats and a changed ring tether.
+* In netplay the host's setting is used by both players.
+* `chaotix_headless --chaos` turns it on for tests.
 
 ## How it works (for maintainers)
 

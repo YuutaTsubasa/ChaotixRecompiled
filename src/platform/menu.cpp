@@ -987,9 +987,6 @@ void Menu::build_extras() {
     items_.push_back({"CHEATS", [c] { return c->cheats.empty() && c->cheat_codes.empty() ? std::string("OFF") : std::string("ON"); },
                       [this](int step) { if (step == 0) set_page(Page::Cheats); }});
     items_.back().pressed = true;
-    items_.push_back({"CHAOS FORMS", [c] { return on_off(c->chaos_forms); },
-                      [c](int s) { if (s) c->chaos_forms = !c->chaos_forms; },
-                      "6 Chaos Rings, 50 rings, jump in the air"});
     // Issue #44: a page of its own, as CHEATS is, so this one stays short.
     items_.push_back({"LOBBY SHORTCUTS", [c] { return on_off(c->lobby_shortcuts); },
                       [this](int step) { if (step == 0) set_page(Page::Lobby); },
@@ -1392,6 +1389,13 @@ void Menu::build_mods() {
     if (std::vector<mod_packs::Pack>* list = packs()) {
         for (size_t i = 0; i < list->size(); ++i) {
             const mod_packs::Pack& p = (*list)[i];
+            // Issue #146: the mods that come with the game, after the packs,
+            // under a heading of their own.
+            if (p.builtin && (i == 0 || !(*list)[i - 1].builtin)) {
+                Item head{"BUILT-IN MODS", {}, {}, "by the community, off until turned on"};
+                head.read_only = true;
+                items_.push_back(std::move(head));
+            }
             Item it{upper(p.title()),
                     [this, i] {
                         const std::vector<mod_packs::Pack>* l = packs();
@@ -1410,7 +1414,10 @@ void Menu::build_mods() {
                         if (hooks_.mods_changed) hooks_.mods_changed();
                         refresh();
                     },
-                    p.loose ? std::string("your own files") : p.too_new ? std::string("NEEDS A NEWER GAME") : p.info.version};
+                    p.loose ? std::string("your own files")
+                    : p.builtin ? "by " + p.info.author
+                    : p.too_new ? std::string("NEEDS A NEWER GAME")
+                                : p.info.version};
             // Enter opens the pack's page rather than switching it.
             it.pressed = true;
             items_.push_back(std::move(it));
@@ -1426,7 +1433,7 @@ void Menu::build_mods() {
                       },
                       restart ? "patches and stats: restart the game" : "read the Mods folder again"});
     const std::vector<mod_packs::Pack>* list = packs();
-    if (!list || list->empty()) {
+    if (!list || std::none_of(list->begin(), list->end(), [](const mod_packs::Pack& p) { return !p.builtin; })) {
         Item none{"NO MODS YET", {}, {}, "a folder per mod in Mods, see README"};
         none.read_only = true;
         items_.push_back(std::move(none));
@@ -1466,8 +1473,11 @@ void Menu::build_mod_info() {
         if (!p.info.url.empty()) info_lines_.push_back(p.info.url);
         if (!p.has_ini) info_lines_.push_back("(no mod.ini: named after its folder, " + p.id + ")");
     }
-    info_lines_.push_back("Has: " + pack_contents(p) + ". Place " + std::to_string(mod_index_ + 1) + " of " +
-                          std::to_string(list->size()) + ", the first winning.");
+    if (p.builtin)
+        info_lines_.push_back("Built into the game: a change to its code, not files. Off unless turned on here.");
+    else
+        info_lines_.push_back("Has: " + pack_contents(p) + ". Place " + std::to_string(mod_index_ + 1) + " of " +
+                              std::to_string(list->size()) + ", the first winning.");
     if (p.too_new) info_lines_.push_back("Made for version " + p.info.min_version + " or later; it may not work.");
     if (p.changes_game())
         info_lines_.push_back("Patches and character stats apply when the game is started again.");
@@ -1485,7 +1495,7 @@ void Menu::build_mod_info() {
                           mods_dirty_ = true;
                           if (hooks_.mods_changed) hooks_.mods_changed();
                       }});
-    if (!p.loose) {
+    if (!p.loose && !p.builtin) {
         auto mover = [this](int delta) {
             return [this, delta](int step) {
                 std::vector<mod_packs::Pack>* l = packs();

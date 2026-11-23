@@ -34,6 +34,7 @@ struct NetSettings {
     bool six_button[2] = {true, false};
     int lobby_partner = -1, lobby_time = -1;
     int tether_strength = 0, tether_partner = 0;  // runtime/tether.h
+    bool chaos_forms = false;                     // runtime/chaos_forms.h (issue #146)
     static NetSettings of(const Machine& m);
     void apply(Machine& m) const;
     std::string encode() const;

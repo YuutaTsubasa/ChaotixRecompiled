@@ -190,10 +190,35 @@ std::vector<Pack> arrange(std::vector<Pack> found, const Order& order) {
     return out;
 }
 
+std::vector<Pack> builtins() {
+    std::vector<Pack> out;
+    Pack chaos;
+    chaos.id = kChaosForms;
+    chaos.builtin = true;
+    chaos.has_ini = true;
+    chaos.info.name = "Chaos Forms";
+    chaos.info.author = "mechasalesman";
+    chaos.info.description =
+        "With all six Chaos Rings and 50 rings, press jump again in the air: both characters turn into their "
+        "Chaos Forms, invincible and with speed shoes, losing a ring a second.\n"
+        "Awards and speedrun bests are paused while it is on, and it is off in TIME ATTACK.";
+    chaos.info.url = "https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/146";
+    out.push_back(std::move(chaos));
+    return out;
+}
+
+std::vector<Pack> with_builtins(std::vector<Pack> arranged, const Order& order) {
+    for (Pack& b : builtins()) {
+        b.enabled = order.builtin_on.count(b.id) != 0;
+        arranged.push_back(std::move(b));
+    }
+    return arranged;
+}
+
 void remember(Order& order, const std::vector<Pack>& arranged) {
     std::vector<std::string> ids;
     for (const Pack& p : arranged)
-        if (!p.loose) ids.push_back(p.id);
+        if (!p.loose && !p.builtin) ids.push_back(p.id);
     for (const std::string& id : order.order)
         if (std::find(ids.begin(), ids.end(), id) == ids.end()) ids.push_back(id);
     order.order = std::move(ids);
@@ -203,6 +228,11 @@ void set_enabled(Order& order, std::vector<Pack>& arranged, size_t index, bool o
     if (index >= arranged.size()) return;
     Pack& p = arranged[index];
     p.enabled = on;
+    if (p.builtin) {
+        if (on) order.builtin_on.insert(p.id);
+        else order.builtin_on.erase(p.id);
+        return;
+    }
     if (p.loose) order.loose = on;
     else if (on) order.disabled.erase(p.id);
     else order.disabled.insert(p.id);
@@ -210,9 +240,10 @@ void set_enabled(Order& order, std::vector<Pack>& arranged, size_t index, bool o
 }
 
 bool move(Order& order, std::vector<Pack>& arranged, size_t index, int delta) {
-    if (index >= arranged.size() || arranged[index].loose || (delta != -1 && delta != 1)) return false;
+    if (index >= arranged.size() || arranged[index].loose || arranged[index].builtin || (delta != -1 && delta != 1))
+        return false;
     const long to = long(index) + delta;
-    if (to < 0 || to >= long(arranged.size()) || arranged[size_t(to)].loose) return false;
+    if (to < 0 || to >= long(arranged.size()) || arranged[size_t(to)].loose || arranged[size_t(to)].builtin) return false;
     std::swap(arranged[index], arranged[size_t(to)]);
     remember(order, arranged);
     return true;
