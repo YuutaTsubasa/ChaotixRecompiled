@@ -40,8 +40,12 @@ constexpr uint8_t kStateJump = 0x04, kStateAir = 0x08;
 constexpr uint32_t kZ80Paused = 0x1C10;
 // Machine::chaos_drain counts the frames of the game running towards the next
 // ring (0-59); its top bit says the jump button the transformation took is
-// still held, so it is kept from the game until it is let go.
-constexpr uint8_t kJumpTaken = 0x80, kDrainMask = 0x7F;
+// still held, so it is kept from the game until it is let go. Bit 6 says a
+// monitor's invincibility or speed shoes were running when the form took them
+// over (or a monitor was taken during it), so their music is playing: the
+// form then ends through the game's own end of the timers (kMonitorMusic).
+constexpr uint8_t kJumpTaken = 0x80, kMonitorMusic = 0x40, kDrainMask = 0x3F;
+constexpr uint8_t kDrainFlags = kJumpTaken | kMonitorMusic;
 
 // Where the characters' colours are in the 32X palette (docs/CHARACTERS.md):
 // pixel p of the player is entry 0x12 + p, of the partner 0x24 + p, and the
@@ -82,6 +86,8 @@ bool level_over(const Machine& m) {
 // before it gets near the mark.
 void keep(Machine& m, uint32_t timer) {
     const uint16_t v = rd16(m, timer);
+    // A monitor's timer (under the mark, not run out): its music is on.
+    if (v != 0 && v < kMark) m.chaos_drain |= kMonitorMusic;
     if (v < kMark) wr16(m, timer, kHold);
     else if (v < kRefill) wr16(m, timer, uint16_t(v + kTurn));
 }
@@ -89,9 +95,19 @@ void hold(Machine& m, uint16_t st) {
     keep(m, st + kStatInvincible);
     keep(m, st + kStatShoes);
 }
-void release(Machine& m, uint16_t st) {
-    if (rd16(m, st + kStatInvincible) >= kMark) wr16(m, st + kStatInvincible, 0);
-    if (rd16(m, st + kStatShoes) >= kMark) wr16(m, st + kStatShoes, 0);
+// Ends the forms of both characters (`qs` 0 without a partner). With no
+// monitor's music on, the timers are cleared and the music stays as it is.
+// With one (Codex review, issue #146), they are left at 1: the game counts
+// them to 0 the next frame and asks for the level's music again ($88E962),
+// as when a monitor runs out.
+void release(Machine& m, uint16_t ps, uint16_t qs) {
+    const uint16_t end = (m.chaos_drain & kMonitorMusic) ? 1 : 0;
+    for (uint16_t st : {ps, qs}) {
+        if (!st) continue;
+        if (rd16(m, st + kStatInvincible) >= kMark) wr16(m, st + kStatInvincible, end);
+        if (rd16(m, st + kStatShoes) >= kMark) wr16(m, st + kStatShoes, end);
+    }
+    m.chaos_drain &= uint8_t(~kMonitorMusic);
 }
 
 // --- colours ----------------------------------------------------------------
@@ -223,7 +239,7 @@ void begin_frame(Machine& m) {
         // new press (Knuckles' glide, Charmy's flight) when only the first
         // frame of it was taken.
         if (jump) m.input.pad[0] &= uint16_t(~PAD_C);
-        else m.chaos_drain &= kDrainMask;
+        else m.chaos_drain &= uint8_t(~kJumpTaken);
     }
     if (!in_level(m)) return;
 
@@ -234,8 +250,7 @@ void begin_frame(Machine& m) {
         // middle of a form: it ends at once, or it would run on for minutes
         // with awards and records no longer paused. A monitor's timers are
         // under kMark and are left alone.
-        release(m, ps);
-        if (qs) release(m, qs);
+        release(m, ps, qs);
         return;
     }
     int rings = int16_t(rd16(m, kRings));
@@ -243,8 +258,7 @@ void begin_frame(Machine& m) {
     if (level_over(m)) {
         // The goal or the boss: the form ends here, as a monitor's would not
         // (nothing is asked of the sound driver), and none starts.
-        release(m, ps);
-        if (qs) release(m, qs);
+        release(m, ps, qs);
         return;
     }
 
@@ -254,7 +268,7 @@ void begin_frame(Machine& m) {
         if (tick != m.chaos_last_tick) {
             m.chaos_last_tick = tick;
             if (m.zram[kZ80Paused] == 0) {
-                const uint8_t taken = m.chaos_drain & kJumpTaken;
+                const uint8_t taken = m.chaos_drain & kDrainFlags;
                 const uint8_t frames = uint8_t((m.chaos_drain & kDrainMask) + 1);
                 if (frames >= kFramesPerRing) {
                     m.chaos_drain = taken;
@@ -266,8 +280,7 @@ void begin_frame(Machine& m) {
             }
         }
         if (rings <= 0) {
-            release(m, ps);
-            if (qs) release(m, qs);
+            release(m, ps, qs);
             return;
         }
         hold(m, ps);

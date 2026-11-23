@@ -26,6 +26,11 @@ still does not see it until you let go.
   with no music (nothing is requested from the sound driver).
 * It costs one ring for every second of the game running (not while paused).
   At 0 rings or fewer the form ends, as the monitors' effects wear off.
+* Turning the mod off (or starting a TIME ATTACK run) ends a form at once.
+* The music: a form asks for none, and ending it changes none. If a monitor's
+  invincibility or speed shoes (and their music) were running when the form
+  began, or one was taken during it, the form ends through the game's own end
+  of those timers, so the level's music comes back as after a monitor.
 * A new level never starts in a form. A form also ends the moment the level
   does: when the end-of-act sign is touched or a boss is beaten.
 * It works in the attractions and in the final battle (WORLD ENTRANCE level 2),

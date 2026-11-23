@@ -114,7 +114,26 @@ TEST(cheats, chaos_forms_end_at_once_when_turned_off) {
     m->chaos_forms = false;
     chaos_forms::begin_frame(*m);
     CHECK(!chaos_forms::active(*m, 0));
+    // The partner's monitor was running when the form began, so its music is
+    // on: the form's timers end at 1, for the game to run them out itself
+    // the next frame and ask for the level's music again.
+    CHECK_EQ(int(r16(0xB000 + 0x32)), 1);
+    CHECK_EQ(int(r16(0xB000 + 0x34)), 1);
+    CHECK_EQ(int(r16(0xB040 + 0x32)), 0x0300);
+
+    // No monitor at all: the timers are cleared, and the music left alone.
+    // (The game would have run the 1s above out by now; no game runs here.)
+    w16(0xB040 + 0x32, 0);
+    w16(0xB040 + 0x34, 0);
+    w16(0xB000 + 0x32, 0x7000);
+    w16(0xB000 + 0x34, 0x7000);
+    m->chaos_drain = 0x80;  // as a transformation leaves it
+    m->chaos_forms = true;
+    chaos_forms::begin_frame(*m);
+    CHECK(chaos_forms::active(*m, 1));
+    m->chaos_forms = false;
+    chaos_forms::begin_frame(*m);
     CHECK_EQ(int(r16(0xB000 + 0x32)), 0);
     CHECK_EQ(int(r16(0xB000 + 0x34)), 0);
-    CHECK_EQ(int(r16(0xB040 + 0x32)), 0x0300);
+    CHECK_EQ(int(r16(0xB040 + 0x32)), 0);
 }
