@@ -212,6 +212,7 @@ public:
     // A widened level's margin for its polygons this frame (patches.h,
     // level_polygon_margins), 0: none; worked out at the start of each frame.
     int level_poly_margin = 0;
+    bool level_poly_on = false;  // margins or rows below: the hook draws
     // The polygon the rasterizer is drawing in a widened level (render only:
     // patches::fill_clears_margins): its fill word and rows.
     bool level_poly_valid = false;

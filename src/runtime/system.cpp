@@ -522,7 +522,7 @@ void Machine::run_frame() {
     sh2::State& ms = sh2[0];
     const bool bonus = wide_special && patches::PolyScene(poly_scene) == patches::PolyScene::Bonus;
     // A widened level's polygons too (patches.h, level_polygon_margins).
-    ms.hook = bonus || level_poly_margin ? machine_sh2_hook : sprites ? sprite_sh2_hook : nullptr;
+    ms.hook = bonus || level_poly_on ? machine_sh2_hook : sprites ? sprite_sh2_hook : nullptr;
     ms.hook_user = this;
     ms.hook_pcs = patches::kSh2Hooks;
     ms.hook_count = patches::kSh2HookCount;

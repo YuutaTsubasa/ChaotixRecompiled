@@ -503,7 +503,7 @@ bool fill_clears_margins(const Machine& m, uint32_t line_off, uint32_t words, ui
 
 void level_polygon_margins(Machine& m, const sh2::State& c) {
     const int e = m.level_poly_margin;
-    if (!e || m.wide_special || c.id != 0 || sdram16(m, kSh2Polygon & 0x3FFFF) != kSh2PolygonCode) return;
+    if (!m.level_poly_on || m.wide_special || c.id != 0 || sdram16(m, kSh2Polygon & 0x3FFFF) != kSh2PolygonCode) return;
     m.level_poly_valid = false;
     if (!rect_is(m, kFullRect)) return;  // the game's own clip: it is the native one only at full screen
     // The polygon, in SDRAM (cached or cache-through).
@@ -929,7 +929,9 @@ void begin_frame(Machine& m) {
     }
     // A level's polygons reach the margins (level_polygon_margins); the
     // final boss's arena already does, widened as a whole.
-    m.level_poly_margin = level && !m.wide_special ? e : 0;
+    // Also with only the rows below the screen widened.
+    m.level_poly_on = level && !m.wide_special && (e > 0 || eb > 0);
+    m.level_poly_margin = m.level_poly_on ? e : 0;
     m.level_poly_valid = false;
     // The HUD keeps to the left edge of what the margin shows of the level.
     set_hud_shift(m, level && m.wide_hud_edges && e ? e - margin_cut(m, e).left : 0);
@@ -955,6 +957,7 @@ void install(Machine& m) {
     m.radial_len = 0;
     m.cull_shift = 0;
     m.level_poly_margin = 0;
+    m.level_poly_on = false;
     m.level_poly_valid = false;
     m.plane_fill_clamped = true;
     m.tether_called = false;
