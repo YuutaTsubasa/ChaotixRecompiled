@@ -241,6 +241,14 @@ void write_special_rect(Machine& m, int16_t left, int16_t right) {
 // The rectangle the widened scene had before (the stage's, or the screen's).
 const int16_t* native_rect(PolyScene k) { return k == PolyScene::Stage ? kSpecialRect : kFullRect; }
 
+// The blitters' clip the widened scene had before: the stage keeps its
+// sprites to its own picture (kSpecialSpriteClip), the bonus stage to the
+// screen.
+ClipRect native_clip(PolyScene k) {
+    if (k == PolyScene::Stage) return {kSpecialSpriteClip[0], kSpecialSpriteClip[1], 0};
+    return {0, 320, 0};
+}
+
 // Our widened rectangle for a scene of this kind is still in place: the game
 // has not set another.
 bool special_rect_is_ours(const Machine& m, PolyScene k) {
@@ -731,9 +739,10 @@ void begin_frame(Machine& m) {
         set_bonus_centre(m, 0);
         if (m.results_table_patched && results_table(m, m.special_shift)) results_table(m, 0, m.sdram);
         if (m.bonus_clip_overridden) {
-            const uint8_t* p = m.sdram + kClipRectSdram;
-            if (int16_t(p[0] << 8 | p[1]) == -m.special_shift && int16_t(p[2] << 8 | p[3]) == 320 + m.special_shift)
-                write_clip(m, 0, 320, uint32_t(p[8]) << 24 | uint32_t(p[9]) << 16 | uint32_t(p[10]) << 8 | p[11]);
+            const ClipRect now = read_clip(m);
+            const ClipRect native = native_clip(had);
+            if (now.left == -m.special_shift && now.right == 320 + m.special_shift)
+                write_clip(m, native.left, native.right, now.bottom);
         }
         m.results_table_patched = false;
         m.bonus_clip_overridden = false;
@@ -759,14 +768,19 @@ void begin_frame(Machine& m) {
             results_table(m, ce, m.sdram);
             m.results_table_patched = true;
         }
-        if (want == PolyScene::Bonus) {
+        if (want == PolyScene::Bonus || want == PolyScene::Stage) {
             // The items are blitted where they are: their clip reaches into
             // the margins, as in a level, and what lands there goes to the
-            // shadow.
-            const uint8_t* p = m.sdram + kClipRectSdram;
-            write_clip(m, int16_t(-ce), int16_t(320 + ce),
-                       uint32_t(p[8]) << 24 | uint32_t(p[9]) << 16 | uint32_t(p[10]) << 8 | p[11]);
-            m.bonus_clip_overridden = true;
+            // shadow. The special stage's sprite objects (rings, spheres,
+            // stars; issue #5) are clipped to its 288 px picture, [16, 304),
+            // which left them out of the widened tube's margins.
+            const ClipRect now = read_clip(m);
+            const ClipRect native = native_clip(want);
+            const bool ours = now.left == -ce && now.right == 320 + ce;
+            if (ours || (now.left == native.left && now.right == native.right)) {
+                write_clip(m, int16_t(-ce), int16_t(320 + ce), now.bottom);
+                m.bonus_clip_overridden = true;
+            }
         }
     }
     if (level && in_lobby(m)) lobby_margins(m, e);

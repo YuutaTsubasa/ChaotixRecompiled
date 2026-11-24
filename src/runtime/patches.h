@@ -258,6 +258,12 @@ constexpr uint8_t kLevelPlaneSize = 0x01;
 // is_patched_sh2_immediate below), so it stays valid when they change.
 constexpr uint32_t kSpecialRectSdram = 0x3844;
 constexpr int16_t kSpecialRect[4] = {16, 303, 4, 219};
+// Its sprite objects -- the rings, spheres and stars, projected by the add at
+// $06004BE0 and blitted scaled ($06001F18) -- are clipped by the blitters'
+// rectangle (kClipRectSdram), which the stage sets to its picture, [16, 304).
+// Widened, that clip becomes [-C, 320 + C) like the bonus stage's (issue #5:
+// they vanished at the 4:3 picture's edges while the tube went on).
+constexpr int16_t kSpecialSpriteClip[2] = {16, 304};
 // The stage frames its 4:3 picture with black Mega Drive sprites of this
 // pattern (issue #21): 2x4 cells at X 0 and 304 down the sides, 4x1 cells
 // above and below. Widened, the side columns would cut through the picture,

@@ -546,6 +546,23 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --min-centre-frames 1900 --stage 300:10:0:0:2:7:0
                 --press 1100:left:120 --press 1700:right:200)
     set_tests_properties(lockstep_special_stage_widescreen special_stage_centre_matches_4_3 PROPERTIES TIMEOUT 900)
+    # Issue #5: the stage's rings, spheres and stars are sprites, clipped to
+    # its 288 px picture, so they vanished at its 4:3 edges while the tube
+    # went on into the margins. Frame 1200 has rows of rings and spheres
+    # running out past both sides (0.15.24: a0a843c5b8f325ba, cut off). The
+    # wider clip changes only the picture: the 68K work RAM is the 4:3 run's
+    # on every frame.
+    set(_special_objects --stage 300:10:1:0:2:7:0 --press 450:left:300 --press 800:right:300)
+    add_test(NAME widescreen_special_stage_objects_in_the_margins
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1201 --wide 53 ${_special_objects}
+                --expect-hash 1200:0826c27c0571befd)
+    set_tests_properties(widescreen_special_stage_objects_in_the_margins PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    add_test(NAME special_stage_objects_centre_and_ram_match_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --compare-ram
+                --min-centre-frames 1900 ${_special_objects})
+    set_tests_properties(special_stage_objects_centre_and_ram_match_4_3 PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "RAM check: work RAM identical to 4:3 on 2400 frames")
     # Issue #21: played from a level (a giant ring), the special stage runs in
     # the level's game mode, 0x18. Set it so mid-stage: the margins must stay.
     add_test(NAME special_stage_is_widescreen_in_the_level_mode

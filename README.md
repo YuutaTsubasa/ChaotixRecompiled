@@ -633,7 +633,7 @@ open your game is held, untouched, and it carries on when you leave. See
   so code the traces never reached can still be read.
 - `chaotix_recomp --rom <rom> --coverage f.cov --out generated` — the recompiler.
 - `chaotix_headless --rom <rom> --frames N [--wide E] [--wide-bottom R]
-  [--lockstep] [--compare-native] [--shot F] [--press F:btn:dur] [--coverage f]
+  [--lockstep] [--compare-native] [--compare-ram] [--shot F] [--press F:btn:dur] [--coverage f]
   [--stage F:PLACE:LEVEL:TIME:PLAYER:COMBI:PLAYERS] [--replay-input f]
   [--trace ...]` — deterministic headless execution and validation. `--stage`
   asks the game to start a level the way the front end's TIME ATTACK does, and
@@ -643,6 +643,10 @@ open your game is held, untouched, and it carries on when you leave. See
   requests LEVEL SELECT ones and prints the scene reached and when the level
   is over (`--level-select-none`: with PARTNER NONE). `--lobby-partner ID|none` and
   `--lobby-time 0-3` stand in for the lobby shortcuts' choices.
+  `--compare-native` runs a 4:3 machine beside a widescreen one and checks
+  that the centre of the picture is the same; `--compare-ram` also checks
+  that the 68K work RAM is the same after every frame (widescreen changed
+  only the picture).
 - `chaotix_headless --ghost-record FILE` writes a `--stage` or replayed run
   as a TIME ATTACK ghost when it ends, and `--ghost FILE` races one, drawn
   into the shots (`--ghost-log N` prints where it is; docs/GHOSTS.md).

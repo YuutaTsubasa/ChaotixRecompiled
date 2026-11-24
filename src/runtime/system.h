@@ -196,7 +196,7 @@ public:
     // set for all of them.
     uint8_t poly_scene = 0;
     bool results_table_patched = false;  // the results screen's polygons widened
-    bool bonus_clip_overridden = false;  // the bonus stage's blitter clip widened
+    bool bonus_clip_overridden = false;  // the bonus or special stage's blitter clip widened
     // The bonus stage's rings by radius (Vdp::radial_lut); render only.
     uint8_t radial_lut[512 * 4] = {};
     int radial_len = 0;
