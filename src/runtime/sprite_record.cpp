@@ -345,9 +345,9 @@ void SpriteRecorder::fb_fill(const Machine& m, uint32_t addr, uint32_t words, ui
         other(o + 1);
         // A widened level: a fill covering a line from its first column also
         // clears that line's margins in the shadow
-        // (Machine::fb_margin_clear_line, patches::kMarginClearWords).
+        // (Machine::fb_margin_clear_line, patches::fill_clears_margins).
         if (m.wide_active && !m.wide_special && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0 &&
-            words - i >= patches::kMarginClearWords) {
+            patches::fill_clears_margins(m, o, words - i, data)) {
             for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x)
                 if (x < 0 || x >= kNativeWidth) other(o + uint32_t(x));
             if ((o - patches::kFbLineBase) / patches::kFbLineStride == uint32_t(kActiveLines - 1))

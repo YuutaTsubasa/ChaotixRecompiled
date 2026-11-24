@@ -1878,6 +1878,13 @@ int main(int argc, char** argv) {
     }
     if (compare_native) std::printf("centre check: %llu widescreen frames with a 4:3 identical centre\n", (unsigned long long)centre_ok_frames);
     if (compare_ram) std::printf("RAM check: work RAM identical to 4:3 on %llu frames\n", (unsigned long long)ram_ok_frames);
+    // Nothing compared (no widescreen, so no 4:3 machine) is no pass. The
+    // check stops with the centre check only when the cameras differ, and
+    // the camera is work RAM, so the RAM check has failed by then.
+    if (compare_ram && ram_ok_frames == 0) {
+        std::printf("RAM check: no frames compared (--compare-ram needs --wide or --wide-bottom)\n");
+        return 6;
+    }
     if (compare_native && centre_worst) std::printf("centre check: special stage frames differ along polygon edges by at most %d pixels\n", centre_worst);
     if (!ghost_path.empty()) {
         std::printf("ghost: drawn on %llu of %llu frames, %llu pixels, %llu outside its box, %llu frames misplaced; "

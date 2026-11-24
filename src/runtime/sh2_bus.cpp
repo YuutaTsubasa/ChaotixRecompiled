@@ -348,7 +348,7 @@ void Machine::vdp32x_write(uint32_t off, uint32_t v, int size) {
             fb[o] = uint8_t(mars.fill_data >> 8);
             fb[o + 1] = uint8_t(mars.fill_data);
             if (wide_active && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0 &&
-                mars.fill_len + 1u - i >= patches::kMarginClearWords)
+                patches::fill_clears_margins(*this, o, mars.fill_len + 1u - i, mars.fill_data))
                 fb_margin_clear_line(o, mars.fill_data);
             addr = (addr & 0xFF00) | ((addr + 1) & 0xFF);
         }

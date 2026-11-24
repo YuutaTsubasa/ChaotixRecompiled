@@ -91,9 +91,12 @@ length, and when the bar's right end passed the 4:3 edge it all went at once,
 leaving the card's pieces standing in the margin.
 
 **Fix.** Only a fill that covers the whole native line from its first column
-clears the margins (`patches::kMarginClearWords`), in the machine, the sprite
-recorder and the replacement layer alike. In every zone, the shorter fills
-from column 0 all come from the rasterizer. The bar's part in the margin is
+clears the margins (`patches::fill_clears_margins`), in the machine, the
+sprite recorder and the replacement layer alike. In every zone, the shorter
+fills from column 0 all come from the rasterizer, and the game's clears are
+161 or 256 words. The rasterizer clips at x 319, so a polygon's span is at
+most 160 words; a 160-word fill is still a clear (a full-screen flash is one)
+unless it is on a row of the polygon being drawn, in its fill word. The bar's part in the margin is
 then drawn by the host like any level polygon (item 5), so it slides on into
 the left margin with its text.
 

@@ -302,11 +302,11 @@ void SpriteLayer::fill(const Machine& m, int b, uint32_t addr, uint32_t words, u
         others(false, ((addr & 0xFF00) | w) * 2, run * 2);
         // Machine::fb_margin_clear_line: a fill covering a line from its
         // first column clears that line's margins in the shadow
-        // (patches::kMarginClearWords).
+        // (patches::fill_clears_margins).
         for (uint32_t j = 0; m.wide_active && j < run; ++j) {
             const uint32_t o = ((addr & 0xFF00) | (w + j)) * 2;
             if (((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) != 0) continue;
-            if (words - (i + j) < patches::kMarginClearWords) continue;
+            if (!patches::fill_clears_margins(m, o, words - (i + j), data)) continue;
             others(true, o - uint32_t(E), uint32_t(E));
             others(true, o + uint32_t(kNativeWidth), uint32_t(E));
             if ((o - patches::kFbLineBase) / patches::kFbLineStride == uint32_t(kActiveLines - 1))

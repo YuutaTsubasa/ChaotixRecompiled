@@ -494,9 +494,17 @@ bool bonus_tunnel(const Machine& m, uint8_t* lut) {
     return true;
 }
 
+bool fill_clears_margins(const Machine& m, uint32_t line_off, uint32_t words, uint16_t data) {
+    if (words < kMarginClearWords) return false;
+    if (words > kMarginClearWords || !m.level_poly_valid || data != m.level_poly_word) return true;
+    const int y = int((line_off - kFbLineBase) / kFbLineStride);
+    return y < m.level_poly_y0 || y > m.level_poly_y1;
+}
+
 void level_polygon_margins(Machine& m, const sh2::State& c) {
     const int e = m.level_poly_margin;
     if (!e || m.wide_special || c.id != 0 || sdram16(m, kSh2Polygon & 0x3FFFF) != kSh2PolygonCode) return;
+    m.level_poly_valid = false;
     if (!rect_is(m, kFullRect)) return;  // the game's own clip: it is the native one only at full screen
     // The polygon, in SDRAM (cached or cache-through).
     const uint32_t a = c.r[1];
@@ -513,6 +521,11 @@ void level_polygon_margins(Machine& m, const sh2::State& c) {
         xmin = std::min(xmin, vx[i]), xmax = std::max(xmax, vx[i]);
         ymin = std::min(ymin, vy[i]), ymax = std::max(ymax, vy[i]);
     }
+    // Its spans, for fill_clears_margins.
+    m.level_poly_valid = true;
+    m.level_poly_word = uint16_t(c.r[13]);
+    m.level_poly_y0 = ymin;
+    m.level_poly_y1 = ymax;
     const int eb = std::clamp(m.wide_extra_bottom, 0, kMaxWideExtraBottom);
     const int top = kFullRect[2], bottom = kFullRect[3] + eb;
     // Wholly inside the native columns and rows: nothing for the margins.
@@ -917,6 +930,7 @@ void begin_frame(Machine& m) {
     // A level's polygons reach the margins (level_polygon_margins); the
     // final boss's arena already does, widened as a whole.
     m.level_poly_margin = level && !m.wide_special ? e : 0;
+    m.level_poly_valid = false;
     // The HUD keeps to the left edge of what the margin shows of the level.
     set_hud_shift(m, level && m.wide_hud_edges && e ? e - margin_cut(m, e).left : 0);
 }
@@ -941,6 +955,7 @@ void install(Machine& m) {
     m.radial_len = 0;
     m.cull_shift = 0;
     m.level_poly_margin = 0;
+    m.level_poly_valid = false;
     m.plane_fill_clamped = true;
     m.tether_called = false;
 }

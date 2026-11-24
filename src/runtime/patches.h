@@ -376,8 +376,15 @@ void level_polygon_margins(Machine& m, const sh2::State& c);
 // that covers the whole native line from there is a clear: a shorter one is a
 // polygon's span cut at the screen's left edge (issue #5: the title card's
 // bar, a polygon, painted both margins black from its row), whose part in the
-// margins the host draws itself (level_polygon_margins).
+// margins the host draws itself (level_polygon_margins). The rasterizer clips
+// to x 319, so its spans are at most kMarginClearWords long; the game's
+// clears are 161 or 256 words, but a full-screen flash is exactly 160, so a
+// 160-word fill is a clear unless it is on a row of the polygon being drawn,
+// in its fill word.
 constexpr uint32_t kMarginClearWords = 160;
+// Whether a fill of `words` words from the first column of the line at
+// frame buffer offset line_off, with `data`, clears that line's margins.
+bool fill_clears_margins(const Machine& m, uint32_t line_off, uint32_t words, uint16_t data);
 
 // The fill the widened scene clears a whole line with (the special stage's
 // or the bonus stage's), which then clears the margins too, unmoved.
