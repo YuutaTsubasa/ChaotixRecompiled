@@ -533,6 +533,9 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     render_plane(*this, line, false, b, xs, xe, 0, 0);
     render_plane(*this, line, true, a, xs, xe, win_x0, win_x1);
     if (win_x1 > win_x0) render_window(*this, line, a, xs, win_x0, win_x1);
+    for (int i = 0; i < plane_a_hide_n && extra > 0; ++i)
+        for (int x = std::max(plane_a_hide_x0[i], xs); x < std::min(plane_a_hide_x1[i], xe); ++x)
+            if (x < 0 || x >= width) a[x - xs] = 0;
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {
         // The margins continue the scene's rings (see radial_lut). The rings
         // are opaque, and plane B (the scene's own cells stop at the 4:3

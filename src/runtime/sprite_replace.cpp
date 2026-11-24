@@ -249,6 +249,13 @@ void SpriteLayer::write(const Machine& m, int b, uint32_t off, uint32_t v, int s
     }
 }
 
+void SpriteLayer::margin_write(int b, uint32_t off, uint32_t draws) {
+    Track& t = track_[b & 1];
+    const uint32_t k = kPlane + (off & 0x1FFFF);
+    t.owner[k] = 2;
+    t.seq[k] = uint16_t(std::min<uint32_t>(draws, 0xFFFF));
+}
+
 void SpriteLayer::fill(const Machine& m, int b, uint32_t addr, uint32_t words, uint16_t data, uint32_t draws) {
     Track& t = track_[b & 1];
     const uint16_t seq = uint16_t(std::min<uint32_t>(draws, 0xFFFF));
@@ -293,11 +300,13 @@ void SpriteLayer::fill(const Machine& m, int b, uint32_t addr, uint32_t words, u
     for (uint32_t i = 0; i < words;) {
         const uint32_t w = (addr + i) & 0xFF, run = std::min(words - i, 256 - w);
         others(false, ((addr & 0xFF00) | w) * 2, run * 2);
-        // Machine::fb_margin_clear_line: a fill word at a line's first
-        // column clears that line's margins in the shadow.
+        // Machine::fb_margin_clear_line: a fill covering a line from its
+        // first column clears that line's margins in the shadow
+        // (patches::fill_clears_margins).
         for (uint32_t j = 0; m.wide_active && j < run; ++j) {
             const uint32_t o = ((addr & 0xFF00) | (w + j)) * 2;
             if (((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) != 0) continue;
+            if (!patches::fill_clears_margins(m, o, words - (i + j), data)) continue;
             others(true, o - uint32_t(E), uint32_t(E));
             others(true, o + uint32_t(kNativeWidth), uint32_t(E));
             if ((o - patches::kFbLineBase) / patches::kFbLineStride == uint32_t(kActiveLines - 1))

@@ -1,6 +1,7 @@
 // Runtime game patches (see patches.h).
 #include "runtime/patches.h"
 #include "runtime/lobby.h"
+#include "runtime/sprite_record.h"
 #include "runtime/system.h"
 #include "runtime/tether.h"
 #include "runtime/title_hold.h"
@@ -240,6 +241,14 @@ void write_special_rect(Machine& m, int16_t left, int16_t right) {
 
 // The rectangle the widened scene had before (the stage's, or the screen's).
 const int16_t* native_rect(PolyScene k) { return k == PolyScene::Stage ? kSpecialRect : kFullRect; }
+
+// The blitters' clip the widened scene had before: the stage keeps its
+// sprites to its own picture (kSpecialSpriteClip), the bonus stage to the
+// screen.
+ClipRect native_clip(PolyScene k) {
+    if (k == PolyScene::Stage) return {kSpecialSpriteClip[0], kSpecialSpriteClip[1], 0};
+    return {0, 320, 0};
+}
 
 // Our widened rectangle for a scene of this kind is still in place: the game
 // has not set another.
@@ -485,7 +494,71 @@ bool bonus_tunnel(const Machine& m, uint8_t* lut) {
     return true;
 }
 
+bool fill_clears_margins(const Machine& m, uint32_t line_off, uint32_t words, uint16_t data) {
+    if (words < kMarginClearWords) return false;
+    if (words > kMarginClearWords || !m.level_poly_valid || data != m.level_poly_word) return true;
+    const int y = int((line_off - kFbLineBase) / kFbLineStride);
+    return y < m.level_poly_y0 || y > m.level_poly_y1;
+}
+
+void level_polygon_margins(Machine& m, const sh2::State& c) {
+    const int e = m.level_poly_margin;
+    if (!m.level_poly_on || m.wide_special || c.id != 0 || sdram16(m, kSh2Polygon & 0x3FFFF) != kSh2PolygonCode) return;
+    m.level_poly_valid = false;
+    if (!rect_is(m, kFullRect)) return;  // the game's own clip: it is the native one only at full screen
+    // The polygon, in SDRAM (cached or cache-through).
+    const uint32_t a = c.r[1];
+    if (((a >> 24) & 0xDF) != 0x06) return;
+    auto byte = [&](uint32_t k) { return m.sdram[(a + k) & 0x3FFFF]; };
+    auto word = [&](uint32_t k) { return int(int16_t(byte(k) << 8 | byte(k + 1))); };
+    const int n = byte(0);
+    constexpr int kMaxVertices = 16;
+    if (n < 3 || n > kMaxVertices) return;
+    int vx[kMaxVertices], vy[kMaxVertices], xmin = INT32_MAX, xmax = INT32_MIN, ymin = INT32_MAX, ymax = INT32_MIN;
+    for (int i = 0; i < n; ++i) {
+        vx[i] = word(1 + 4 * uint32_t(i));
+        vy[i] = word(3 + 4 * uint32_t(i));
+        xmin = std::min(xmin, vx[i]), xmax = std::max(xmax, vx[i]);
+        ymin = std::min(ymin, vy[i]), ymax = std::max(ymax, vy[i]);
+    }
+    // Its spans, for fill_clears_margins.
+    m.level_poly_valid = true;
+    m.level_poly_word = uint16_t(c.r[13]);
+    m.level_poly_y0 = ymin;
+    m.level_poly_y1 = ymax;
+    const int eb = std::clamp(m.wide_extra_bottom, 0, kMaxWideExtraBottom);
+    const int top = kFullRect[2], bottom = kFullRect[3] + eb;
+    // Wholly inside the native columns and rows: nothing for the margins.
+    if (xmin >= 0 && xmax < kNativeWidth && ymax <= kFullRect[3]) return;
+    if (xmax < -e || xmin >= kNativeWidth + e || ymax < top || ymin > bottom) return;
+    uint8_t* shadow = m.fb_margin[m.mars.fb_display ^ 1];
+    const uint8_t fill[2] = {uint8_t(c.r[13] >> 8), uint8_t(c.r[13])};
+    // Each row's span, as the rasterizer steps its edges: x in 8.8 from the
+    // upper vertex, rounded, over the rows the edge covers.
+    for (int y = std::max(ymin, top); y <= std::min(ymax, bottom); ++y) {
+        int left = INT32_MAX, right = INT32_MIN;
+        for (int i = 0; i < n; ++i) {
+            int x0 = vx[i], y0 = vy[i], x1 = vx[(i + 1) % n], y1 = vy[(i + 1) % n];
+            if (y0 > y1) std::swap(x0, x1), std::swap(y0, y1);
+            if (y < y0 || y > y1 || y0 == y1) continue;
+            const int x = int(((int64_t(x0) << 8) + 127 + int64_t(x1 - x0) * (y - y0) * 256 / (y1 - y0)) >> 8);
+            left = std::min(left, x), right = std::max(right, x);
+        }
+        if (left > right) continue;
+        const bool below = y > kFullRect[3];
+        const uint32_t line = kFbLineBase + uint32_t(y) * kFbLineStride;
+        for (int x = std::max(left, -e); x <= std::min(right, kNativeWidth - 1 + e); ++x) {
+            if (!below && x >= 0 && x < kNativeWidth) continue;  // the game's own pixels
+            const uint32_t o = (line + uint32_t(x)) & 0x1FFFF;
+            const uint8_t b = fill[o & 1];
+            shadow[o] = b;
+            if (m.sprites && m.sprites->tracks_writes()) m.sprites->margin_write(m, o, b);
+        }
+    }
+}
+
 void sh2_hook(Machine& m, sh2::State& c, uint32_t pc) {
+    if (pc == kSh2Polygon) { level_polygon_margins(m, c); return; }
     if (pc != kSh2BlitScaled || c.id != 0 || c.pr != kBonusItemReturn) return;
     if (!m.wide_special || PolyScene(m.poly_scene) != PolyScene::Bonus) return;
     // As far right as the centre the handler was given.
@@ -518,6 +591,46 @@ uint64_t scene_key(const Machine& m) {
 bool final_boss_active(const Machine& m) {
     if (wram16(m, kSceneZone) != kWorldEntrance || wram16(m, kSceneLevel) != kFinalBossLevel) return false;
     return special_projection_loaded(m) && (special_rect_is_ours(m, PolyScene::Boss) || rect_is(m, kFullRect));
+}
+
+void boss_plane_a_margins(Vdp& v, int extra) {
+    v.plane_a_hide_n = 0;
+    // One full-screen scroll value, a 64-column plane.
+    if (extra <= 0 || (v.reg[11] & 3) != 0 || (v.reg[16] & 3) != 1) return;
+    constexpr int kCols = 64, kRing = kCols * 8;
+    const int rows = 32 << ((v.reg[16] >> 4) & 1);
+    const uint32_t nt = uint32_t(v.reg[2] & 0x38) << 10;
+    bool used[kCols] = {};
+    int n_used = 0;
+    for (int c = 0; c < kCols; ++c) {
+        for (int r = 0; r < rows && !used[c]; ++r) {
+            const uint32_t a = (nt + 2 * uint32_t(r * kCols + c)) & 0xFFFF;
+            used[c] = ((v.vram[a] << 8 | v.vram[(a + 1) & 0xFFFF]) & 0x7FF) != 0;
+        }
+        n_used += used[c];
+    }
+    if (n_used == 0 || n_used == kCols) return;
+    // The picture is what the longest run of empty columns leaves: it starts
+    // right after that run.
+    int best = 0, best_end = 0;
+    for (int c = 0, run = 0; c < 2 * kCols; ++c) {
+        run = used[c % kCols] ? 0 : run + 1;
+        if (run > best) { best = std::min(run, kCols); best_end = c % kCols; }
+    }
+    const int start = (best_end + 1) % kCols, width = 8 * (kCols - best);
+    const int hscroll = (v.vram[(uint32_t(v.reg[13] & 0x3F) << 10) & 0xFFFF] << 8 |
+                         v.vram[((uint32_t(v.reg[13] & 0x3F) << 10) + 1) & 0xFFFF]) & 0x3FF;
+    // Screen X of its left edge, once round the ring at a time.
+    int x0 = (8 * start + hscroll) % kRing;
+    while (x0 > -extra - width) x0 -= kRing;
+    for (x0 += kRing; x0 < kNativeWidth + extra; x0 += kRing) {
+        const int x1 = x0 + width;
+        if (x1 <= -extra || (x1 > 0 && x0 < kNativeWidth)) continue;  // out of view, or continues the 4:3 one
+        if (v.plane_a_hide_n == 2) break;
+        v.plane_a_hide_x0[v.plane_a_hide_n] = std::max(x0, -extra);
+        v.plane_a_hide_x1[v.plane_a_hide_n] = std::min(x1, kNativeWidth + extra);
+        ++v.plane_a_hide_n;
+    }
 }
 
 bool in_lobby(const Machine& m) {
@@ -731,9 +844,10 @@ void begin_frame(Machine& m) {
         set_bonus_centre(m, 0);
         if (m.results_table_patched && results_table(m, m.special_shift)) results_table(m, 0, m.sdram);
         if (m.bonus_clip_overridden) {
-            const uint8_t* p = m.sdram + kClipRectSdram;
-            if (int16_t(p[0] << 8 | p[1]) == -m.special_shift && int16_t(p[2] << 8 | p[3]) == 320 + m.special_shift)
-                write_clip(m, 0, 320, uint32_t(p[8]) << 24 | uint32_t(p[9]) << 16 | uint32_t(p[10]) << 8 | p[11]);
+            const ClipRect now = read_clip(m);
+            const ClipRect native = native_clip(had);
+            if (now.left == -m.special_shift && now.right == 320 + m.special_shift)
+                write_clip(m, native.left, native.right, now.bottom);
         }
         m.results_table_patched = false;
         m.bonus_clip_overridden = false;
@@ -759,14 +873,19 @@ void begin_frame(Machine& m) {
             results_table(m, ce, m.sdram);
             m.results_table_patched = true;
         }
-        if (want == PolyScene::Bonus) {
+        if (want == PolyScene::Bonus || want == PolyScene::Stage) {
             // The items are blitted where they are: their clip reaches into
             // the margins, as in a level, and what lands there goes to the
-            // shadow.
-            const uint8_t* p = m.sdram + kClipRectSdram;
-            write_clip(m, int16_t(-ce), int16_t(320 + ce),
-                       uint32_t(p[8]) << 24 | uint32_t(p[9]) << 16 | uint32_t(p[10]) << 8 | p[11]);
-            m.bonus_clip_overridden = true;
+            // shadow. The special stage's sprite objects (rings, spheres,
+            // stars; issue #5) are clipped to its 288 px picture, [16, 304),
+            // which left them out of the widened tube's margins.
+            const ClipRect now = read_clip(m);
+            const ClipRect native = native_clip(want);
+            const bool ours = now.left == -ce && now.right == 320 + ce;
+            if (ours || (now.left == native.left && now.right == native.right)) {
+                write_clip(m, int16_t(-ce), int16_t(320 + ce), now.bottom);
+                m.bonus_clip_overridden = true;
+            }
         }
     }
     if (level && in_lobby(m)) lobby_margins(m, e);
@@ -808,6 +927,12 @@ void begin_frame(Machine& m) {
                    ours_x ? int16_t((r[2] << 8) | r[3]) : now.right, ours_bottom ? bottom : now.bottom);
         m.clip_overridden = false;
     }
+    // A level's polygons reach the margins (level_polygon_margins); the
+    // final boss's arena already does, widened as a whole.
+    // Also with only the rows below the screen widened.
+    m.level_poly_on = level && !m.wide_special && (e > 0 || eb > 0);
+    m.level_poly_margin = m.level_poly_on ? e : 0;
+    m.level_poly_valid = false;
     // The HUD keeps to the left edge of what the margin shows of the level.
     set_hud_shift(m, level && m.wide_hud_edges && e ? e - margin_cut(m, e).left : 0);
 }
@@ -831,6 +956,9 @@ void install(Machine& m) {
     m.bonus_clip_overridden = false;
     m.radial_len = 0;
     m.cull_shift = 0;
+    m.level_poly_margin = 0;
+    m.level_poly_on = false;
+    m.level_poly_valid = false;
     m.plane_fill_clamped = true;
     m.tether_called = false;
 }

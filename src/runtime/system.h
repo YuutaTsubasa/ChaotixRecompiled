@@ -196,7 +196,7 @@ public:
     // set for all of them.
     uint8_t poly_scene = 0;
     bool results_table_patched = false;  // the results screen's polygons widened
-    bool bonus_clip_overridden = false;  // the bonus stage's blitter clip widened
+    bool bonus_clip_overridden = false;  // the bonus or special stage's blitter clip widened
     // The bonus stage's rings by radius (Vdp::radial_lut); render only.
     uint8_t radial_lut[512 * 4] = {};
     int radial_len = 0;
@@ -209,6 +209,15 @@ public:
     int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
     int lobby_cut_left = 0, lobby_cut_right = 0;
     int special_shift = 0;             // px its polygons are drawn right of true
+    // A widened level's margin for its polygons this frame (patches.h,
+    // level_polygon_margins), 0: none; worked out at the start of each frame.
+    int level_poly_margin = 0;
+    bool level_poly_on = false;  // margins or rows below: the hook draws
+    // The polygon the rasterizer is drawing in a widened level (render only:
+    // patches::fill_clears_margins): its fill word and rows.
+    bool level_poly_valid = false;
+    uint16_t level_poly_word = 0;
+    int level_poly_y0 = 0, level_poly_y1 = 0;
     int cull_shift = 0;                // pending d2 offset inside the ring cull patch
     bool plane_fill_clamped = true;    // last plane fill used the unmasked (clamped) form
     // A stage the host has asked the game to start (TIME ATTACK). A game mode

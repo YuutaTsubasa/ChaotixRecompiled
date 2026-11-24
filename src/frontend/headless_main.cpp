@@ -461,6 +461,9 @@ int main(int argc, char** argv) {
     bool compare_native = false;
     std::string achievements_file;  // --achievements FILE: report unlocks
     uint64_t min_centre_frames = 0;  // fail if fewer frames could be compared
+    // With --compare-native: the 68K work RAM of both machines must also be
+    // the same after every frame, i.e. widescreen changed only the picture.
+    bool compare_ram = false;
     std::string wav_path;
     std::string pwm_dump_dir;  // --dump-pwm-samples (audio/pwm_samples.h)
     struct Poke { uint64_t frame; uint32_t addr; uint8_t value; bool sdram = false, fb = false; };
@@ -724,6 +727,7 @@ int main(int argc, char** argv) {
             }
         }
         else if (a == "--compare-native") compare_native = true;
+        else if (a == "--compare-ram") compare_ram = compare_native = true;
         else if (a == "--achievements" && i + 1 < argc) achievements_file = next();
         else if (a == "--min-centre-frames") min_centre_frames = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--wav") wav_path = next();
@@ -1281,6 +1285,7 @@ int main(int argc, char** argv) {
     double rewind_push_ms = 0, rewind_push_worst = 0;
     uint64_t rewind_pushes = 0;
     uint64_t centre_ok_frames = 0;
+    uint64_t ram_ok_frames = 0;
     int centre_worst = 0;  // most pixels a compared frame differed by (special stage only)
     uint64_t lockstep_ok_frames = 0;
     CoverageRecorder cov;
@@ -1464,6 +1469,7 @@ int main(int argc, char** argv) {
             }
         cheats::apply(*m, cheat_writes);
         if (ref) cheats::apply(*ref, cheat_writes);
+        if (nat) cheats::apply(*nat, cheat_writes);  // the 4:3 machine of --compare-native too
         m->chaos_forms = chaos_forms;
         if (ref) ref->chaos_forms = chaos_forms;
         {
@@ -1710,7 +1716,18 @@ int main(int argc, char** argv) {
         }
         if (nat && centre_compare) {
             nat->input.pad[0] = btn;
+            nat->input.pad[1] = btn2;
             nat->run_frame();
+            if (compare_ram) {
+                if (std::memcmp(nat->wram, m->wram, sizeof m->wram) != 0) {
+                    size_t k = 0;
+                    while (nat->wram[k] == m->wram[k]) ++k;
+                    std::printf("RAM MISMATCH at frame %llu, work RAM $FF%04zX: %02X in 4:3, %02X in widescreen\n",
+                                (unsigned long long)m->frame_count, k, nat->wram[k], m->wram[k]);
+                    return 6;
+                }
+                ++ram_ok_frames;
+            }
             if (!m->wide_active) { /* not a widescreen scene */ }
             else if (patches::camera_x(*nat) != patches::camera_x(*m) || patches::camera_y(*nat) != patches::camera_y(*m)) {
                 // The widescreen camera clamp keeps the margins inside the
@@ -1860,6 +1877,14 @@ int main(int argc, char** argv) {
         return 5;
     }
     if (compare_native) std::printf("centre check: %llu widescreen frames with a 4:3 identical centre\n", (unsigned long long)centre_ok_frames);
+    if (compare_ram) std::printf("RAM check: work RAM identical to 4:3 on %llu frames\n", (unsigned long long)ram_ok_frames);
+    // Nothing compared (no widescreen, so no 4:3 machine) is no pass. The
+    // check stops with the centre check only when the cameras differ, and
+    // the camera is work RAM, so the RAM check has failed by then.
+    if (compare_ram && ram_ok_frames == 0) {
+        std::printf("RAM check: no frames compared (--compare-ram needs --wide or --wide-bottom)\n");
+        return 6;
+    }
     if (compare_native && centre_worst) std::printf("centre check: special stage frames differ along polygon edges by at most %d pixels\n", centre_worst);
     if (!ghost_path.empty()) {
         std::printf("ghost: drawn on %llu of %llu frames, %llu pixels, %llu outside its box, %llu frames misplaced; "

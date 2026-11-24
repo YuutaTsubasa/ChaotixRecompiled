@@ -390,6 +390,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --press 1600:right:300 --press 1700:c:10 --press 2000:left:200 --press 2300:c:10)
     set_tests_properties(lockstep_final_boss_widescreen PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
+    # Issue #5: a piece of red Metal Sonic is a picture in plane A that the
+    # boss parks at screen X -128, off the 4:3 screen; the 512 px ring showed
+    # it in the left margin while the boss came in on the right (frame 3400;
+    # 0.15.24: 188b2ce3ed68c136). It shows in the margins only where it also
+    # reaches into the 4:3 picture (vdp_widescreen.the_final_boss_picture_*).
+    add_test(NAME widescreen_final_boss_picture_not_round_the_ring
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3401 --wide 53
+                --level-select --stage 300:7:2:0:4:7:0 --cheat rings --fuzz 11:1500:7400
+                --expect-hash 3400:ad9a32da097069ae)
+    set_tests_properties(widescreen_final_boss_picture_not_round_the_ring PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     # Issue #146: Chaos Forms, a built-in mod. BOTANIC BASE 1, all six Chaos
     # Rings (the cheat), 60 rings put in at frame 800, jump at 900 and again
     # in the air at 912: both characters transform and a ring goes every
@@ -431,6 +442,26 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --peek-every 3200:8064:2)
     set_tests_properties(widescreen_amazing_arena_boss_fights PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
+    # Issue #5: AMAZING ARENA's clock hands are polygons, clipped by the
+    # SH-2's rasterizer to the 4:3 screen; a clock in the margins had none
+    # (frame 1220, the clock wholly in the right margin; 0.15.24:
+    # 0074fae88c96ca3b). The host draws the margin part of each polygon; the
+    # game's own drawing, and so the 4:3 picture, is untouched.
+    set(_arena_clock --level-select --stage 300:2:1:0:2:7:0 --press 750:right:330 --press 1100:left:200)
+    add_test(NAME widescreen_amazing_arena_clock_hands_in_the_margins
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1221 --wide 53 ${_arena_clock}
+                --expect-hash 1220:b3ce6bece8551bba)
+    set_tests_properties(widescreen_amazing_arena_clock_hands_in_the_margins PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    add_test(NAME widescreen_amazing_arena_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1600 --wide 53 --compare-native
+                --min-centre-frames 1000 ${_arena_clock})
+    set_tests_properties(widescreen_amazing_arena_centre_matches_4_3 PROPERTIES TIMEOUT 600
+        FAIL_REGULAR_EXPRESSION "MISMATCH")
+    add_test(NAME lockstep_widescreen_amazing_arena_polygons
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1600 --wide 53 --lockstep ${_arena_clock})
+    set_tests_properties(lockstep_widescreen_amazing_arena_polygons PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 1600 frames bit-identical")
     # The same, with widescreen turned off (frame 2391) while the letterbox is
     # closed: putting the 4:3 rectangle back keeps the game's bounds too.
     add_test(NAME widescreen_off_during_amazing_arena_letterbox
@@ -508,6 +539,20 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600 --sprites-log 2438)
     set_tests_properties(widescreen_hud_flies_in_to_the_edge PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "bank  19 frame  37 x  -21 y   16")
+    # Issue #5: the title card's black bar is a polygon whose rows start at
+    # the screen's left edge. A fill from a line's first column cleared the
+    # margins of that line with its colour, so the bar painted a black box
+    # in the right margin and the whole left margin, which went away at
+    # once when the bar left the 4:3 picture (0.15.24 frames 2420 and 2438:
+    # 499728ea93a27f96, 79c860083781fe1e). Now only a fill covering the
+    # whole line clears the margins, and the bar slides on through the left
+    # margin (its part there drawn by the host as for any polygon).
+    add_test(NAME widescreen_title_card_slides_into_the_margin
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2439 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600
+                --expect-hash 2420:395533abfe231660 --expect-hash 2438:bc6eca0056271667)
+    set_tests_properties(widescreen_title_card_slides_into_the_margin PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     add_test(NAME lockstep_widescreen_hud_flies_in
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2460 --wide 53 --wide-bottom 16 --hud-edges --lockstep
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600)
@@ -546,6 +591,23 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --min-centre-frames 1900 --stage 300:10:0:0:2:7:0
                 --press 1100:left:120 --press 1700:right:200)
     set_tests_properties(lockstep_special_stage_widescreen special_stage_centre_matches_4_3 PROPERTIES TIMEOUT 900)
+    # Issue #5: the stage's rings, spheres and stars are sprites, clipped to
+    # its 288 px picture, so they vanished at its 4:3 edges while the tube
+    # went on into the margins. Frame 1200 has rows of rings and spheres
+    # running out past both sides (0.15.24: a0a843c5b8f325ba, cut off). The
+    # wider clip changes only the picture: the 68K work RAM is the 4:3 run's
+    # on every frame.
+    set(_special_objects --stage 300:10:1:0:2:7:0 --press 450:left:300 --press 800:right:300)
+    add_test(NAME widescreen_special_stage_objects_in_the_margins
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1201 --wide 53 ${_special_objects}
+                --expect-hash 1200:0826c27c0571befd)
+    set_tests_properties(widescreen_special_stage_objects_in_the_margins PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    add_test(NAME special_stage_objects_centre_and_ram_match_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --compare-ram
+                --min-centre-frames 1900 ${_special_objects})
+    set_tests_properties(special_stage_objects_centre_and_ram_match_4_3 PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "RAM check: work RAM identical to 4:3 on 2400 frames")
     # Issue #21: played from a level (a giant ring), the special stage runs in
     # the level's game mode, 0x18. Set it so mid-stage: the margins must stay.
     add_test(NAME special_stage_is_widescreen_in_the_level_mode

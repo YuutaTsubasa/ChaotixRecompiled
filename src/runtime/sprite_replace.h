@@ -85,6 +85,9 @@ public:
     // `b`, before they are made; `draws` is how many draws its list has.
     void write(const Machine& m, int b, uint32_t off, uint32_t v, int size, bool overwrite, uint32_t draws);
     void fill(const Machine& m, int b, uint32_t addr, uint32_t words, uint16_t data, uint32_t draws);
+    // A byte the host drew into buffer `b`'s margin shadow at offset `off`
+    // (patches::level_polygon_margins).
+    void margin_write(int b, uint32_t off, uint32_t draws);
 
     // Composes buffer `b` (on display) from its list with the pack's
     // replacements, and with the draws `moves` puts elsewhere (one entry per

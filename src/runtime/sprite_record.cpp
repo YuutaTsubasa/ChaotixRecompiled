@@ -299,6 +299,14 @@ void SpriteRecorder::collect_dumps(const Machine& m, const SpriteList& list) {
 
 const SpriteList& SpriteRecorder::displayed(const Machine& m) const { return lists_[m.mars.fb_display & 1]; }
 
+void SpriteRecorder::margin_write(const Machine& m, uint32_t off, uint8_t) {
+    const int b = (m.mars.fb_display ^ 1) & 1;
+    if (layer_) layer_->margin_write(b, off, uint32_t(lists_[b].draws.size()));
+    if (!track_writes) return;
+    uint8_t* own = owner_[b].data();
+    own[off & 0x1FFFF] = uint8_t((own[off & 0x1FFFF] & kSpriteEver) | kOther);
+}
+
 void SpriteRecorder::fb_write(const Machine& m, uint32_t off, uint32_t v, int size, bool overwrite) {
     const int b = (m.mars.fb_display ^ 1) & 1;
     if (layer_) layer_->write(m, b, off, v, size, overwrite, uint32_t(lists_[b].draws.size()));
@@ -335,10 +343,11 @@ void SpriteRecorder::fb_fill(const Machine& m, uint32_t addr, uint32_t words, ui
         if (m.wide_special && in_picture(o)) o = (o - uint32_t(m.special_shift)) & 0x1FFFF;
         other(o);
         other(o + 1);
-        // A widened level: a fill word at a line's first column also clears
-        // that line's margins in the shadow (Machine::fb_margin_clear_line),
-        // whatever fill it is -- the clear, or a polygon's span from x = 0.
-        if (m.wide_active && !m.wide_special && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0) {
+        // A widened level: a fill covering a line from its first column also
+        // clears that line's margins in the shadow
+        // (Machine::fb_margin_clear_line, patches::fill_clears_margins).
+        if (m.wide_active && !m.wide_special && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0 &&
+            patches::fill_clears_margins(m, o, words - i, data)) {
             for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x)
                 if (x < 0 || x >= kNativeWidth) other(o + uint32_t(x));
             if ((o - patches::kFbLineBase) / patches::kFbLineStride == uint32_t(kActiveLines - 1))

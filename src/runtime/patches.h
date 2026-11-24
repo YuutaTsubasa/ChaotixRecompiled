@@ -11,6 +11,7 @@
 
 namespace chaotix {
 class Machine;
+class Vdp;
 }
 namespace sh2 {
 struct State;
@@ -162,9 +163,13 @@ enum : uint32_t {
     kSh2Blit = 0x06001380,          // r1 X, r2 Y, r3 flags, r4 graphic
     kSh2BlitScaled = 0x06001F18,    // also r5 SX, r6 SY (8.8)
     kSh2BlitWarped = 0x060023EC,    // r1-r4, and r5 -> 16 bytes of stretch parameters
+    // The polygon rasterizer (issue #5, see kSh2PolygonCode below): r1 -> a
+    // vertex count byte, then that many (x, y) words in screen pixels; r13
+    // the word it fills with.
+    kSh2Polygon = 0x06004858,
 };
 // Sorted, like kM68kHooks.
-inline constexpr uint32_t kSh2Hooks[] = {kSh2RecolourCopy, kSh2Blit, kSh2BlitScaled, kSh2BlitWarped};
+inline constexpr uint32_t kSh2Hooks[] = {kSh2RecolourCopy, kSh2Blit, kSh2BlitScaled, kSh2BlitWarped, kSh2Polygon};
 constexpr uint32_t kSh2HookCount = uint32_t(sizeof kSh2Hooks / sizeof kSh2Hooks[0]);
 
 constexpr bool sh2_hooks_sorted() {
@@ -258,6 +263,12 @@ constexpr uint8_t kLevelPlaneSize = 0x01;
 // is_patched_sh2_immediate below), so it stays valid when they change.
 constexpr uint32_t kSpecialRectSdram = 0x3844;
 constexpr int16_t kSpecialRect[4] = {16, 303, 4, 219};
+// Its sprite objects -- the rings, spheres and stars, projected by the add at
+// $06004BE0 and blitted scaled ($06001F18) -- are clipped by the blitters'
+// rectangle (kClipRectSdram), which the stage sets to its picture, [16, 304).
+// Widened, that clip becomes [-C, 320 + C) like the bonus stage's (issue #5:
+// they vanished at the 4:3 picture's edges while the tube went on).
+constexpr int16_t kSpecialSpriteClip[2] = {16, 304};
 // The stage frames its 4:3 picture with black Mega Drive sprites of this
 // pattern (issue #21): 2x4 cells at X 0 and 304 down the sides, 4x1 cells
 // above and below. Widened, the side columns would cut through the picture,
@@ -342,6 +353,38 @@ constexpr uint32_t kBonusItemReturn = 0x06000DF6;
 // Ring colours by radius, in quarter pixels, far enough for the corners of
 // the widest margins (r = 266 at kMaxWideExtra).
 constexpr int kRadialLen = 4 * 288;
+
+// Polygons in a level (issue #5). The 68K can ask for an object drawn with
+// polygons (command 0x0C on its 32X command list, 68K $881118); the master
+// SH-2 projects it with the special stage's code, which the boot code's SDRAM
+// image holds too, and its rasterizer ($06004858) clips the polygons against
+// kSpecialRectSdram, the full screen in a level (kFullRect). AMAZING ARENA's
+// clock hands are such objects: widened, a clock in the margins had no hands.
+// The game's drawing is left exactly as it is -- moved, a polygon clipped at
+// the screen's edge is cut at another point and its edge lands a pixel apart
+// inside the 4:3 picture too -- and the host draws, at the rasterizer's
+// entry, the part of the polygon outside the native columns (and on the rows
+// below the screen) into the margin shadow, filled with the same word, in
+// the order the game draws. Nothing the machine reads changes.
+constexpr uint16_t kSh2PolygonCode = 0x4F22;  // sts.l pr,@-r15
+// Draws a polygon's margin part (the hook at kSh2Polygon).
+void level_polygon_margins(Machine& m, const sh2::State& c);
+
+// A widened level's margins live in the shadow, which the game never
+// clears; they are cleared along with a line when the game's per-frame clear
+// fills it from its first column (Machine::fb_margin_clear_line). Only a fill
+// that covers the whole native line from there is a clear: a shorter one is a
+// polygon's span cut at the screen's left edge (issue #5: the title card's
+// bar, a polygon, painted both margins black from its row), whose part in the
+// margins the host draws itself (level_polygon_margins). The rasterizer clips
+// to x 319, so its spans are at most kMarginClearWords long; the game's
+// clears are 161 or 256 words, but a full-screen flash is exactly 160, so a
+// 160-word fill is a clear unless it is on a row of the polygon being drawn,
+// in its fill word.
+constexpr uint32_t kMarginClearWords = 160;
+// Whether a fill of `words` words from the first column of the line at
+// frame buffer offset line_off, with `data`, clears that line's margins.
+bool fill_clears_margins(const Machine& m, uint32_t line_off, uint32_t words, uint16_t data);
 
 // The fill the widened scene clears a whole line with (the special stage's
 // or the bonus stage's), which then clears the margins too, unmoved.
@@ -481,6 +524,16 @@ bool in_lobby(const Machine& m);
 // The final boss's arena is on screen, drawn by the special stage's code
 // (its projection loaded) with the screen's rectangle, or our widened one.
 bool final_boss_active(const Machine& m);
+// The final boss's plane A (issue #5) holds one picture, 16 x 16 cells, part
+// of red Metal Sonic, which the boss moves about by scrolling the plane: it
+// parks it at screen X -128 (hscroll -640), just off the 4:3 screen, and
+// flies it across. In a 512 px ring the 4:3 view leaves a 64 px gap in which
+// such a picture is hidden whichever way round it is taken; the widened view
+// leaves none, so the parked picture showed in the left margin while the boss
+// came in on the right. Shown in the margins are only the pictures in the
+// ring that also reach into the native columns: those continue what the 4:3
+// view shows. Fills Vdp::plane_a_hide_* for the frame (render only).
+void boss_plane_a_margins(Vdp& v, int extra);
 
 // The lobby's palette areas (issue #61). Every frame ($8891C6) the lobby
 // picks palette lines 0 and 1 by where plane A is: area k while its X is at
