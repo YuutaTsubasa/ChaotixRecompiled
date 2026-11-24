@@ -163,9 +163,13 @@ enum : uint32_t {
     kSh2Blit = 0x06001380,          // r1 X, r2 Y, r3 flags, r4 graphic
     kSh2BlitScaled = 0x06001F18,    // also r5 SX, r6 SY (8.8)
     kSh2BlitWarped = 0x060023EC,    // r1-r4, and r5 -> 16 bytes of stretch parameters
+    // The polygon rasterizer (issue #5, see kSh2PolygonCode below): r1 -> a
+    // vertex count byte, then that many (x, y) words in screen pixels; r13
+    // the word it fills with.
+    kSh2Polygon = 0x06004858,
 };
 // Sorted, like kM68kHooks.
-inline constexpr uint32_t kSh2Hooks[] = {kSh2RecolourCopy, kSh2Blit, kSh2BlitScaled, kSh2BlitWarped};
+inline constexpr uint32_t kSh2Hooks[] = {kSh2RecolourCopy, kSh2Blit, kSh2BlitScaled, kSh2BlitWarped, kSh2Polygon};
 constexpr uint32_t kSh2HookCount = uint32_t(sizeof kSh2Hooks / sizeof kSh2Hooks[0]);
 
 constexpr bool sh2_hooks_sorted() {
@@ -349,6 +353,22 @@ constexpr uint32_t kBonusItemReturn = 0x06000DF6;
 // Ring colours by radius, in quarter pixels, far enough for the corners of
 // the widest margins (r = 266 at kMaxWideExtra).
 constexpr int kRadialLen = 4 * 288;
+
+// Polygons in a level (issue #5). The 68K can ask for an object drawn with
+// polygons (command 0x0C on its 32X command list, 68K $881118); the master
+// SH-2 projects it with the special stage's code, which the boot code's SDRAM
+// image holds too, and its rasterizer ($06004858) clips the polygons against
+// kSpecialRectSdram, the full screen in a level (kFullRect). AMAZING ARENA's
+// clock hands are such objects: widened, a clock in the margins had no hands.
+// The game's drawing is left exactly as it is -- moved, a polygon clipped at
+// the screen's edge is cut at another point and its edge lands a pixel apart
+// inside the 4:3 picture too -- and the host draws, at the rasterizer's
+// entry, the part of the polygon outside the native columns (and on the rows
+// below the screen) into the margin shadow, filled with the same word, in
+// the order the game draws. Nothing the machine reads changes.
+constexpr uint16_t kSh2PolygonCode = 0x4F22;  // sts.l pr,@-r15
+// Draws a polygon's margin part (the hook at kSh2Polygon).
+void level_polygon_margins(Machine& m, const sh2::State& c);
 
 // The fill the widened scene clears a whole line with (the special stage's
 // or the bonus stage's), which then clears the margins too, unmoved.

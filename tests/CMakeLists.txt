@@ -442,6 +442,26 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --peek-every 3200:8064:2)
     set_tests_properties(widescreen_amazing_arena_boss_fights PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
+    # Issue #5: AMAZING ARENA's clock hands are polygons, clipped by the
+    # SH-2's rasterizer to the 4:3 screen; a clock in the margins had none
+    # (frame 1220, the clock wholly in the right margin; 0.15.24:
+    # 0074fae88c96ca3b). The host draws the margin part of each polygon; the
+    # game's own drawing, and so the 4:3 picture, is untouched.
+    set(_arena_clock --level-select --stage 300:2:1:0:2:7:0 --press 750:right:330 --press 1100:left:200)
+    add_test(NAME widescreen_amazing_arena_clock_hands_in_the_margins
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1221 --wide 53 ${_arena_clock}
+                --expect-hash 1220:b3ce6bece8551bba)
+    set_tests_properties(widescreen_amazing_arena_clock_hands_in_the_margins PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    add_test(NAME widescreen_amazing_arena_centre_matches_4_3
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1600 --wide 53 --compare-native
+                --min-centre-frames 1000 ${_arena_clock})
+    set_tests_properties(widescreen_amazing_arena_centre_matches_4_3 PROPERTIES TIMEOUT 600
+        FAIL_REGULAR_EXPRESSION "MISMATCH")
+    add_test(NAME lockstep_widescreen_amazing_arena_polygons
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1600 --wide 53 --lockstep ${_arena_clock})
+    set_tests_properties(lockstep_widescreen_amazing_arena_polygons PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 1600 frames bit-identical")
     # The same, with widescreen turned off (frame 2391) while the letterbox is
     # closed: putting the 4:3 rectangle back keeps the game's bounds too.
     add_test(NAME widescreen_off_during_amazing_arena_letterbox

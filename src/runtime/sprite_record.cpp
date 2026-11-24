@@ -299,6 +299,14 @@ void SpriteRecorder::collect_dumps(const Machine& m, const SpriteList& list) {
 
 const SpriteList& SpriteRecorder::displayed(const Machine& m) const { return lists_[m.mars.fb_display & 1]; }
 
+void SpriteRecorder::margin_write(const Machine& m, uint32_t off, uint8_t) {
+    const int b = (m.mars.fb_display ^ 1) & 1;
+    if (layer_) layer_->margin_write(b, off, uint32_t(lists_[b].draws.size()));
+    if (!track_writes) return;
+    uint8_t* own = owner_[b].data();
+    own[off & 0x1FFFF] = uint8_t((own[off & 0x1FFFF] & kSpriteEver) | kOther);
+}
+
 void SpriteRecorder::fb_write(const Machine& m, uint32_t off, uint32_t v, int size, bool overwrite) {
     const int b = (m.mars.fb_display ^ 1) & 1;
     if (layer_) layer_->write(m, b, off, v, size, overwrite, uint32_t(lists_[b].draws.size()));

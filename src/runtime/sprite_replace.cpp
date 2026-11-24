@@ -249,6 +249,13 @@ void SpriteLayer::write(const Machine& m, int b, uint32_t off, uint32_t v, int s
     }
 }
 
+void SpriteLayer::margin_write(int b, uint32_t off, uint32_t draws) {
+    Track& t = track_[b & 1];
+    const uint32_t k = kPlane + (off & 0x1FFFF);
+    t.owner[k] = 2;
+    t.seq[k] = uint16_t(std::min<uint32_t>(draws, 0xFFFF));
+}
+
 void SpriteLayer::fill(const Machine& m, int b, uint32_t addr, uint32_t words, uint16_t data, uint32_t draws) {
     Track& t = track_[b & 1];
     const uint16_t seq = uint16_t(std::min<uint32_t>(draws, 0xFFFF));

@@ -154,6 +154,9 @@ public:
     enum Owner : uint8_t { kNone = 0, kSprite = 1, kOther = 2, kSpriteEver = 0x80 };
     bool track_writes = false;
     void fb_write(const Machine& m, uint32_t off, uint32_t v, int size, bool overwrite);
+    // A byte the host drew into the margin shadow at frame buffer offset off
+    // (patches::level_polygon_margins): not a sprite's.
+    void margin_write(const Machine& m, uint32_t off, uint8_t v);
     void fb_fill(const Machine& m, uint32_t word_addr, uint32_t words, uint16_t data);
     const uint8_t* owners(int buffer) const { return owner_[buffer & 1].data(); }
     // Where the buffer's margin bytes went: 0 the frame buffer, 1 the

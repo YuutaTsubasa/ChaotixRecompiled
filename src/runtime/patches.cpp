@@ -1,6 +1,7 @@
 // Runtime game patches (see patches.h).
 #include "runtime/patches.h"
 #include "runtime/lobby.h"
+#include "runtime/sprite_record.h"
 #include "runtime/system.h"
 #include "runtime/tether.h"
 #include "runtime/title_hold.h"
@@ -493,7 +494,58 @@ bool bonus_tunnel(const Machine& m, uint8_t* lut) {
     return true;
 }
 
+void level_polygon_margins(Machine& m, const sh2::State& c) {
+    const int e = m.level_poly_margin;
+    if (!e || m.wide_special || c.id != 0 || sdram16(m, kSh2Polygon & 0x3FFFF) != kSh2PolygonCode) return;
+    if (!rect_is(m, kFullRect)) return;  // the game's own clip: it is the native one only at full screen
+    // The polygon, in SDRAM (cached or cache-through).
+    const uint32_t a = c.r[1];
+    if (((a >> 24) & 0xDF) != 0x06) return;
+    auto byte = [&](uint32_t k) { return m.sdram[(a + k) & 0x3FFFF]; };
+    auto word = [&](uint32_t k) { return int(int16_t(byte(k) << 8 | byte(k + 1))); };
+    const int n = byte(0);
+    constexpr int kMaxVertices = 16;
+    if (n < 3 || n > kMaxVertices) return;
+    int vx[kMaxVertices], vy[kMaxVertices], xmin = INT32_MAX, xmax = INT32_MIN, ymin = INT32_MAX, ymax = INT32_MIN;
+    for (int i = 0; i < n; ++i) {
+        vx[i] = word(1 + 4 * uint32_t(i));
+        vy[i] = word(3 + 4 * uint32_t(i));
+        xmin = std::min(xmin, vx[i]), xmax = std::max(xmax, vx[i]);
+        ymin = std::min(ymin, vy[i]), ymax = std::max(ymax, vy[i]);
+    }
+    const int eb = std::clamp(m.wide_extra_bottom, 0, kMaxWideExtraBottom);
+    const int top = kFullRect[2], bottom = kFullRect[3] + eb;
+    // Wholly inside the native columns and rows: nothing for the margins.
+    if (xmin >= 0 && xmax < kNativeWidth && ymax <= kFullRect[3]) return;
+    if (xmax < -e || xmin >= kNativeWidth + e || ymax < top || ymin > bottom) return;
+    uint8_t* shadow = m.fb_margin[m.mars.fb_display ^ 1];
+    const uint8_t fill[2] = {uint8_t(c.r[13] >> 8), uint8_t(c.r[13])};
+    // Each row's span, as the rasterizer steps its edges: x in 8.8 from the
+    // upper vertex, rounded, over the rows the edge covers.
+    for (int y = std::max(ymin, top); y <= std::min(ymax, bottom); ++y) {
+        int left = INT32_MAX, right = INT32_MIN;
+        for (int i = 0; i < n; ++i) {
+            int x0 = vx[i], y0 = vy[i], x1 = vx[(i + 1) % n], y1 = vy[(i + 1) % n];
+            if (y0 > y1) std::swap(x0, x1), std::swap(y0, y1);
+            if (y < y0 || y > y1 || y0 == y1) continue;
+            const int x = int(((int64_t(x0) << 8) + 127 + int64_t(x1 - x0) * (y - y0) * 256 / (y1 - y0)) >> 8);
+            left = std::min(left, x), right = std::max(right, x);
+        }
+        if (left > right) continue;
+        const bool below = y > kFullRect[3];
+        const uint32_t line = kFbLineBase + uint32_t(y) * kFbLineStride;
+        for (int x = std::max(left, -e); x <= std::min(right, kNativeWidth - 1 + e); ++x) {
+            if (!below && x >= 0 && x < kNativeWidth) continue;  // the game's own pixels
+            const uint32_t o = (line + uint32_t(x)) & 0x1FFFF;
+            const uint8_t b = fill[o & 1];
+            shadow[o] = b;
+            if (m.sprites && m.sprites->tracks_writes()) m.sprites->margin_write(m, o, b);
+        }
+    }
+}
+
 void sh2_hook(Machine& m, sh2::State& c, uint32_t pc) {
+    if (pc == kSh2Polygon) { level_polygon_margins(m, c); return; }
     if (pc != kSh2BlitScaled || c.id != 0 || c.pr != kBonusItemReturn) return;
     if (!m.wide_special || PolyScene(m.poly_scene) != PolyScene::Bonus) return;
     // As far right as the centre the handler was given.
@@ -862,6 +914,9 @@ void begin_frame(Machine& m) {
                    ours_x ? int16_t((r[2] << 8) | r[3]) : now.right, ours_bottom ? bottom : now.bottom);
         m.clip_overridden = false;
     }
+    // A level's polygons reach the margins (level_polygon_margins); the
+    // final boss's arena already does, widened as a whole.
+    m.level_poly_margin = level && !m.wide_special ? e : 0;
     // The HUD keeps to the left edge of what the margin shows of the level.
     set_hud_shift(m, level && m.wide_hud_edges && e ? e - margin_cut(m, e).left : 0);
 }
@@ -885,6 +940,7 @@ void install(Machine& m) {
     m.bonus_clip_overridden = false;
     m.radial_len = 0;
     m.cull_shift = 0;
+    m.level_poly_margin = 0;
     m.plane_fill_clamped = true;
     m.tether_called = false;
 }
