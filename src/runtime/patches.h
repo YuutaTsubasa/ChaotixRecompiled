@@ -370,6 +370,15 @@ constexpr uint16_t kSh2PolygonCode = 0x4F22;  // sts.l pr,@-r15
 // Draws a polygon's margin part (the hook at kSh2Polygon).
 void level_polygon_margins(Machine& m, const sh2::State& c);
 
+// A widened level's margins live in the shadow, which the game never
+// clears; they are cleared along with a line when the game's per-frame clear
+// fills it from its first column (Machine::fb_margin_clear_line). Only a fill
+// that covers the whole native line from there is a clear: a shorter one is a
+// polygon's span cut at the screen's left edge (issue #5: the title card's
+// bar, a polygon, painted both margins black from its row), whose part in the
+// margins the host draws itself (level_polygon_margins).
+constexpr uint32_t kMarginClearWords = 160;
+
 // The fill the widened scene clears a whole line with (the special stage's
 // or the bonus stage's), which then clears the margins too, unmoved.
 bool is_widened_clear(const Machine& m, uint32_t word_addr, uint32_t words, uint16_t data);

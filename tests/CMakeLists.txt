@@ -539,6 +539,20 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600 --sprites-log 2438)
     set_tests_properties(widescreen_hud_flies_in_to_the_edge PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "bank  19 frame  37 x  -21 y   16")
+    # Issue #5: the title card's black bar is a polygon whose rows start at
+    # the screen's left edge. A fill from a line's first column cleared the
+    # margins of that line with its colour, so the bar painted a black box
+    # in the right margin and the whole left margin, which went away at
+    # once when the bar left the 4:3 picture (0.15.24 frames 2420 and 2438:
+    # 499728ea93a27f96, 79c860083781fe1e). Now only a fill covering the
+    # whole line clears the margins, and the bar slides on through the left
+    # margin (its part there drawn by the host as for any polygon).
+    add_test(NAME widescreen_title_card_slides_into_the_margin
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2439 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600
+                --expect-hash 2420:395533abfe231660 --expect-hash 2438:bc6eca0056271667)
+    set_tests_properties(widescreen_title_card_slides_into_the_margin PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     add_test(NAME lockstep_widescreen_hud_flies_in
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2460 --wide 53 --wide-bottom 16 --hud-edges --lockstep
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600)

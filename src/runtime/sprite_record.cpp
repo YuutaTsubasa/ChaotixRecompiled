@@ -343,10 +343,11 @@ void SpriteRecorder::fb_fill(const Machine& m, uint32_t addr, uint32_t words, ui
         if (m.wide_special && in_picture(o)) o = (o - uint32_t(m.special_shift)) & 0x1FFFF;
         other(o);
         other(o + 1);
-        // A widened level: a fill word at a line's first column also clears
-        // that line's margins in the shadow (Machine::fb_margin_clear_line),
-        // whatever fill it is -- the clear, or a polygon's span from x = 0.
-        if (m.wide_active && !m.wide_special && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0) {
+        // A widened level: a fill covering a line from its first column also
+        // clears that line's margins in the shadow
+        // (Machine::fb_margin_clear_line, patches::kMarginClearWords).
+        if (m.wide_active && !m.wide_special && ((o - patches::kFbLineBase) & (patches::kFbLineStride - 1)) == 0 &&
+            words - i >= patches::kMarginClearWords) {
             for (int x = -patches::kMaxWideExtra; x < kNativeWidth + patches::kMaxWideExtra; ++x)
                 if (x < 0 || x >= kNativeWidth) other(o + uint32_t(x));
             if ((o - patches::kFbLineBase) / patches::kFbLineStride == uint32_t(kActiveLines - 1))
