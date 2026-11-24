@@ -390,6 +390,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --press 1600:right:300 --press 1700:c:10 --press 2000:left:200 --press 2300:c:10)
     set_tests_properties(lockstep_final_boss_widescreen PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
+    # Issue #5: a piece of red Metal Sonic is a picture in plane A that the
+    # boss parks at screen X -128, off the 4:3 screen; the 512 px ring showed
+    # it in the left margin while the boss came in on the right (frame 3400;
+    # 0.15.24: 188b2ce3ed68c136). It shows in the margins only where it also
+    # reaches into the 4:3 picture (vdp_widescreen.the_final_boss_picture_*).
+    add_test(NAME widescreen_final_boss_picture_not_round_the_ring
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3401 --wide 53
+                --level-select --stage 300:7:2:0:4:7:0 --cheat rings --fuzz 11:1500:7400
+                --expect-hash 3400:ad9a32da097069ae)
+    set_tests_properties(widescreen_final_boss_picture_not_round_the_ring PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     # Issue #146: Chaos Forms, a built-in mod. BOTANIC BASE 1, all six Chaos
     # Rings (the cheat), 60 rings put in at frame 800, jump at 900 and again
     # in the air at 912: both characters transform and a ring goes every

@@ -178,3 +178,35 @@ TEST(vdp_widescreen, lobby_margins_take_the_next_area_colours) {
     rgb = render(v, 53);
     CHECK_EQ(rgb[53 + 320 + 2], red);
 }
+
+// Issue #5: the final boss keeps a 128 px picture in plane A and parks it off
+// the 4:3 screen at X -128 by scrolling the plane. The 512 px ring then shows
+// it in the left margin; it is left out there unless it also reaches into
+// the native columns, where it carries on what the 4:3 view shows.
+TEST(vdp_widescreen, the_final_boss_picture_shows_in_the_margins_only_beside_the_screen) {
+    auto boss = [](int hscroll) {
+        auto v = scene();
+        v.reg[13] = 0x3F;  // scroll table at FC00
+        for (int row = 0; row < 16; ++row)
+            for (int col = 0; col < 16; ++col) word(v, 0xC000 + uint32_t(row * 64 + col) * 2, 1);
+        word(v, 0xFC00, uint16_t(hscroll));
+        return v;
+    };
+    constexpr int e = 53;
+    // Parked at -128: in the left margin, but not beside anything on screen.
+    auto v = boss(-640);
+    auto rgb = render(v, e);
+    CHECK_EQ(rgb[e - 1], red);  // the ring as it is
+    patches::boss_plane_a_margins(v, e);
+    CHECK_EQ(v.plane_a_hide_n, 1);
+    rgb = render(v, e);
+    CHECK(std::all_of(rgb.begin(), rgb.begin() + 320 + 2 * e, [](uint32_t px) { return px == black; }));
+    // At X 300 it runs off the right edge: the margin carries it on.
+    v = boss(300);
+    patches::boss_plane_a_margins(v, e);
+    CHECK_EQ(v.plane_a_hide_n, 0);
+    rgb = render(v, e);
+    CHECK_EQ(rgb[e + 300], red);
+    CHECK_EQ(rgb[e + 372], red);
+    CHECK_EQ(rgb[e + 299], black);
+}

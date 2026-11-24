@@ -49,6 +49,12 @@ public:
     // issue #61). alt_cram null: none.
     const uint16_t* alt_cram = nullptr;
     int alt_x0 = 0, alt_x1 = 0;
+    // Host-only: plane A is not drawn in screen columns [plane_a_hide_x0[i],
+    // plane_a_hide_x1[i]) (0 = the native left edge), outside the native
+    // columns only: the final boss's picture going round its ring
+    // (runtime/patches.h, boss_plane_a_margins). plane_a_hide_n 0: none.
+    int plane_a_hide_n = 0;
+    int plane_a_hide_x0[2] = {}, plane_a_hide_x1[2] = {};
     // Host-only: the widescreen margins the picture shows game content in
     // (columns beyond each side, rows below the active area); 0 where they
     // are black bars. Text replaced by sprite (sprite_text.h) treats a

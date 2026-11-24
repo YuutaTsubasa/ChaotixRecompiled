@@ -1469,6 +1469,7 @@ int main(int argc, char** argv) {
             }
         cheats::apply(*m, cheat_writes);
         if (ref) cheats::apply(*ref, cheat_writes);
+        if (nat) cheats::apply(*nat, cheat_writes);  // the 4:3 machine of --compare-native too
         m->chaos_forms = chaos_forms;
         if (ref) ref->chaos_forms = chaos_forms;
         {
@@ -1715,6 +1716,7 @@ int main(int argc, char** argv) {
         }
         if (nat && centre_compare) {
             nat->input.pad[0] = btn;
+            nat->input.pad[1] = btn2;
             nat->run_frame();
             if (compare_ram) {
                 if (std::memcmp(nat->wram, m->wram, sizeof m->wram) != 0) {

@@ -528,6 +528,46 @@ bool final_boss_active(const Machine& m) {
     return special_projection_loaded(m) && (special_rect_is_ours(m, PolyScene::Boss) || rect_is(m, kFullRect));
 }
 
+void boss_plane_a_margins(Vdp& v, int extra) {
+    v.plane_a_hide_n = 0;
+    // One full-screen scroll value, a 64-column plane.
+    if (extra <= 0 || (v.reg[11] & 3) != 0 || (v.reg[16] & 3) != 1) return;
+    constexpr int kCols = 64, kRing = kCols * 8;
+    const int rows = 32 << ((v.reg[16] >> 4) & 1);
+    const uint32_t nt = uint32_t(v.reg[2] & 0x38) << 10;
+    bool used[kCols] = {};
+    int n_used = 0;
+    for (int c = 0; c < kCols; ++c) {
+        for (int r = 0; r < rows && !used[c]; ++r) {
+            const uint32_t a = (nt + 2 * uint32_t(r * kCols + c)) & 0xFFFF;
+            used[c] = ((v.vram[a] << 8 | v.vram[(a + 1) & 0xFFFF]) & 0x7FF) != 0;
+        }
+        n_used += used[c];
+    }
+    if (n_used == 0 || n_used == kCols) return;
+    // The picture is what the longest run of empty columns leaves: it starts
+    // right after that run.
+    int best = 0, best_end = 0;
+    for (int c = 0, run = 0; c < 2 * kCols; ++c) {
+        run = used[c % kCols] ? 0 : run + 1;
+        if (run > best) { best = std::min(run, kCols); best_end = c % kCols; }
+    }
+    const int start = (best_end + 1) % kCols, width = 8 * (kCols - best);
+    const int hscroll = (v.vram[(uint32_t(v.reg[13] & 0x3F) << 10) & 0xFFFF] << 8 |
+                         v.vram[((uint32_t(v.reg[13] & 0x3F) << 10) + 1) & 0xFFFF]) & 0x3FF;
+    // Screen X of its left edge, once round the ring at a time.
+    int x0 = (8 * start + hscroll) % kRing;
+    while (x0 > -extra - width) x0 -= kRing;
+    for (x0 += kRing; x0 < kNativeWidth + extra; x0 += kRing) {
+        const int x1 = x0 + width;
+        if (x1 <= -extra || (x1 > 0 && x0 < kNativeWidth)) continue;  // out of view, or continues the 4:3 one
+        if (v.plane_a_hide_n == 2) break;
+        v.plane_a_hide_x0[v.plane_a_hide_n] = std::max(x0, -extra);
+        v.plane_a_hide_x1[v.plane_a_hide_n] = std::min(x1, kNativeWidth + extra);
+        ++v.plane_a_hide_n;
+    }
+}
+
 bool in_lobby(const Machine& m) {
     return wram16(m, kSceneZone) == kWorldEntrance && wram16(m, kSceneLevel) <= kLastLobbyLevel;
 }

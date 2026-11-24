@@ -11,6 +11,7 @@
 
 namespace chaotix {
 class Machine;
+class Vdp;
 }
 namespace sh2 {
 struct State;
@@ -487,6 +488,16 @@ bool in_lobby(const Machine& m);
 // The final boss's arena is on screen, drawn by the special stage's code
 // (its projection loaded) with the screen's rectangle, or our widened one.
 bool final_boss_active(const Machine& m);
+// The final boss's plane A (issue #5) holds one picture, 16 x 16 cells, part
+// of red Metal Sonic, which the boss moves about by scrolling the plane: it
+// parks it at screen X -128 (hscroll -640), just off the 4:3 screen, and
+// flies it across. In a 512 px ring the 4:3 view leaves a 64 px gap in which
+// such a picture is hidden whichever way round it is taken; the widened view
+// leaves none, so the parked picture showed in the left margin while the boss
+// came in on the right. Shown in the margins are only the pictures in the
+// ring that also reach into the native columns: those continue what the 4:3
+// view shows. Fills Vdp::plane_a_hide_* for the frame (render only).
+void boss_plane_a_margins(Vdp& v, int extra);
 
 // The lobby's palette areas (issue #61). Every frame ($8891C6) the lobby
 // picks palette lines 0 and 1 by where plane A is: area k while its X is at

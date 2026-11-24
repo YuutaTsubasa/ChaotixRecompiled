@@ -393,6 +393,9 @@ void Machine::render_output_line(int src_line, int dst_row) {
     vdp.alt_cram = wide_active && lobby_alt ? lobby_cram : nullptr;
     vdp.alt_x0 = lobby_alt_x0;
     vdp.alt_x1 = lobby_alt_x1;
+    // The final boss's picture in plane A, worked out once a frame.
+    if (!wide_special || scene != patches::PolyScene::Boss) vdp.plane_a_hide_n = 0;
+    else if (src_line == 0) patches::boss_plane_a_margins(vdp, extra);
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;
