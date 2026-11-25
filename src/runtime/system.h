@@ -208,6 +208,16 @@ public:
     bool lobby_alt = false;
     int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
     int lobby_cut_left = 0, lobby_cut_right = 0;
+    // A room one 4:3 screen wide (issue #5, patches::kRoomRepeat): its
+    // margins repeat the room every room_period px on the sides it is cut
+    // on, instead of black; lobby_fade_* is black still. With room_32x the
+    // 32X picture is repeated as well, but for room_box (screen x0, x1, y0,
+    // y1: the characters). Render only.
+    int lobby_fade_left = 0, lobby_fade_right = 0;
+    bool lobby_room_left = false, lobby_room_right = false;
+    int room_period = 0;
+    bool room_32x = false;
+    int room_box[4] = {};
     // The ending's white scene is widened this frame (patches::ending_scene,
     // issue #5): its margins are not cut. Render only.
     bool ending_wide = false;

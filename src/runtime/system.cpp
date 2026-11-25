@@ -399,6 +399,11 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // A widened level's margins (black where nothing is there to show).
     const patches::MarginCut level_cut =
         extra && wide_active && !wide_special ? patches::margin_cut(*this, extra) : patches::MarginCut{};
+    // A room one screen wide, repeated in its margins (patches.h).
+    const bool room = extra && wide_active && !wide_special && room_period > 0;
+    vdp.tile_period = room ? room_period : 0;
+    vdp.tile_left = room && lobby_room_left;
+    vdp.tile_right = room && lobby_room_right;
     // Left of the lobby's origin, plane B only (patches::MarginCut).
     if (level_cut.backdrop > level_cut.left) {
         vdp.plane_a_hide_n = 1;
@@ -476,6 +481,20 @@ void Machine::render_output_line(int src_line, int dst_row) {
         // Debugging: one layer alone, the other shown as magenta.
         if (debug_layer == 1) row[x] = md[x];
         else if (debug_layer == 2 && !(show32x || ((p >> 24) == 0xFD && mdbg))) row[x] = 0xFFFF00FFu;
+    }
+    if (room) {
+        // The repeated room's margins: its planes (already repeated, without
+        // sprites), and in the stage select room its whole picture from
+        // room_period px further in, but for the characters' box
+        // (patches::kRoomRepeat).
+        const bool line_box = src_line >= room_box[2] && src_line < room_box[3];
+        auto repeat = [&](int x, int from) {
+            const int sx = from - extra;  // screen X of the column copied
+            if (room_32x && !(line_box && sx >= room_box[0] && sx < room_box[1])) row[x] = row[from];
+            else row[x] = 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]);
+        };
+        if (vdp.tile_left) for (int x = 0; x < extra; ++x) repeat(x, x + room_period);
+        if (vdp.tile_right) for (int x = n - extra; x < n; ++x) repeat(x, x - room_period);
     }
     if (extra) {
         // Scenes without widescreen support: black side bars. In a level,

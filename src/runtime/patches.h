@@ -508,7 +508,8 @@ bool special_stage_entry(const Machine& m);
 //   B keeps the native ring in the lobby; plane A, which scrolls with the
 //   camera, is shifted as in a level.
 // - Rooms narrower than the view (the stage select room, the Combi
-//   Catcher) are black outside the range the camera is held to, and the
+//   Catcher) are cut outside the range the camera is held to (repeated since
+//   issue #5, kRoomRepeat), and the
 //   palette areas are drawn in their own colours (lobby_margins, below).
 // - The final boss's arena is drawn by the special stage's polygon code with
 //   the screen's rectangle; it is widened as the stage is (PolyScene::Boss).
@@ -568,8 +569,27 @@ constexpr int kLobbyAreas = 5;
 constexpr int16_t kLobbyBounds[kLobbyAreas - 1] = {0x180, 0x4C0, 0x900, 0x1010};
 // Colours of an area the game may be cycling when it is matched.
 constexpr int kLobbyCycled = 8;
+// Issue #5: the rooms the camera is held in at one point, the Combi Catcher
+// (1552) and the stage select room (2816), are one 4:3 screen wide, wall to
+// wall: the Combi Catcher's striped pillars stand astride both edges, the
+// stage select room's drum and console panels end there. Beyond them the
+// planes hold the corridor (streamed in part) or nothing, the pit below the
+// corridor's floor black. Their margins show the room again instead, as if
+// the next one stood beside it: the room's planes kRoomRepeat px further in
+// (the pillars, the pit's purple columns, the drum, the console's side
+// panels continue across the seam), without sprites, which belong to this
+// room only. The stage select room's screens are 32X pictures in the
+// console: there the whole picture is repeated, but for the box around the
+// two characters and their ring (kRoomCharacterBox), where only its planes
+// are. Render only (Vdp::tile_period, Machine::render_output_line).
+constexpr int kRoomRepeat = 320;  // the native screen's width
+constexpr int kStageSelectRoomX = 2816;
+constexpr uint32_t kPlayerObjectPtr = 0xE034, kPartnerObjectPtr = 0xE036;  // words: object addresses
+constexpr int kRoomCharacterBox[4] = {-32, 32, -48, 32};  // x0, x1, y0, y1 around each character
 // Fills Machine::lobby_* for this frame's picture, margins of e px.
 void lobby_margins(Machine& m, int e);
+// Fills Machine::room_* for a room one screen wide (kRoomRepeat).
+void room_repeat(Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
 // mean the same scene; Machine::level_scene holds the key the level engine

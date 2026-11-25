@@ -680,8 +680,9 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt = false;
     m.lobby_alt_x0 = m.lobby_alt_x1 = 0;
     const int x = camera_x(m);
-    // Rooms narrower than the view: black outside the range the camera is
-    // held to, the part of the layout the 4:3 view can show from there. The
+    // Rooms narrower than the view: cut outside the range the camera is
+    // held to, the part of the layout the 4:3 view can show from there (and
+    // repeated, room_repeat). The
     // stage select room's range is one point (2816..2816): its margins would
     // show the corridor and the outdoor entrance beside it, and as the room
     // scrolls down, blocks the engine never draws. A wider range is no room:
@@ -691,6 +692,11 @@ void lobby_margins(Machine& m, int e) {
     const bool room = r.right - r.left < 2 * e;
     m.lobby_cut_left = room ? std::clamp(e - (x - r.left), 0, e) : 0;
     m.lobby_cut_right = room ? std::clamp(x + e - r.right, 0, e) : 0;
+    // Issue #5: such a room is one 4:3 screen wide, wall to wall, and those
+    // margins repeat it instead (room_period), where its planes repeat.
+    m.lobby_room_left = m.lobby_cut_left > 0;
+    m.lobby_room_right = m.lobby_cut_right > 0;
+    m.lobby_fade_left = m.lobby_fade_right = 0;
     // Which area's colours the game shows: the one whose table matches lines
     // 0 and 1 but for the few it cycles. The area by plane A's X first; the
     // palette follows it a frame later.
@@ -719,6 +725,8 @@ void lobby_margins(Machine& m, int e) {
         const int rk = by_x < kLobbyAreas - 1 ? std::clamp(x + e - kLobbyBounds[by_x], 0, e) : 0;
         m.lobby_cut_left = std::max(m.lobby_cut_left, lk);
         m.lobby_cut_right = std::max(m.lobby_cut_right, rk);
+        m.lobby_fade_left = lk;
+        m.lobby_fade_right = rk;
         return;
     }
     if (!left && !right) return;
@@ -729,6 +737,23 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt = true;
     m.lobby_alt_x0 = left ? 0 : kNativeWidth + 2 * e - right;
     m.lobby_alt_x1 = left ? left : kNativeWidth + 2 * e;
+}
+
+void room_repeat(Machine& m) {
+    m.room_period = kRoomRepeat;
+    const CameraRange r = camera_range(m);
+    m.room_32x = r.left == kStageSelectRoomX && r.right == kStageSelectRoomX;
+    if (!m.room_32x) return;
+    // The characters and the ring between them, on screen.
+    int x0 = INT32_MAX, x1 = INT32_MIN, y0 = INT32_MAX, y1 = INT32_MIN;
+    for (uint32_t ptr : {kPlayerObjectPtr, kPartnerObjectPtr}) {
+        const uint32_t obj = wram16(m, ptr);
+        if (obj < 0x8000 || obj > 0xFFC0) continue;
+        const int x = int16_t(wram16(m, obj + 8)) - camera_x(m), y = int16_t(wram16(m, obj + 0xC)) - camera_y(m);
+        x0 = std::min(x0, x + kRoomCharacterBox[0]), x1 = std::max(x1, x + kRoomCharacterBox[1]);
+        y0 = std::min(y0, y + kRoomCharacterBox[2]), y1 = std::max(y1, y + kRoomCharacterBox[3]);
+    }
+    m.room_box[0] = x0, m.room_box[1] = x1, m.room_box[2] = y0, m.room_box[3] = y1;
 }
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
@@ -821,10 +846,12 @@ MarginCut margin_cut(const Machine& m, int extra) {
     c.left = origin;
     if (in_lobby(m)) {
         // WORLD ENTRANCE: worked out for this frame by lobby_margins. Left of
-        // the origin, plane B's outdoor picture (see MarginCut).
-        c.left = std::min(m.lobby_cut_left, extra);
+        // the origin, plane B's outdoor picture (see MarginCut). A room's
+        // repeated sides are black only for a fade.
+        const bool tiled = m.room_period > 0;
+        c.left = std::min(tiled && m.lobby_room_left ? m.lobby_fade_left : m.lobby_cut_left, extra);
         c.backdrop = std::max(origin, c.left);
-        c.right = std::min(m.lobby_cut_right, extra);
+        c.right = std::min(tiled && m.lobby_room_right ? m.lobby_fade_right : m.lobby_cut_right, extra);
     }
     return c;
 }
@@ -917,8 +944,14 @@ void begin_frame(Machine& m) {
         }
     }
     m.ending_wide = level && ending_level(m);
-    if (level && in_lobby(m)) lobby_margins(m, e);
-    else m.lobby_alt = false;
+    m.room_period = 0;
+    m.room_32x = false;
+    if (level && in_lobby(m)) {
+        lobby_margins(m, e);
+        if (m.lobby_room_left || m.lobby_room_right) room_repeat(m);
+    } else {
+        m.lobby_alt = false;
+    }
     // Only the screen's own bounds are widened, and only those are put back.
     // A scene can narrow the rectangle itself: AMAZING ARENA's boss closes it
     // from the top and bottom into a letterbox and opens it again (issue
@@ -937,10 +970,10 @@ void begin_frame(Machine& m) {
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
         const int ce = (e + 7) & ~7;
-        // A WORLD ENTRANCE room shows nothing in its margins: drawing its
-        // sprites there anyway only costs the SH-2 time, and the Combi
-        // Catcher's TIME UP, scaled up past the screen, then flipped a frame
-        // or more late.
+        // A WORLD ENTRANCE room shows none of the game's own drawing in its
+        // margins (they repeat the room, kRoomRepeat): drawing its sprites
+        // there anyway only costs the SH-2 time, and the Combi Catcher's TIME
+        // UP, scaled up past the screen, then flipped a frame or more late.
         const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;
         const int cr = in_lobby(m) ? (e - m.lobby_cut_right + 7) & ~7 : ce;
         write_clip(m, ours_x ? int16_t(-cl) : now.left, ours_x ? int16_t(320 + cr) : now.right,

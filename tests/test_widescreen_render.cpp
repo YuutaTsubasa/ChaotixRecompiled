@@ -368,11 +368,13 @@ TEST(widescreen_render, the_menus_carry_their_tiled_backdrop_into_the_margins) {
     CHECK(!patches::menu_backdrop_tiled(*m));
 }
 
-TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {
+TEST(widescreen_render, a_lobby_room_repeats_outside_its_range) {
     // Issue #61: the stage select room holds the camera at 2816..2816; its
     // margins would show the corridor beside it and, as it scrolls down,
-    // blocks the engine never draws. A wide range is no room: its ends move
-    // as the player goes on, and what lies beyond them was just in view.
+    // blocks the engine never draws. They were black; since issue #5 they
+    // repeat the room (patches::kRoomRepeat), the stage select room's 32X
+    // picture too. A wide range is no room: its ends move as the player
+    // goes on, and what lies beyond them was just in view.
     auto m = level_machine();
     auto put = [&](uint32_t at, int v) { m->wram[at] = uint8_t(v >> 8); m->wram[at + 1] = uint8_t(v); };
     auto clip = [&](uint32_t at) { return int16_t(m->sdram[patches::kClipRectSdram + at] << 8 | m->sdram[patches::kClipRectSdram + at + 1]); };
@@ -383,15 +385,19 @@ TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {
     patches::begin_frame(*m);
     CHECK(m->wide_active);
     const patches::MarginCut room = patches::margin_cut(*m, 53);
-    CHECK_EQ(room.left, 53);
-    CHECK_EQ(room.right, 53);
-    // Nothing is shown there, so the SH-2 does not draw there either.
+    CHECK_EQ(room.left, 0);
+    CHECK_EQ(room.right, 0);
+    CHECK(m->lobby_room_left && m->lobby_room_right);
+    CHECK_EQ(m->room_period, patches::kRoomRepeat);
+    CHECK(m->room_32x);
+    // The SH-2 still draws nothing there: the margins repeat the room.
     CHECK_EQ(clip(0), 0);
     CHECK_EQ(clip(2), 320);
     put(patches::kPlaneAStruct, 1573);
     put(patches::kPlaneAStruct + 0xA, 1552);
     put(patches::kPlaneAStruct + 0x8, 7872);
     patches::begin_frame(*m);
+    CHECK_EQ(m->room_period, 0);
     const patches::MarginCut corridor = patches::margin_cut(*m, 53);
     CHECK_EQ(corridor.left, 0);
     CHECK_EQ(corridor.right, 0);

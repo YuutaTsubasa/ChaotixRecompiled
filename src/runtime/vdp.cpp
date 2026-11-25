@@ -536,6 +536,12 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     for (int i = 0; i < plane_a_hide_n && extra > 0; ++i)
         for (int x = std::max(plane_a_hide_x0[i], xs); x < std::min(plane_a_hide_x1[i], xe); ++x)
             if (x < 0 || x >= width) a[x - xs] = 0;
+    // A room repeated into the margins (tile_period): from inside the room.
+    const bool tiled = tile_period >= extra && tile_period <= width && extra > 0;
+    if (tiled) {
+        for (int x = xs; x < 0 && tile_left; ++x) a[x - xs] = a[x + tile_period - xs], b[x - xs] = b[x + tile_period - xs];
+        for (int x = width; x < xe && tile_right; ++x) a[x - xs] = a[x - tile_period - xs], b[x - xs] = b[x - tile_period - xs];
+    }
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {
         // The margins continue the scene's rings (see radial_lut). The rings
         // are opaque, and plane B (the scene's own cells stop at the 4:3
@@ -739,6 +745,12 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
                 }
             }
         }
+    }
+
+    // Nothing beside the room is drawn in its repeated margins.
+    if (tiled) {
+        if (tile_left) std::memset(s, 0, size_t(-xs));
+        if (tile_right) std::memset(s + (width - xs), 0, size_t(xe - width));
     }
 
     const bool shi = (reg[12] & 0x08) != 0;

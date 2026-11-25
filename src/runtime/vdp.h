@@ -55,6 +55,13 @@ public:
     // (runtime/patches.h, boss_plane_a_margins). plane_a_hide_n 0: none.
     int plane_a_hide_n = 0;
     int plane_a_hide_x0[2] = {}, plane_a_hide_x1[2] = {};
+    // Host-only: a WORLD ENTRANCE room one 4:3 screen wide (issue #5). The
+    // margins on the tiled sides show the room's planes again, tile_period px
+    // further in (the room repeated, wall to wall), and no sprites: the
+    // planes beyond the room hold only the corridor or nothing
+    // (runtime/patches.h, kRoomRepeat). tile_period 0: none.
+    int tile_period = 0;
+    bool tile_left = false, tile_right = false;
     // Host-only: the widescreen margins the picture shows game content in
     // (columns beyond each side, rows below the active area); 0 where they
     // are black bars. Text replaced by sprite (sprite_text.h) treats a

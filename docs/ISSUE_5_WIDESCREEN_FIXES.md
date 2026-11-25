@@ -4,17 +4,17 @@ A list of widescreen problems was reported on issue #5 (2026-11-24). All of
 them were reproduced on 0.15.24 with `chaotix_headless --wide 53` (16:9).
 0.15.25 fixed four that are plain bugs in a widened scene (1, 5, 6, 8).
 Three were left for the owner, who then asked for all three to be widescreen:
-the black strip at the lobby's outdoor entrance (2, done), the Combi Catcher
-and roulette room in 4:3 (4, left as it is for now: the rooms are one
-screen wide, see below) and the white ending in 4:3 (9, done). Not reproduced, and
-not touched: the Combi Catcher's sky (3) and the launcher (7).
+the black strip at the lobby's outdoor entrance (2), the Combi Catcher and
+roulette room in 4:3 (4, the margins now repeat the room) and the white
+ending in 4:3 (9); all three are done. Not reproduced, and not touched: the
+Combi Catcher's sky (3) and the launcher (7).
 
 In every case the game runs exactly as before: the 4:3 picture, the 68K work
 RAM and the timing are unchanged, and the interpreter and the recompiled code
 agree frame for frame. Only what the margins show changes.
 
-Screenshots: left or top before (0.15.24 for 1, 5, 6, 8; 0.15.25 for 2
-and 9), right or bottom after.
+Screenshots: left or top before (0.15.24 for 1, 5, 6, 8; 0.15.25 for 2,
+4 and 9), right or bottom after.
 
 ## 1. Special stage: rings, spheres and stars stop at the 4:3 picture
 
@@ -74,36 +74,80 @@ and the lobby's existing centre, palette and lockstep tests. The return to
 the lobby after a level (`finished_run.txt`, frames 4850-5600, at NIGHT)
 shows the same picture in its own colours.
 
-## 4. The Combi Catcher and the roulette room stay 4:3 (not changed)
+## 4. The Combi Catcher and the roulette room in 4:3
 
 ![rooms](images/issue-5-rooms.png)
 
-Left: as the game is shown (black margins). Right: the same frames with the
-margins not cut, i.e. what the planes and the 32X actually hold there (a
-debug render, not shipped). Top: the Combi Catcher, frame 2000 of `--stage
-300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press
-1300:down:10 --wide 53`; bottom: the stage select (roulette) room, frame
-1300 of `--stage 300:7:0:0:2:7:0 --press 600:right:2600 --wide 53`.
+Top: the Combi Catcher, frame 2000 of `--stage 300:7:0:0:2:7:0 --press
+600:right:200 --press 1100:left:35 --press 1300:down:10 --wide 53`. Bottom:
+the stage select (roulette) room, frame 1300 of `--stage 300:7:0:0:2:7:0
+--press 600:right:2600 --wide 53`.
 
-Both rooms are exactly one 4:3 screen wide: the camera is held to one
-point (1552, 2816), and each room's art ends at the 4:3 edges. Looked at
-layer by layer:
+**Cause.** Both rooms hold the camera at one point (1552, 2816), and
+issue #61 blacked out the margins of any room narrower than the widened
+view.
 
-- **The Combi Catcher.** Plane A is the room: its two striped pillars are
-  its walls, at the 4:3 edges, and the pit below. Left of the left pillar
-  plane A is empty; right of the right one it holds pieces of the lobby
-  further right, streamed in part. Plane B is the corridor's 512 px picture:
-  beside the room's top it shows the corridor, and below the corridor's
-  floor it has nothing (black), all down the pit.
-- **The roulette room.** Plane B is the room's picture (the domes and the
-  machinery behind the roulette); it ends at the 4:3 edges, with nothing
-  beyond. Plane A, outside the room's console, is the corridor's walls
-  (pink and teal columns) with blank ring columns between.
+**What the game has there.** Both rooms are exactly one 4:3 screen wide,
+wall to wall. Layer by layer:
 
-So both rooms are one 4:3 screen wide, and the planes beyond them hold
-only the corridor (cut off where the ring was not streamed) or nothing.
-They stay with issue #61's black margins for now, pending the owner's
-choice of how to fill them.
+- **The Combi Catcher.** Plane A is the room: its striped pillars stand
+  astride both 4:3 edges, with the pit's purple columns between them.
+  Left of the left pillar plane A is empty; right of the right one it
+  holds pieces of the lobby further right, streamed only in part. Plane B
+  is the corridor's 512 px picture: beside the room's top it shows the
+  corridor, and below the corridor's floor it has nothing (black), all the
+  way down the pit.
+- **The roulette room.** Plane B is the room's own picture (a drum of domes
+  and machinery behind the roulette), and it ends at the 4:3 edges. Plane A
+  beyond the console is the corridor's walls, with blank ring columns
+  between them. The console's six screens are 32X pictures.
+
+So the planes beyond the rooms hold only the corridor or nothing.
+
+**Fix (the owner's choice).** The margins repeat the room as if another
+one stood beside it (`patches::kRoomRepeat`, 320 px): margin column x shows
+the room's column x + 320 (left) or x - 320 (right).
+
+- **Planes.** Both planes are drawn from the repeated column
+  (`Vdp::tile_period`). The Combi Catcher's pillars, pit columns and floor,
+  and the roulette room's drum and console side panels, continue across
+  the 4:3 edge.
+- **Sprites.** No sprites are drawn in the repeated margins: the claw, the
+  capsules, the signs and the characters belong to this room only.
+- **The 32X layer.**
+  - The Combi Catcher's 32X layer holds only objects, so its margins show
+    the planes alone.
+  - In the stage select room the screens are 32X art of the console, so
+    there the whole repeated column is shown, 32X included.
+  - The exception is a box around the two characters and the ring between
+    them (`kRoomCharacterBox`, from their objects at `$FFE034` and
+    `$FFE036`). Where the box falls on a repeated column, only the planes
+    are shown, so a character walking to one side does not appear twice.
+
+The margins are black only while the lobby fades (as before), and the
+SH-2's clip stays native in the rooms. Render only: the machine state
+matches 0.15.25's, and the 4:3 centre matches a 4:3 run on every widened
+frame.
+
+**Verification.**
+
+- `widescreen_lobby_combi_catcher_repeats_the_room` (frame 2000) and
+  `widescreen_lobby_stage_select_room_repeats_the_room` (frame 1300). Both
+  hashes differ on 0.15.25.
+- The existing centre checks, with 2740 and 1643 widened frames identical
+  to 4:3.
+- The unit test `widescreen_render.a_lobby_room_repeats_outside_its_range`
+  (formerly `..._is_black_outside_its_range`).
+
+**Left as it is.**
+
+- The room is not repeated in the two frames before the Combi Catcher's
+  camera locks: while the camera walks in, the margins still show the
+  lobby as it is. Around frames 1317-1320 that includes the
+  corridor-streaming transient described in item 3 of the reproduction
+  notes (a dark block at the bottom right for about four frames).
+- The Combi Catcher's floor capsules are sprites, so they are not
+  repeated.
 
 ## 5. AMAZING ARENA: the clocks have no hands in the margins
 
@@ -259,4 +303,4 @@ off-screen there would show in the margins earlier than in 4:3.
 Full `ctest` and the 33-run lockstep sweep (all special stages, levels,
 bonus stage, hub, random input) on Windows (MinGW), with the ROM.
 
-Items 2 and 9: the same, 163/163 and 33/33 bit-identical, 0 warnings.
+Items 2, 4 and 9: the same, 165/165 and 33/33 bit-identical, 0 warnings.
