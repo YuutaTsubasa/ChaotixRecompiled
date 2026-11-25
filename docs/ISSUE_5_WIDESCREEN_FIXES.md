@@ -260,3 +260,5 @@ off-screen there would show in the margins earlier than in 4:3.
 
 Full `ctest` and the 33-run lockstep sweep (all special stages, levels,
 bonus stage, hub, random input) on Windows (MinGW), with the ROM.
+
+Items 2 and 9: the same, 163/163 and 33/33 bit-identical, 0 warnings.

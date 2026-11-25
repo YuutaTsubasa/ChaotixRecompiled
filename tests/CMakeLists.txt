@@ -501,7 +501,7 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
             COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --wide 53 --compare-ram
                     --min-centre-frames 2500 --stage 300:7:${_ending}:0:2:7:0)
         set_tests_properties(widescreen_ending_${_ending}_centre_and_ram_match_4_3 PROPERTIES TIMEOUT 900
-            PASS_REGULAR_EXPRESSION "RAM check: work RAM identical to 4:3 on 3000 frames")
+            PASS_REGULAR_EXPRESSION "centre check: 2[5-9][0-9][0-9] widescreen frames with a 4:3 identical centre.*RAM check: work RAM identical to 4:3 on 3000 frames")
     endforeach()
     add_test(NAME lockstep_ending_widescreen
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep
