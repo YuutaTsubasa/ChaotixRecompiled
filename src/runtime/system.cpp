@@ -402,6 +402,7 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // A room one screen wide, repeated in its margins (patches.h).
     const bool room = extra && wide_active && !wide_special && room_period > 0;
     vdp.tile_period = room ? room_period : 0;
+    vdp.tile_unit = room ? room_unit : 0;
     vdp.tile_left = room && lobby_room_left;
     vdp.tile_right = room && lobby_room_right;
     // Left of the lobby's origin, plane B only (patches::MarginCut).
@@ -483,18 +484,12 @@ void Machine::render_output_line(int src_line, int dst_row) {
         else if (debug_layer == 2 && !(show32x || ((p >> 24) == 0xFD && mdbg))) row[x] = 0xFFFF00FFu;
     }
     if (room) {
-        // The repeated room's margins: its planes (already repeated, without
-        // sprites), and in the stage select room its whole picture from
-        // room_period px further in, but for the characters' box
+        // The repeated room's margins are its planes alone (already repeated,
+        // without sprites): nothing the 32X draws belongs to the room's walls
         // (patches::kRoomRepeat).
-        const bool line_box = src_line >= room_box[2] && src_line < room_box[3];
-        auto repeat = [&](int x, int from) {
-            const int sx = from - extra;  // screen X of the column copied
-            if (room_32x && !(line_box && sx >= room_box[0] && sx < room_box[1])) row[x] = row[from];
-            else row[x] = 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]);
-        };
-        if (vdp.tile_left) for (int x = 0; x < extra; ++x) repeat(x, x + room_period);
-        if (vdp.tile_right) for (int x = n - extra; x < n; ++x) repeat(x, x - room_period);
+        auto planes = [&](int x) { row[x] = 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]); };
+        if (vdp.tile_left) for (int x = 0; x < extra; ++x) planes(x);
+        if (vdp.tile_right) for (int x = n - extra; x < n; ++x) planes(x);
     }
     if (extra) {
         // Scenes without widescreen support: black side bars. In a level,

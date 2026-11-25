@@ -59,8 +59,10 @@ public:
     // margins on the tiled sides show the room's planes again, tile_period px
     // further in (the room repeated, wall to wall), and no sprites: the
     // planes beyond the room hold only the corridor or nothing
-    // (runtime/patches.h, kRoomRepeat). tile_period 0: none.
-    int tile_period = 0;
+    // (runtime/patches.h, kRoomRepeat). tile_period 0: none. With tile_unit,
+    // only the tile_unit px straddling each 4:3 edge repeat, every tile_unit
+    // px (the stage select room's wall panel).
+    int tile_period = 0, tile_unit = 0;
     bool tile_left = false, tile_right = false;
     // Host-only: the widescreen margins the picture shows game content in
     // (columns beyond each side, rows below the active area); 0 where they

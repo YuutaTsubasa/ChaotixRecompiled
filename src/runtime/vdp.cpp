@@ -537,10 +537,21 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
         for (int x = std::max(plane_a_hide_x0[i], xs); x < std::min(plane_a_hide_x1[i], xe); ++x)
             if (x < 0 || x >= width) a[x - xs] = 0;
     // A room repeated into the margins (tile_period): from inside the room.
-    const bool tiled = tile_period >= extra && tile_period <= width && extra > 0;
+    const bool tiled = tile_period >= extra && tile_period <= width && extra > 0 && tile_unit >= 0 &&
+                       tile_unit <= tile_period;
     if (tiled) {
-        for (int x = xs; x < 0 && tile_left; ++x) a[x - xs] = a[x + tile_period - xs], b[x - xs] = b[x + tile_period - xs];
-        for (int x = width; x < xe && tile_right; ++x) a[x - xs] = a[x - tile_period - xs], b[x - xs] = b[x - tile_period - xs];
+        // The column a margin column repeats: tile_period px further in, or
+        // with tile_unit, the same place in the unit straddling the 4:3 edge
+        // (c in [-unit/2, unit/2) from the seam, c < 0 being the far side's).
+        auto source = [&](int x) {
+            if (!tile_unit) return x < 0 ? x + tile_period : x - tile_period;
+            const int h = tile_unit / 2;
+            const int from_seam = x < 0 ? x : x - width;
+            const int c = ((from_seam + h) % tile_unit + tile_unit) % tile_unit - h;
+            return c < 0 ? tile_period + c : c;
+        };
+        for (int x = xs; x < 0 && tile_left; ++x) a[x - xs] = a[source(x) - xs], b[x - xs] = b[source(x) - xs];
+        for (int x = width; x < xe && tile_right; ++x) a[x - xs] = a[source(x) - xs], b[x - xs] = b[source(x) - xs];
     }
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {
         // The margins continue the scene's rings (see radial_lut). The rings

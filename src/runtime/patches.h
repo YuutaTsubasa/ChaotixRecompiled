@@ -578,14 +578,19 @@ constexpr int kLobbyCycled = 8;
 // the next one stood beside it: the room's planes kRoomRepeat px further in
 // (the pillars, the pit's purple columns, the drum, the console's side
 // panels continue across the seam), without sprites, which belong to this
-// room only. The stage select room's screens are 32X pictures in the
-// console: there the whole picture is repeated, but for the box around the
-// two characters and their ring (kRoomCharacterBox), where only its planes
-// are. Render only (Vdp::tile_period, Machine::render_output_line).
+// room only, and nothing of the 32X (the claw, the signs, the characters,
+// the stage select room's monitors).
+// The stage select room is not repeated whole: its drum, monitors, star
+// machine and console are one of a kind, and repeated they were cut in half
+// at the margins' outer edges. What does repeat there is its wall: a 64 px
+// metal panel (the pipe "7" and the triangle) centred on each 4:3 edge, half
+// of it inside the picture on either side, with the zig-zag floor band
+// (16 px) above it. The margins continue that panel every kStageSelectWall
+// px (Vdp::tile_unit), so the wall goes on outward. Render only
+// (Vdp::tile_period, Machine::render_output_line).
 constexpr int kRoomRepeat = 320;  // the native screen's width
 constexpr int kStageSelectRoomX = 2816;
-constexpr uint32_t kPlayerObjectPtr = 0xE034, kPartnerObjectPtr = 0xE036;  // words: object addresses
-constexpr int kRoomCharacterBox[4] = {-32, 32, -48, 32};  // x0, x1, y0, y1 around each character
+constexpr int kStageSelectWall = 64;
 // Fills Machine::lobby_* for this frame's picture, margins of e px.
 void lobby_margins(Machine& m, int e);
 // Fills Machine::room_* for a room one screen wide (kRoomRepeat).

@@ -372,8 +372,8 @@ TEST(widescreen_render, a_lobby_room_repeats_outside_its_range) {
     // Issue #61: the stage select room holds the camera at 2816..2816; its
     // margins would show the corridor beside it and, as it scrolls down,
     // blocks the engine never draws. They were black; since issue #5 they
-    // repeat the room (patches::kRoomRepeat), the stage select room's 32X
-    // picture too. A wide range is no room: its ends move as the player
+    // repeat the room (patches::kRoomRepeat); in the stage select room only
+    // its 64 px wall panel. A wide range is no room: its ends move as the player
     // goes on, and what lies beyond them was just in view.
     auto m = level_machine();
     auto put = [&](uint32_t at, int v) { m->wram[at] = uint8_t(v >> 8); m->wram[at + 1] = uint8_t(v); };
@@ -389,7 +389,7 @@ TEST(widescreen_render, a_lobby_room_repeats_outside_its_range) {
     CHECK_EQ(room.right, 0);
     CHECK(m->lobby_room_left && m->lobby_room_right);
     CHECK_EQ(m->room_period, patches::kRoomRepeat);
-    CHECK(m->room_32x);
+    CHECK_EQ(m->room_unit, patches::kStageSelectWall);
     // The SH-2 still draws nothing there: the margins repeat the room.
     CHECK_EQ(clip(0), 0);
     CHECK_EQ(clip(2), 320);

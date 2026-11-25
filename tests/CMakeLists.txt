@@ -381,17 +381,18 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     # Issue #5: the Combi Catcher and the stage select room are one 4:3
     # screen wide; their margins were black (issue #61) and now repeat the
-    # room, wall to wall (patches::kRoomRepeat): the Combi Catcher's pillars
-    # and pit at frame 2000 (0.15.25: f0c67eeaa485eb3c), the stage select
-    # room's drum and console, its 32X screens included, at frame 1300
-    # (0.15.25: 09268a6c7aefb0a4). The centre checks above cover both rooms.
+    # room's walls (patches::kRoomRepeat): the Combi Catcher's pillars and pit
+    # at frame 2000 (0.15.25: f0c67eeaa485eb3c), the stage select room's
+    # metal wall panel, every 64 px, at frame 1300 (0.15.25:
+    # 09268a6c7aefb0a4): no monitors, star machine or console. The centre
+    # checks above cover both rooms.
     add_test(NAME widescreen_lobby_combi_catcher_repeats_the_room
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2001 --wide 53
                 --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10
                 --expect-hash 2000:27c03eade5e172e1)
     add_test(NAME widescreen_lobby_stage_select_room_repeats_the_room
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1301 --wide 53
-                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:1333a7742ea2f293)
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:3d4e640cc727efd4)
     set_tests_properties(widescreen_lobby_combi_catcher_repeats_the_room
         widescreen_lobby_stage_select_room_repeats_the_room PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")

@@ -100,29 +100,31 @@ wall to wall. Layer by layer:
 - **The roulette room.** Plane B is the room's own picture (a drum of domes
   and machinery behind the roulette), and it ends at the 4:3 edges. Plane A
   beyond the console is the corridor's walls, with blank ring columns
-  between them. The console's six screens are 32X pictures.
+  between them. The console's six screens are 32X pictures. The room has no
+  period of its own (it is mirror-symmetric), except its wall panels and
+  the floor band.
 
 So the planes beyond the rooms hold only the corridor or nothing.
 
-**Fix (the owner's choice).** The margins repeat the room as if another
-one stood beside it (`patches::kRoomRepeat`, 320 px): margin column x shows
-the room's column x + 320 (left) or x - 320 (right).
+**Fix (the owner's choice).** The margins continue the room's own walls
+(`patches::kRoomRepeat`), from its planes only (`Vdp::tile_period`,
+`Vdp::tile_unit`):
 
-- **Planes.** Both planes are drawn from the repeated column
-  (`Vdp::tile_period`). The Combi Catcher's pillars, pit columns and floor,
-  and the roulette room's drum and console side panels, continue across
-  the 4:3 edge.
-- **Sprites.** No sprites are drawn in the repeated margins: the claw, the
-  capsules, the signs and the characters belong to this room only.
-- **The 32X layer.**
-  - The Combi Catcher's 32X layer holds only objects, so its margins show
-    the planes alone.
-  - In the stage select room the screens are 32X art of the console, so
-    there the whole repeated column is shown, 32X included.
-  - The exception is a box around the two characters and the ring between
-    them (`kRoomCharacterBox`, from their objects at `$FFE034` and
-    `$FFE036`). Where the box falls on a repeated column, only the planes
-    are shown, so a character walking to one side does not appear twice.
+- **The Combi Catcher** is repeated whole, as if another one stood beside
+  it: margin column x shows the room's column x + 320 (left) or x - 320
+  (right). Its pillars stand astride the 4:3 edges, so a whole pillar forms
+  at each seam, and the pit's purple columns and the floor go on beyond.
+- **The stage select room** is not: its drum, monitors, star machine and
+  console are one of a kind, and repeated whole they came out cut in half
+  at the margins' outer edges. What repeats in that room is its wall: a
+  64 px metal panel (the pipe "7", the triangle) centred on each 4:3 edge,
+  half of it inside the picture on either side, under the zig-zag floor
+  band (16 px). Margin column x shows the same place in that panel
+  (`kStageSelectWall`): panel after panel, the band and the dark edge of
+  the drum above them going on outward.
+- **No sprites and no 32X** are drawn in the margins. The claw, the
+  capsules, the signs, the monitors and the characters belong to this room
+  only, and the walls the margins continue are all Mega Drive plane tiles.
 
 The margins are black only while the lobby fades (as before), and the
 SH-2's clip stays native in the rooms. Render only: the machine state

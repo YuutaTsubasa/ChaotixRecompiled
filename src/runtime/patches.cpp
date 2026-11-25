@@ -741,19 +741,9 @@ void lobby_margins(Machine& m, int e) {
 
 void room_repeat(Machine& m) {
     m.room_period = kRoomRepeat;
+    // The stage select room: only its wall panel repeats.
     const CameraRange r = camera_range(m);
-    m.room_32x = r.left == kStageSelectRoomX && r.right == kStageSelectRoomX;
-    if (!m.room_32x) return;
-    // The characters and the ring between them, on screen.
-    int x0 = INT32_MAX, x1 = INT32_MIN, y0 = INT32_MAX, y1 = INT32_MIN;
-    for (uint32_t ptr : {kPlayerObjectPtr, kPartnerObjectPtr}) {
-        const uint32_t obj = wram16(m, ptr);
-        if (obj < 0x8000 || obj > 0xFFC0) continue;
-        const int x = int16_t(wram16(m, obj + 8)) - camera_x(m), y = int16_t(wram16(m, obj + 0xC)) - camera_y(m);
-        x0 = std::min(x0, x + kRoomCharacterBox[0]), x1 = std::max(x1, x + kRoomCharacterBox[1]);
-        y0 = std::min(y0, y + kRoomCharacterBox[2]), y1 = std::max(y1, y + kRoomCharacterBox[3]);
-    }
-    m.room_box[0] = x0, m.room_box[1] = x1, m.room_box[2] = y0, m.room_box[3] = y1;
+    m.room_unit = r.left == kStageSelectRoomX && r.right == kStageSelectRoomX ? kStageSelectWall : 0;
 }
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
@@ -945,7 +935,7 @@ void begin_frame(Machine& m) {
     }
     m.ending_wide = level && ending_level(m);
     m.room_period = 0;
-    m.room_32x = false;
+    m.room_unit = 0;
     if (level && in_lobby(m)) {
         lobby_margins(m, e);
         if (m.lobby_room_left || m.lobby_room_right) room_repeat(m);
