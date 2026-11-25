@@ -63,9 +63,10 @@ COMBI CATCHER, with the camera at 1573), and what lies beyond them was just in
 view, so nothing is cut there. In a room the SH-2's clip stays the native one
 too: nothing is shown in its margins, and the Combi Catcher's TIME UP, scaled
 up past the screen, flipped a frame or two late when it was drawn there.
-Issue #5 looked at these rooms again, layer by layer, and kept them so: each
-room's art ends at the 4:3 edges, and beyond it the planes hold only the
-corridor or nothing (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
+Issue #5 looked at these rooms again, layer by layer: each is one 4:3
+screen wide, and beyond it the planes hold only the corridor or nothing.
+They keep their black margins for now, pending the owner's choice of how to
+fill them (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
 
 The lobby's outdoor entrance, where the camera is at X 0..12, now shows
 plane B's outdoor picture left of the origin instead of black (issue #5,

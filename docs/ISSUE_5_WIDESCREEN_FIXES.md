@@ -5,8 +5,8 @@ them were reproduced on 0.15.24 with `chaotix_headless --wide 53` (16:9).
 0.15.25 fixed four that are plain bugs in a widened scene (1, 5, 6, 8).
 Three were left for the owner, who then asked for all three to be widescreen:
 the black strip at the lobby's outdoor entrance (2, done), the Combi Catcher
-and roulette room in 4:3 (4, left as it is: the game has nothing to show
-there, see below) and the white ending in 4:3 (9, done). Not reproduced, and
+and roulette room in 4:3 (4, left as it is for now: the rooms are one
+screen wide, see below) and the white ending in 4:3 (9, done). Not reproduced, and
 not touched: the Combi Catcher's sky (3) and the launcher (7).
 
 In every case the game runs exactly as before: the 4:3 picture, the 68K work
@@ -100,12 +100,10 @@ layer by layer:
   beyond. Plane A, outside the room's console, is the corridor's walls
   (pink and teal columns) with blank ring columns between.
 
-So the margins could show either the corridor beside a room the player is
-closed inside, cut off where the ring was not streamed, or black. There is
-no more of either room to show, and making some (repeating or mirroring its
-art) is what issue #5's rule forbids. Issue #61's black margins are kept;
-the owner can decide whether that is acceptable or whether something else
-should go there.
+So both rooms are one 4:3 screen wide, and the planes beyond them hold
+only the corridor (cut off where the ring was not streamed) or nothing.
+They stay with issue #61's black margins for now, pending the owner's
+choice of how to fill them.
 
 ## 5. AMAZING ARENA: the clocks have no hands in the margins
 
