@@ -88,10 +88,28 @@ enum : uint32_t {
     // ($88E962). Measured with the driver: $F1 stops the music (sound
     // effects carry on), $F0 lowers it. See audio/music_mods.h.
     kSoundRequest = 0x8F6E8A,
+    // The same routine as it lets the Z80's bus go ($8F6EB6), the request
+    // made (runtime/chaos_forms.h: an invincibility monitor taken in a form).
+    kSoundDone = 0x8F6EB6,
+    // The speed shoes monitor ($8901A6, holding the Z80's bus): it speeds
+    // the driver's music up with $B0 at Z80 $3F ($8901B8), then lets the bus
+    // go ($8901C0). A form keeps the music as it was (runtime/chaos_forms.h).
+    kShoesTempo = 0x8901B8,
+    kShoesTempoDone = 0x8901C0,
 };
 constexpr uint8_t kFirstSoundEffect = 0x2A;
 constexpr uint8_t kSoundLowerMusic = 0xF0;
 constexpr uint8_t kSoundStopMusic = 0xF1;
+// Z80 RAM: the driver's three request slots ($8F6E76 fills them), and the
+// byte the speed shoes set to $B0 (faster music) and a music request or their
+// end sets back to $80.
+constexpr uint32_t kZ80SoundQueue = 0x1C0A;
+constexpr uint32_t kZ80MusicTempo = 0x003F;
+
+// A sound effect asked for from the host, between frames, as $8F6E76 asks
+// for one: the first free slot of the driver's three, or none when they are
+// all taken (false). Music and driver commands are not for this.
+bool request_sound(Machine& m, uint8_t id);
 // Z80 RAM: non-zero while the game is paused and the driver holds the music.
 constexpr uint32_t kZ80Paused = 0x1C10;
 
@@ -133,9 +151,9 @@ inline constexpr uint32_t kM68kHooks[] = {
     kCamClampMax, kCamClampMin, kCamClampBottom,
     // Ring tether options (runtime/tether.h): tether::kCharsUpdate, kForce,
     // kClampBefore, kClampAfter, kPartnerSide and the kBothObjects compares.
-    0x889C10, 0x89138E, 0x891392, 0x8913A2, 0x891494,
+    0x889C10, kShoesTempo, kShoesTempoDone, 0x89138E, 0x891392, 0x8913A2, 0x891494,
     0x896566, 0x898C48, 0x898E6C, 0x89A2C8, 0x89FF7A, 0x8A3266,
-    kFillSplitX, kSoundRequest,
+    kFillSplitX, kSoundRequest, kSoundDone,
 };
 
 constexpr bool hooks_sorted() {

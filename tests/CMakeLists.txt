@@ -469,6 +469,75 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --poke 800:E009:3C --press 900:c:6 --press 912:c:6 --press 960:right:500)
     set_tests_properties(lockstep_chaos_forms PROPERTIES TIMEOUT 900
         PASS_REGULAR_EXPRESSION "lockstep: 1500 frames bit-identical")
+    # Issue #146: a transformation asks for one sound effect, the game's own
+    # giant ring sound ($46, chaos_forms::kTransformSound), on the frame of
+    # the second press (913), and only then; with the mod off, none. It plays
+    # rising: by frame 916 its FM5 and FM6 tracks (Z80 $1EE0, $1F10) read the
+    # form's copy of the ring sound's track ($C200 on) instead of $E6F5 on.
+    add_test(NAME chaos_forms_transformation_sound
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080 --chaos --sound-log
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+                --peek-z80-every 916:1EE0:6 --peek-z80-every 916:1F10:6)
+    set_tests_properties(chaos_forms_transformation_sound PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "sound 913 46.*peek-z80 916 1EE0 80050106C200.peek-z80 916 1F10 80060106C200"
+        FAIL_REGULAR_EXPRESSION "sound [0-9]+ 46.*sound [0-9]+ 46")
+    # The giant ring sound itself is unchanged with the mod on (no form): its
+    # FM6 track reads the ROM's ($E6FB two frames in).
+    add_test(NAME chaos_forms_giant_ring_sound_unchanged
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 970 --chaos
+                --level-select --stage 300:0:1:0:2:7:0 --sound 960:46 --peek-z80-every 962:1F10:6)
+    set_tests_properties(chaos_forms_giant_ring_sound_unchanged PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek-z80 962 1F10 800601FBE600")
+    # Nor in a form (Codex review): a giant ring sound asked for at 1100,
+    # well after the transformation, reads the ROM's track.
+    add_test(NAME chaos_forms_giant_ring_sound_unchanged_in_a_form
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1110 --chaos
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+                --sound 1100:46 --peek-z80-every 1102:1F10:6 --peek-every 1102:ADFA:2)
+    set_tests_properties(chaos_forms_giant_ring_sound_unchanged_in_a_form PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek-z80 1102 1F10 800601FBE600.peek 1102 ADFA 7[0-9A-F]+")
+    add_test(NAME chaos_forms_off_no_transformation_sound
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080 --sound-log
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6)
+    set_tests_properties(chaos_forms_off_no_transformation_sound PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "sound 902 5F"
+        FAIL_REGULAR_EXPRESSION "sound [0-9]+ 46")
+    # Issue #146: monitors taken in a form change no music. After the
+    # transformation both characters are put above the two monitors at
+    # X 590 and 5AE of BOTANIC BASE 1 (first on the ledge beside them, so
+    # that they are loaded), the monitors made invincibility (0C) and speed
+    # shoes (04), and the two fall onto them at 1051 (both break, the
+    # partner's timers gain the monitors' $4B0: 843B). In a form neither
+    # the invincibility music ($12) is asked for nor the driver's music sped
+    # up (Z80 $3F to $B0); with the mod off the same monitors do both
+    # (their slots differ: the form's stars take some).
+    set(_chaos_monitors --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+        --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+        --poke 940:AD50:05 --poke 940:AD51:40 --poke 940:AD54:08 --poke 940:AD55:00
+        --poke 940:AE10:05 --poke 940:AE11:20 --poke 940:AE14:08 --poke 940:AE15:00
+        --poke 1025:AD50:05 --poke 1025:AD51:90 --poke 1025:AD54:08 --poke 1025:AD55:00
+        --poke 1025:AE10:05 --poke 1025:AE11:B0 --poke 1025:AE14:08 --poke 1025:AE15:00)
+    add_test(NAME chaos_forms_monitors_keep_the_music
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1100 --chaos ${_chaos_monitors}
+                --poke 1020:B6B7:0C --poke 1020:B837:04
+                --sound-log --peek-z80-every 1:3F:1 --peek-every 1051:AEBA:4)
+    set_tests_properties(chaos_forms_monitors_keep_the_music PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek 1051 AEBA 843B843B.*sound 1051 2E"
+        FAIL_REGULAR_EXPRESSION "sound [0-9]+ 12|003F B0")
+    add_test(NAME chaos_forms_off_monitors_change_the_music
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1100 ${_chaos_monitors}
+                --poke 1005:B777:0C --poke 1005:B5B7:04
+                --sound-log --peek-z80-every 1048:3F:1)
+    set_tests_properties(chaos_forms_off_monitors_change_the_music PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek-z80 1048 003F B0.*sound 1048 12")
+    add_test(NAME lockstep_chaos_forms_monitors
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1100 --chaos --lockstep ${_chaos_monitors}
+                --poke 1020:B6B7:0C --poke 1020:B837:04)
+    set_tests_properties(lockstep_chaos_forms_monitors PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 1100 frames bit-identical")
     # Issue #147: AMAZING ARENA 5's boss, widescreen. The goal is reached with
     # the lights on (FFC21D bit 5; the switch is somewhere in the level) by
     # putting both characters by the goal (player $FFAD48, partner $FFAE08,

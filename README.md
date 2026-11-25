@@ -657,6 +657,10 @@ open your game is held, untouched, and it carries on when you leave. See
   (`--speedrun-start FRAME` starts a run by hand) and prints its starts,
   splits and resets; `--input-display` draws the input display into the shots
   (docs/SPEEDRUN.md).
+- `chaotix_headless --sound-log` prints every sound the driver is asked for
+  (`sound FRAME ID`), `--sound FRAME:ID` asks for a sound effect before that
+  frame, and `--peek-z80-every N:ADDR:BYTES` prints Z80 RAM as `--peek-every`
+  prints 68K work RAM (docs/CHAOS_FORMS.md).
 - `chaotix_headless --save-state FRAME:FILE` writes a save state after that
   frame and `--load-state FILE` starts from one (the run then goes on to
   `--frames`); `--state-hash-every N` prints a fingerprint of the whole

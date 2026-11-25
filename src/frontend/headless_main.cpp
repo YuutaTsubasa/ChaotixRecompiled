@@ -468,8 +468,14 @@ int main(int argc, char** argv) {
     std::string pwm_dump_dir;  // --dump-pwm-samples (audio/pwm_samples.h)
     struct Poke { uint64_t frame; uint32_t addr; uint8_t value; bool sdram = false, fb = false; };
     std::vector<Poke> pokes;
-    struct Peek { uint64_t every; uint32_t addr; uint32_t bytes; };
+    struct Peek { uint64_t every; uint32_t addr; uint32_t bytes; bool z80 = false; };
     std::vector<Peek> peeks;
+    // --sound-log prints every sound the driver is asked for ("sound FRAME
+    // ID"); --sound FRAME:ID asks for a sound effect before that frame runs
+    // (patches::request_sound); --chaos-sound ID: a transformation's sound.
+    bool sound_log = false;
+    std::vector<std::pair<uint64_t, uint8_t>> sound_requests;
+    uint8_t chaos_sound = 0;
     std::vector<std::string> music_dirs;  // --music-dir: music replaced by files (audio/music_mods.h)
     std::vector<std::string> sample_dirs;  // --samples-dir: PWM samples replaced by files (audio/sample_mods.h)
     // The music player (issue #48, frontend/jukebox.h). --jukebox TRACK:FRAMES
@@ -811,6 +817,22 @@ int main(int argc, char** argv) {
         else if (a == "--ghost-record") ghost_record_path = next();
         else if (a == "--ghost-log") ghost_log = std::strtoull(next().c_str(), nullptr, 10);
         else if (a == "--ghost-threaded") ghost_threaded = true;
+        else if (a == "--sound-log") sound_log = true;
+        else if (a == "--chaos-sound") chaos_sound = uint8_t(std::strtoul(next().c_str(), nullptr, 16));
+        else if (a == "--sound") {
+            auto parts = split(next(), ':');
+            if (parts.size() != 2) { std::fprintf(stderr, "bad --sound\n"); return 2; }
+            sound_requests.push_back({std::strtoull(parts[0].c_str(), nullptr, 10), uint8_t(std::strtoul(parts[1].c_str(), nullptr, 16))});
+        }
+        else if (a == "--peek-z80-every") {
+            // N:ADDR:BYTES, the same as --peek-every for Z80 RAM.
+            auto parts = split(next(), ':');
+            if (parts.size() < 3) { std::fprintf(stderr, "bad --peek-z80-every\n"); return 2; }
+            Peek p{std::strtoull(parts[0].c_str(), nullptr, 10), uint32_t(std::strtoul(parts[1].c_str(), nullptr, 16) & 0x1FFF),
+                   uint32_t(std::strtoul(parts[2].c_str(), nullptr, 10)), true};
+            if (!p.every || !p.bytes || p.bytes > 64) { std::fprintf(stderr, "bad --peek-z80-every\n"); return 2; }
+            peeks.push_back(p);
+        }
         else if (a == "--peek-every") {
             // N:ADDR:BYTES, ADDR in hex: prints those 68K work RAM bytes every
             // N frames (tests measure what the game did, a player's speed say).
@@ -1472,6 +1494,13 @@ int main(int argc, char** argv) {
         if (nat) cheats::apply(*nat, cheat_writes);  // the 4:3 machine of --compare-native too
         m->chaos_forms = chaos_forms;
         if (ref) ref->chaos_forms = chaos_forms;
+        for (Machine* x : {m.get(), ref.get()}) {
+            if (!x) continue;
+            x->chaos_sound = chaos_sound;
+            x->log_sounds = sound_log && x == m.get();
+            for (const auto& [at, id] : sound_requests)
+                if (at == f) patches::request_sound(*x, id);
+        }
         {
             auto th = title_hold_events.find(f);
             if (th != title_hold_events.end()) title_holding = th->second;
@@ -1836,10 +1865,13 @@ int main(int argc, char** argv) {
         }
         for (const Peek& p : peeks)
             if (m->frame_count % p.every == 0) {
-                std::printf("peek %llu %04X ", (unsigned long long)m->frame_count, unsigned(p.addr));
-                for (uint32_t i = 0; i < p.bytes; ++i) std::printf("%02X", m->wram[(p.addr + i) & 0xFFFF]);
+                std::printf("peek%s %llu %04X ", p.z80 ? "-z80" : "", (unsigned long long)m->frame_count, unsigned(p.addr));
+                for (uint32_t i = 0; i < p.bytes; ++i)
+                    std::printf("%02X", p.z80 ? m->zram[(p.addr + i) & 0x1FFF] : m->wram[(p.addr + i) & 0xFFFF]);
                 std::printf("\n");
             }
+        for (uint8_t id : m->sound_log) std::printf("sound %llu %02X\n", (unsigned long long)m->frame_count, unsigned(id));
+        m->sound_log.clear();
     }
     double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
     std::printf("ran %llu frames in %.2fs (%.1f fps)\n", (unsigned long long)frames, secs, frames / secs);

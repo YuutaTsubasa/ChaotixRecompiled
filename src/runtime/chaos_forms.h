@@ -12,7 +12,8 @@
 // FFFDE8) a form ends at once and no new one starts. The press is taken by the
 // transformation: the character's own air move does not start on that frame.
 //
-// A form is the game's own two power-ups at the same time, with no music:
+// A form is the game's own two power-ups at the same time, with no music
+// (a monitor taken during one changes none either: quiet_monitors below):
 // every character has a status object (the word at +$3A of its object, whose
 // address is at $FFE034 for the player and $FFE036 for the partner) holding
 // timers that the game counts down once a frame (68K $88E85A):
@@ -60,6 +61,32 @@ inline constexpr uint16_t kMark = 0x4000;
 inline constexpr uint16_t kHold = 0x7FFF;
 inline constexpr uint16_t kRefill = 0x6000;
 inline constexpr uint16_t kTurn = 0x4000;
+
+// The sound effect a transformation asks for (issue #146): the game's giant
+// ring sound, put in the driver's slots as the game asks for one
+// (patches::request_sound), and played rising instead of falling (a copy of
+// its track with the notes going up; chaos_forms.cpp). Machine::chaos_sound,
+// when set, is played as it is instead (chaotix_headless --chaos-sound).
+inline constexpr uint8_t kTransformSound = 0x46;
+
+// Monitors taken in a form (issue #146) change no music: the form already
+// gives what they give. The invincibility monitor ($8901E0) asks for its
+// music $12 with $8F6E76, returning to kInvincibleMonitorReturn; the speed
+// shoes monitor ($8901A6) sets the driver's music faster. Their timers are
+// still added to (to a form's, so the form takes them in: when it ends, they
+// end with it).
+inline constexpr uint8_t kInvincibleMusic = 0x12;
+inline constexpr uint32_t kInvincibleMonitorReturn = 0x8901E8;
+// What the invincibility monitor's request is turned into: an id no sound
+// has (the sound effects are $2A-$6E), which $8F6E76 puts in a free slot of
+// the driver's and patches::kSoundDone takes out before letting the bus go.
+inline constexpr uint8_t kQuietSound = 0x7F;
+
+// Whether a form is on (the mod on, in a level): monitors are then quiet.
+bool quiet_monitors(const Machine& m);
+// Whether the request of `id` by the code returning to `ret` is the
+// invincibility monitor's in a form.
+bool quiet_request(const Machine& m, uint8_t id, uint32_t ret);
 
 // Once before each frame runs, from Machine::run_frame.
 void begin_frame(Machine& m);
