@@ -62,10 +62,11 @@ inline constexpr uint16_t kHold = 0x7FFF;
 inline constexpr uint16_t kRefill = 0x6000;
 inline constexpr uint16_t kTurn = 0x4000;
 
-// The sound effect a transformation asks for (issue #146), one of the game's
-// own, put in the driver's slots as the game asks for one
-// (patches::request_sound). Machine::chaos_sound, when set, is used instead
-// (chaotix_headless --chaos-sound, to hear the others).
+// The sound effect a transformation asks for (issue #146): the game's giant
+// ring sound, put in the driver's slots as the game asks for one
+// (patches::request_sound), and played rising instead of falling (a copy of
+// its track with the notes going up; chaos_forms.cpp). Machine::chaos_sound,
+// when set, is played as it is instead (chaotix_headless --chaos-sound).
 inline constexpr uint8_t kTransformSound = 0x46;
 
 // Monitors taken in a form (issue #146) change no music: the form already

@@ -63,6 +63,119 @@ constexpr int kEspioFramesPerSet = 4;
 
 bool valid_ptr(uint16_t p) { return p >= 0x8000 && p <= 0xFFF0; }
 
+// --- the transformation's sound (issue #146) --------------------------------
+//
+// The giant ring sound ($46) plays a falling arpeggio: its FM6 track ($E6F5
+// in the sound driver's bank, ROM $50000; the FM5 track plays the same two
+// frames later, through an F6 jump into it) repeats four notes going down,
+// each repeat an octave lower (FB F4) and quieter (E6 06), so it sounds like
+// an ending. The form's version (the owner's choice) plays the notes going
+// up, each repeat a semitone higher and fading more gently. It is a copy of
+// that track, made from the ROM's own bytes with those edits, in the unused
+// end of the same bank ($C200, all FF), and a word after it that keeps the
+// ROM's checksum as it was. Only the copy is new: the giant ring sound itself
+// is unchanged, and nothing records the ROM as patched. The frame after a
+// transformation, the driver has set up the sound's tracks but played none of
+// them; the two that read that track are pointed at the same place in the
+// copy.
+constexpr uint32_t kSoundBank = 0x50000;  // ROM offset of the driver's bank $8D0000
+constexpr uint16_t kRingTrack = 0xE6F5;
+constexpr uint16_t kRingTrackLen = 19;
+constexpr uint16_t kRingLoop = 4;  // where its loop (F7 00 06 $E6F9) goes back to
+constexpr uint16_t kRiseTrack = 0xC200;
+constexpr uint16_t kRiseCheck = kRiseTrack + 20;  // the word that keeps the checksum
+constexpr uint16_t kRiseEnd = kRiseCheck + 2;
+// The edits: the four notes (and their length), the transposition added each
+// repeat (+1 semitone) and the volume taken off each repeat.
+constexpr uint8_t kRiseNotes[5] = {0xCF, 0x04, 0xD2, 0xD5, 0xD8};
+constexpr uint8_t kRiseStep = 0x01, kRiseFade = 0x02;
+// The driver's three sound effect tracks in Z80 RAM ($30 bytes each: +0 bit 7
+// playing, +3 the little-endian pointer into the bank).
+constexpr uint32_t kSfxTracks = 0x1EB0, kSfxTrackSize = 0x30;
+constexpr int kSfxTrackCount = 3;
+// Frames after a transformation in which its sound is pointed at the copy.
+constexpr uint16_t kRiseFrames = 8;
+
+uint32_t bank_offset(uint16_t z80) { return kSoundBank + (uint32_t(z80) - 0x8000u); }
+
+// The copy as it should be, from the ROM; false if the ROM does not hold the
+// track where and as expected (another ROM, or a patch that moved it).
+bool rise_track(const Machine& m, uint8_t* out) {
+    const auto& d = m.rom.data;
+    if (bank_offset(kRiseEnd) > d.size()) return false;
+    const uint8_t* t = d.data() + bank_offset(kRingTrack);
+    const uint16_t loop = uint16_t(t[16] | t[17] << 8);
+    if (t[0] != 0xEF || t[2] != 0xE0 || t[4] < 0x81 || t[4] > 0xDF || t[5] >= 0x80 || t[9] != 0xFB ||
+        t[11] != 0xE6 || t[13] != 0xF7 || loop != kRingTrack + kRingLoop || t[18] != 0xF2)
+        return false;
+    std::memcpy(out, t, kRingTrackLen);
+    std::memcpy(out + kRingLoop, kRiseNotes, sizeof kRiseNotes);
+    out[10] = kRiseStep;
+    out[12] = kRiseFade;
+    out[16] = uint8_t(kRiseTrack + kRingLoop);
+    out[17] = uint8_t((kRiseTrack + kRingLoop) >> 8);
+    return true;
+}
+
+// Puts the copy in place (once; it stays). False if it cannot be: the ROM is
+// not as expected, or the place is not free in it.
+bool build_rise(Machine& m) {
+    uint8_t want[kRingTrackLen];
+    if (!rise_track(m, want)) return false;
+    uint8_t* at = m.rom.data.data() + bank_offset(kRiseTrack);
+    if (std::memcmp(at, want, kRingTrackLen) == 0) return true;
+    for (uint32_t i = 0; i < uint32_t(kRiseEnd - kRiseTrack); ++i)
+        if (at[i] != 0xFF) return false;
+    // The game checks the sum of the ROM's words when it starts: what the copy
+    // changes in it, the word after it puts back.
+    std::memcpy(at, want, kRingTrackLen);
+    uint32_t sum = 0;
+    for (uint32_t i = 0; i < uint32_t(kRiseCheck - kRiseTrack); i += 2) sum += 0xFFFFu - uint32_t(at[i] << 8 | at[i + 1]);
+    const uint16_t check = uint16_t(0xFFFFu + sum);
+    at[kRiseCheck - kRiseTrack] = uint8_t(check >> 8);
+    at[kRiseCheck - kRiseTrack + 1] = uint8_t(check);
+    return true;
+}
+
+// Where in the copy a track that reads the ring sound's FM6 track at `p` goes
+// on, or 0: inside that track, or on an F6 jump into it (FM5's).
+uint16_t rise_place(const Machine& m, uint16_t p) {
+    if (p >= kRingTrack && p < kRingTrack + kRingTrackLen) return uint16_t(kRiseTrack + (p - kRingTrack));
+    if (p < 0x8000 || p > 0xFFFC) return 0;
+    const uint8_t* t = m.rom.data.data() + bank_offset(p);
+    const uint16_t to = uint16_t(t[1] | t[2] << 8);
+    if (t[0] == 0xF6 && to >= kRingTrack && to < kRingTrack + kRingTrackLen) return uint16_t(kRiseTrack + (to - kRingTrack));
+    return 0;
+}
+
+uint16_t sfx_pointer(const Machine& m, int k, bool* playing) {
+    const uint32_t r = kSfxTracks + uint32_t(k) * kSfxTrackSize;
+    *playing = (m.zram[r] & 0x80) != 0;
+    return uint16_t(m.zram[r + 3] | m.zram[r + 4] << 8);
+}
+
+// A sound effect track reads the copy.
+bool reads_rise(const Machine& m) {
+    for (int k = 0; k < kSfxTrackCount; ++k) {
+        bool playing = false;
+        const uint16_t p = sfx_pointer(m, k, &playing);
+        if (playing && p >= kRiseTrack && p < kRiseTrack + kRingTrackLen) return true;
+    }
+    return false;
+}
+
+void rise(Machine& m) {
+    if (!build_rise(m)) return;
+    for (int k = 0; k < kSfxTrackCount; ++k) {
+        bool playing = false;
+        const uint16_t to = rise_place(m, sfx_pointer(m, k, &playing));
+        if (!playing || !to) continue;
+        const uint32_t r = kSfxTracks + uint32_t(k) * kSfxTrackSize;
+        m.zram[r + 3] = uint8_t(to);
+        m.zram[r + 4] = uint8_t(to >> 8);
+    }
+}
+
 // The status object of the player (0) or the partner (1), 0 if none.
 uint16_t status_of(const Machine& m, int who) {
     const uint16_t obj = rd16(m, who ? kPartnerObject : kPlayerObject);
@@ -252,6 +365,9 @@ void begin_frame(Machine& m) {
         if (jump) m.input.pad[0] &= uint16_t(~PAD_C);
         else m.chaos_drain &= uint8_t(~kJumpTaken);
     }
+    // A save state taken while the form's sound plays, loaded where the copy
+    // was never made: it is made again.
+    if (reads_rise(m)) build_rise(m);
     if (!in_level(m)) return;
 
     const uint16_t ps = status_of(m, 0), qs = status_of(m, 1);
@@ -294,6 +410,10 @@ void begin_frame(Machine& m) {
             release(m, ps, qs);
             return;
         }
+        // Just transformed (the game has counted the timer down from kHold a
+        // few times): its sound is the rising one.
+        const uint16_t t = rd16(m, ps + kStatInvincible);
+        if (t <= kHold && t > kHold - kRiseFrames && !m.chaos_sound) rise(m);
         hold(m, ps);
         if (qs) hold(m, qs);
         return;

@@ -428,14 +428,24 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         PASS_REGULAR_EXPRESSION "lockstep: 1500 frames bit-identical")
     # Issue #146: a transformation asks for one sound effect, the game's own
     # giant ring sound ($46, chaos_forms::kTransformSound), on the frame of
-    # the second press (913), and only then; with the mod off, none.
+    # the second press (913), and only then; with the mod off, none. It plays
+    # rising: by frame 916 its FM5 and FM6 tracks (Z80 $1EE0, $1F10) read the
+    # form's copy of the ring sound's track ($C200 on) instead of $E6F5 on.
     add_test(NAME chaos_forms_transformation_sound
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080 --chaos --sound-log
                 --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
-                --poke 800:E009:3C --press 900:c:6 --press 912:c:6)
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+                --peek-z80-every 916:1EE0:6 --peek-z80-every 916:1F10:6)
     set_tests_properties(chaos_forms_transformation_sound PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "sound 913 46"
+        PASS_REGULAR_EXPRESSION "sound 913 46.*peek-z80 916 1EE0 80050106C200.peek-z80 916 1F10 80060106C200"
         FAIL_REGULAR_EXPRESSION "sound [0-9]+ 46.*sound [0-9]+ 46")
+    # The giant ring sound itself is unchanged with the mod on (no form): its
+    # FM6 track reads the ROM's ($E6FB two frames in).
+    add_test(NAME chaos_forms_giant_ring_sound_unchanged
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 970 --chaos
+                --level-select --stage 300:0:1:0:2:7:0 --sound 960:46 --peek-z80-every 962:1F10:6)
+    set_tests_properties(chaos_forms_giant_ring_sound_unchanged PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek-z80 962 1F10 800601FBE600")
     add_test(NAME chaos_forms_off_no_transformation_sound
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080 --sound-log
                 --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings

@@ -20,8 +20,10 @@ OPTIONS > EXTRAS > MODS, under BUILT-IN MODS (see MOD_PACKS.md).
    have control (the level clock, `FFE010`, is running).
 
 Both characters, the one you play and the partner, transform at the same time,
-with a sound: the game's own giant ring sound (sound effect `$46`, the one
-heard on entering a special stage), so you can tell the form has begun.
+with a sound, so you can tell the form has begun: the game's own giant ring
+sound (sound effect `$46`, the one heard on entering a special stage), played
+rising instead of falling, so that it sounds like a beginning rather than an
+ending. The giant ring itself still sounds as it always has.
 The press is taken by the transformation, so Knuckles does not glide, Charmy
 does not fly and so on on that jump; keep holding the button and the game
 still does not see it until you let go.
@@ -94,9 +96,29 @@ taken between them (a frame ends anywhere) loads the same.
 The transformation's sound is put in the driver's slots from the host, between
 frames, as `$8F6E76` puts a sound effect (`patches::request_sound`): the
 first free slot, or none when all three are taken. It is
-`chaos_forms::kTransformSound` (`$46`), one constant to change;
-`chaotix_headless --chaos-sound ID` plays another one instead, for trying
-them, and `--sound-log` prints every sound the driver is asked for.
+`chaos_forms::kTransformSound` (`$46`). `$46`'s FM6 track (`$E6F5` in the
+driver's bank `$8D0000`, ROM `$50000`; FM5 plays the same two frames later
+through an `F6` jump into it) repeats four notes going down, each repeat an
+octave lower (`FB F4`) and quieter (`E6 06`). The form's version (the
+owner's pick of three on #146) has the notes going up (`CF D2 D5 D8`), a
+semitone higher each repeat (`FB 01`) and a gentler fade (`E6 02`). It is a
+copy of that track, made from the ROM's own bytes with those edits when it
+is first needed, in the unused end of the same bank (`$C200`, all `FF`),
+followed by a word that keeps the ROM's checksum as it was (the game checks
+it when it starts). Nothing else changes: the giant ring sound reads the
+original, the ROM is not counted as patched (`Rom::patched`, its SHA-1, the
+awards and save states are as before), and nothing is written while the mod
+is off. At the end of the frame of the request the driver has set up the
+sound's tracks without playing them; for the next few frames (the form's
+timer within 8 of `kHold`), a sound effect track that reads `$46`'s FM6
+track, or waits on FM5's `F6` jump into it, is pointed at the same place in
+the copy (Z80 RAM `$1EB0`, three tracks of `$30` bytes, the pointer at +3).
+A save state taken while it plays, loaded in a session where the copy was
+never made, makes it again. If the ROM is not laid out as expected, the
+sound plays as the giant ring's.
+`chaotix_headless --chaos-sound ID` plays another sound instead (as it is),
+for trying them, and `--sound-log` prints every sound the driver is asked
+for.
 The palette is output only (`Machine::chaos_pal`, used by `render_line32x`
 after the character mods), so CRAM, fades and both CPUs never see it.
 `Machine::chaos_drain` (frames towards the next ring, and the "jump button
