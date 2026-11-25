@@ -112,9 +112,11 @@ is off. At the end of the frame of the request the driver has set up the
 sound's tracks without playing them; in the four frames after the
 transformation (counted in the top bits of `Machine::chaos_jump_prev`, in save
 states; not from the form's timer, which a monitor raises and a long form
-passes through again: Codex review), a sound effect track that reads `$46`'s
-FM6 track, or waits on FM5's `F6` jump into it, is pointed at the same place
-in the copy (Z80 RAM `$1EB0`, three tracks of `$30` bytes, the pointer at +3).
+passes through again: Codex review), a sound effect track at the very start
+of `$46`'s FM6 track, or waiting on FM5's `F6` jump into it, is pointed at the
+same place in the copy (a giant ring sound already further on is left alone;
+none of this happens if the driver's slots were full and no sound was
+queued) (Z80 RAM `$1EB0`, three tracks of `$30` bytes, the pointer at +3).
 A save state taken while it plays, loaded in a session where the copy was
 never made, makes it again. If the ROM is not laid out as expected, the
 sound plays as the giant ring's.

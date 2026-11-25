@@ -140,10 +140,12 @@ bool build_rise(Machine& m) {
     return true;
 }
 
-// Where in the copy a track that reads the ring sound's FM6 track at `p` goes
-// on, or 0: inside that track, or on an F6 jump into it (FM5's).
+// Where in the copy a track of a ring sound that has only just started goes
+// on, or 0: FM6 at the start of its track, nothing played yet, or FM5 on its
+// F6 jump into that track, after its first rest (Codex review: a ring sound
+// already playing, further on, is left as it is).
 uint16_t rise_place(const Machine& m, uint16_t p) {
-    if (p >= kRingTrack && p < kRingTrack + kRingTrackLen) return uint16_t(kRiseTrack + (p - kRingTrack));
+    if (p == kRingTrack) return kRiseTrack;
     if (p < 0x8000 || p > 0xFFFC) return 0;
     const uint8_t* t = m.rom.data.data() + bank_offset(p);
     const uint16_t to = uint16_t(t[1] | t[2] << 8);
@@ -434,8 +436,9 @@ void begin_frame(Machine& m) {
     if (qs) hold(m, qs);
     m.input.pad[0] &= uint16_t(~PAD_C);  // the press was the transformation's
     // A sound, so that the transformation is heard (issue #146), rising.
-    patches::request_sound(m, m.chaos_sound ? m.chaos_sound : kTransformSound);
-    if (!m.chaos_sound) m.chaos_jump_prev = uint8_t(m.chaos_jump_prev | kRiseFrames << kRiseShift);
+    // (Not when the driver's slots were all taken: then there is no sound.)
+    if (patches::request_sound(m, m.chaos_sound ? m.chaos_sound : kTransformSound) && !m.chaos_sound)
+        m.chaos_jump_prev = uint8_t(m.chaos_jump_prev | kRiseFrames << kRiseShift);
 }
 
 const uint16_t* display(Machine& m, const uint16_t* pal) {

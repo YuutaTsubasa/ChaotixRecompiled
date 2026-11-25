@@ -108,8 +108,8 @@ constexpr uint32_t kZ80MusicTempo = 0x003F;
 
 // A sound effect asked for from the host, between frames, as $8F6E76 asks
 // for one: the first free slot of the driver's three, or none when they are
-// all taken. Music and driver commands are not for this.
-void request_sound(Machine& m, uint8_t id);
+// all taken (false). Music and driver commands are not for this.
+bool request_sound(Machine& m, uint8_t id);
 // Z80 RAM: non-zero while the game is paused and the driver holds the music.
 constexpr uint32_t kZ80Paused = 0x1C10;
 

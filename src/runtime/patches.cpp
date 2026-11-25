@@ -61,14 +61,15 @@ void extend_backdrop(Machine& m, m68k::State* c) {
 
 } // namespace
 
-void request_sound(Machine& m, uint8_t id) {
-    if (id < kFirstSoundEffect || id >= 0x80) return;
+bool request_sound(Machine& m, uint8_t id) {
+    if (id < kFirstSoundEffect || id >= 0x80) return false;
     if (m.log_sounds) m.sound_log.push_back(id);
     for (uint32_t i = 0; i < 3; ++i)
         if (!m.zram[kZ80SoundQueue + i]) {
             m.zram[kZ80SoundQueue + i] = id;
-            return;
+            return true;
         }
+    return false;
 }
 
 namespace {
