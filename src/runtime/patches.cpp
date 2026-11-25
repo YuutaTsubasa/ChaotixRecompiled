@@ -21,6 +21,13 @@ inline uint16_t wram16(const Machine& m, uint32_t a) {
     return uint16_t(m.wram[a] << 8 | m.wram[a + 1]);
 }
 
+// WORLD ENTRANCE 3-6 by number: the ending's scenes, or the bonus stage's
+// load (ending_scene tells them apart).
+bool ending_level(const Machine& m) {
+    const uint16_t level = wram16(m, kSceneLevel);
+    return wram16(m, kSceneZone) == kWorldEntrance && level > kFinalBossLevel && level <= kLastEndingLevel;
+}
+
 // Issue #36: more copies of a backdrop object's two pieces in the margins
 // (see kBackdropMaps). Runs at kPiecesDone, after the last piece is pushed.
 void extend_backdrop(Machine& m, m68k::State* c) {
@@ -69,8 +76,10 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         // setting rather than from the current margin: the margins follow the
         // window, and a window resized during a level would otherwise leave
         // that level in 4:3 until the next load.
-        // The ending's scenes in WORLD ENTRANCE are left native (wide_zone).
-        m->plane_shift = plane_shift_for(m->wide_enabled && wide_zone(*m) ? kMaxWideExtra : 0);
+        // WORLD ENTRANCE 7 (a black screen) is left native (wide_zone). The
+        // ending's scenes are told apart from the bonus stage's load by their
+        // empty planes (ending_scene), which are only drawn after this.
+        m->plane_shift = plane_shift_for(m->wide_enabled && (wide_zone(*m) || ending_level(*m)) ? kMaxWideExtra : 0);
         // Also how a scene change is told apart from a level that has merely
         // stopped (see wide_scene_active): a new scene redraws the planes.
         m->full_redraw_frame = m->frame_count;
@@ -170,7 +179,8 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     if (pc == kCamClampBottom) {
         // The extra rows are below the screen, so only the bottom bound moves.
         const int e = std::clamp(m->wide_extra_bottom, 0, kMaxWideExtraBottom);
-        if (!e || !wide_zone(*m)) return;
+        // The ending's camera is left alone, as the lobby's X.
+        if (!e || !wide_zone(*m) || ending_level(*m)) return;
         const int bottom = int16_t(m68k::rd16(c, c->a[1] + 0xC));
         const int top = int16_t(m68k::rd16(c, c->a[1] + 0xE));
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
@@ -754,8 +764,21 @@ bool wide_zone(const Machine& m) {
     return wram16(m, kSceneLevel) <= kFinalBossLevel;
 }
 
+bool ending_scene(const Machine& m) {
+    if (!ending_level(m)) return false;
+    // Both planes' name tables (64 x 32 cells in WORLD ENTRANCE) hold no tile.
+    const Vdp& v = m.vdp;
+    if (v.reg[16] != kLevelPlaneSize) return false;
+    for (const uint32_t nt : {uint32_t(v.reg[2] & 0x38) << 10, uint32_t(v.reg[4] & 7) << 13})
+        for (uint32_t i = 0; i < 64 * 32; ++i) {
+            const uint32_t a = (nt + 2 * i) & 0xFFFF;
+            if ((v.vram[a] << 8 | v.vram[(a + 1) & 0xFFFF]) & 0x7FF) return false;
+        }
+    return true;
+}
+
 bool wide_scene_active(const Machine& m) {
-    if (!wide_zone(m)) return false;
+    if (!wide_zone(m) && !ending_scene(m)) return false;
     // INTRODUCTION's first encounter parks Eggman at screen X=-49 while the
     // script continues, and stages Metal Sonic outside the native view too.
     // $8A6CB8 sets C21C bit2 when that sequence starts; level initialization
@@ -792,6 +815,8 @@ MarginCut margin_cut(const Machine& m, int extra) {
     // can; where a room is narrower than the view the margins show the tiles
     // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
+    // The ending's planes are empty: nothing in the ring to hide.
+    if (m.ending_wide) return c;
     const int origin = std::clamp(extra - camera_x(m), 0, extra);
     c.left = origin;
     if (in_lobby(m)) {
@@ -891,6 +916,7 @@ void begin_frame(Machine& m) {
             }
         }
     }
+    m.ending_wide = level && ending_level(m);
     if (level && in_lobby(m)) lobby_margins(m, e);
     else m.lobby_alt = false;
     // Only the screen's own bounds are widened, and only those are put back.

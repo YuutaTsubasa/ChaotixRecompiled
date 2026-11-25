@@ -172,6 +172,47 @@ continues into the margins. This is render-only
 The existing `lockstep_final_boss_widescreen` and `widescreen_final_boss`
 pass.
 
+## 9. The ending's white scenes are 4:3
+
+![ending](images/issue-5-ending.png)
+
+(Frame 1200 of `--level-select --stage 300:7:4:0:4:7:0 --wide 53`; the
+other scenes, WORLD ENTRANCE 3, 5 and 6, are the same.)
+
+**Cause.** Issue #61 kept WORLD ENTRANCE 3-6 4:3 (`wide_zone`): widened, the
+left margin was black (the camera is at X 0, and `margin_cut` blacks out
+what is left of a level's origin) beside a white picture, and the sprites
+were thought to be staged for the 4:3 screen.
+
+**What the game has there.** The picture is the 32X's alone. The SH-2
+clears its whole screen to white every frame (a clear of the whole native
+line, which the margins take as well, `fill_clears_margins`) and draws the
+characters over it. Both Mega Drive planes are empty: only the backdrop
+colour is behind the 32X, so the plane ring holds nothing to hide. Over
+4000 frames of each scene (every 10th frame looked at), nothing but white is
+ever in the margins: the characters stay well inside the 4:3 picture.
+
+**Fix.** These scenes are widened as a level (`patches::ending_scene`), and
+nothing is cut from their margins. They are told by their number and by
+their empty planes: the bonus stage loads itself as WORLD ENTRANCE 3 for
+about 20 frames, with its picture in the planes and the level engine
+stopped, and those frames stay as they were. The ending's camera is left
+alone (no bottom clamp), as the lobby's. WORLD ENTRANCE 7 (a black screen)
+and the INTRODUCTION Eggman scene stay 4:3.
+
+**Verification.** `widescreen_ending_white_margins` (frame 1200; 0.15.25's
+hash differs), `widescreen_ending_{3,5,6}_centre_and_ram_match_4_3` (3000
+frames each: the 4:3 picture and the 68K work RAM are the 4:3 run's on
+every frame), `lockstep_ending_widescreen` and the unit test
+`widescreen_render.world_entrance_and_its_ending_are_widened`, which
+replace `widescreen_ending_stays_4_3`. The bonus stage's tests pass as
+before.
+
+**Not checked.** The scenes were reached with the stage select, where each
+loops; the real ending, reached by beating the final boss, was not played
+through (no recording reaches it). A sprite that its script brings in from
+off-screen there would show in the margins earlier than in 4:3.
+
 ## Also
 
 - `chaotix_headless --compare-ram` (with `--compare-native`): the 68K work

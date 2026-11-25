@@ -40,4 +40,4 @@ and pillars are drawn by the special stage's polygon code, which is widened
 as in the special stage, so they reach the margins instead of ending at the
 4:3 edges. WIDE LOBBY is gone. See ISSUE_61_WORLD_ENTRANCE.md; the test above
 became `widescreen_final_boss` (margins live from frame 482) and
-`widescreen_ending_stays_4_3` (levels 3-6, the ending's scenes, stay 4:3).
+`widescreen_ending_stays_4_3` (levels 3-6, the ending's scenes, stay 4:3; widened since issue #5).

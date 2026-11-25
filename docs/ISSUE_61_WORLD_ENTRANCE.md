@@ -6,7 +6,8 @@ side bars: the lobby for issue #13 (ISSUE_13_LOBBY.md), the final boss for
 issue #56 (ISSUE_56_FINAL_BOSS.md); OPTIONS > VIDEO > WIDE LOBBY widened the
 lobby anyway, glitches and all. Now the lobby and the final boss are
 widescreen by default, without the glitches, and WIDE LOBBY is gone. The
-ending's scenes stay 4:3, and so does the INTRODUCTION Eggman scene (on
+ending's scenes stayed 4:3 here (since issue #5 they are widened too, see
+ISSUE_5_WIDESCREEN_FIXES.md), and so does the INTRODUCTION Eggman scene (on
 purpose: Eggman walks out to the left, and widened that looks wrong).
 
 ## Reproducing it
@@ -112,8 +113,10 @@ stay in sight a little longer, the boss's arms come in from the right.
 ### The ending's scenes
 
 Levels 3-6, widened, showed a white picture with the left margin black (left
-of the layout's origin) and the sprites staged for the 4:3 screen. They stay
-4:3.
+of the layout's origin) and the sprites staged for the 4:3 screen. They
+stayed 4:3. Issue #5 widened them: their planes are empty and the white is
+the 32X's own clear, so nothing needs cutting there, and no sprite was
+found in their margins (ISSUE_5_WIDESCREEN_FIXES.md, item 9).
 
 ### WIDE LOBBY
 
@@ -151,8 +154,10 @@ Tests: `widescreen_lobby_centre_matches_4_3`,
 `widescreen_lobby_margins_in_the_next_area_colours`,
 `widescreen_lobby_combi_catcher_centre_matches_4_3`,
 `lockstep_lobby_widescreen`, `widescreen_final_boss`,
-`lockstep_final_boss_widescreen`, `widescreen_ending_stays_4_3`, the unit tests
-`widescreen_render.world_entrance_is_widened_but_not_the_ending`,
+`lockstep_final_boss_widescreen`, `widescreen_ending_stays_4_3` (replaced by
+issue #5's ending tests), the unit tests
+`widescreen_render.world_entrance_is_widened_but_not_the_ending` (now
+`world_entrance_and_its_ending_are_widened`),
 `widescreen_render.a_lobby_room_is_black_outside_its_range` and
 `vdp_widescreen.lobby_margins_take_the_next_area_colours`. They replace
 `widescreen_leaves_the_lobby_4_3`, `widescreen_lobby_when_asked` and

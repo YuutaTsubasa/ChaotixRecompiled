@@ -483,15 +483,31 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --peek-every 3200:8064:2)
     set_tests_properties(widescreen_off_during_amazing_arena_letterbox PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
-    # ...but not the ending's scenes (levels 3-6): their sprites are staged
-    # for the 4:3 screen, and widened their left margin was black (left of the
-    # layout) beside a white picture. No margins at all.
-    add_test(NAME widescreen_ending_stays_4_3
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1200 --wide 53 --trace-wide
-                --level-select --stage 300:7:3:0:4:7:0)
-    set_tests_properties(widescreen_ending_stays_4_3 PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0003"
-        FAIL_REGULAR_EXPRESSION "margins live from")
+    # Issue #5: the ending's white scenes (levels 3-6) were kept 4:3 (issue
+    # #61): widened, their left margin was black, left of the layout's
+    # origin. Their planes are empty and the 32X clears its whole screen to
+    # white every frame, so the margins are the game's own white, with the
+    # characters in the middle as in 4:3 (frame 1200; 0.15.25:
+    # 3d628471428875a9, pillarboxed). The 4:3 picture and the 68K work RAM
+    # are the 4:3 run's on every frame, and no sprite reaches the margins.
+    add_test(NAME widescreen_ending_white_margins
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1201 --wide 53 --trace-wide
+                --level-select --stage 300:7:4:0:4:7:0 --expect-hash 1200:351713a2b672f17d)
+    set_tests_properties(widescreen_ending_white_margins PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0004.*margins live from frame 40[0-9].*matches golden"
+        FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    foreach(_ending 3 5 6)
+        add_test(NAME widescreen_ending_${_ending}_centre_and_ram_match_4_3
+            COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --wide 53 --compare-ram
+                    --min-centre-frames 2500 --stage 300:7:${_ending}:0:2:7:0)
+        set_tests_properties(widescreen_ending_${_ending}_centre_and_ram_match_4_3 PROPERTIES TIMEOUT 900
+            PASS_REGULAR_EXPRESSION "RAM check: work RAM identical to 4:3 on 3000 frames")
+    endforeach()
+    add_test(NAME lockstep_ending_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep
+                --stage 300:7:4:0:2:7:0)
+    set_tests_properties(lockstep_ending_widescreen PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
 
     # MARINA MADNESS's clouds and sea are four screen-fixed 32X objects, each
     # two copies of one picture that cover only the 4:3 screen (issue #36:

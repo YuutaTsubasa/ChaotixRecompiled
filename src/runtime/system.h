@@ -208,6 +208,9 @@ public:
     bool lobby_alt = false;
     int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
     int lobby_cut_left = 0, lobby_cut_right = 0;
+    // The ending's white scene is widened this frame (patches::ending_scene,
+    // issue #5): its margins are not cut. Render only.
+    bool ending_wide = false;
     int special_shift = 0;             // px its polygons are drawn right of true
     // A widened level's margin for its polygons this frame (patches.h,
     // level_polygon_margins), 0: none; worked out at the start of each frame.

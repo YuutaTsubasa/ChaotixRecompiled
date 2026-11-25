@@ -492,8 +492,8 @@ bool special_stage_entry(const Machine& m);
 
 // WORLD ENTRANCE, zone 7: the lobby (levels 0 and 1), the final boss (2) and
 // the ending's scenes (3-6). It was kept 4:3 (issues #13, #56); it is
-// widened since issue #61, all but the ending's scenes, which stay 4:3. What
-// went wrong, and how each is handled:
+// widened since issue #61, and the ending's scenes since issue #5
+// (ending_scene, below). What went wrong, and how each is handled:
 // - The camera is left alone there: the widescreen camera clamp moved it,
 //   and the lobby's events (rooms, palettes, the catapult) and the boss
 //   follow the camera, so the run itself changed (the catapult landed four
@@ -519,7 +519,21 @@ bool special_stage_entry(const Machine& m);
 constexpr uint16_t kWorldEntrance = 7;
 constexpr uint16_t kLastLobbyLevel = 1;
 constexpr uint16_t kFinalBossLevel = 2;
+constexpr uint16_t kLastEndingLevel = 6;
 bool wide_zone(const Machine& m);
+// The ending's white scenes, WORLD ENTRANCE 3-6 (issue #5). They were kept
+// 4:3: widened, the left margin was black (the camera is at X 0, and
+// margin_cut blacks out what is left of a level's origin). The picture is
+// the 32X's alone: the SH-2 clears its whole screen to white every frame,
+// a clear the margins take as well (fill_clears_margins), and draws the
+// characters over it; both Mega Drive planes are empty, only the backdrop
+// colour is behind. So there is nothing in the ring to hide, and the white
+// in the margins is the game's own clear. Over 4000 frames of each scene no
+// sprite is ever drawn in the margins.
+// Told by its picture as well as its number: the bonus stage loads itself as
+// WORLD ENTRANCE 3 for about 20 frames, with its picture in the planes and
+// the level engine stopped. Those frames stay as they were.
+bool ending_scene(const Machine& m);
 bool in_lobby(const Machine& m);
 // The final boss's arena is on screen, drawn by the special stage's code
 // (its projection loaded) with the screen's rectangle, or our widened one.

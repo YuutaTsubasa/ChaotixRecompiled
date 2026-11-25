@@ -259,23 +259,37 @@ TEST(widescreen_render, the_special_stage_is_found_whatever_the_game_mode) {
     CHECK(!patches::special_stage_active(*m));
 }
 
-TEST(widescreen_render, world_entrance_is_widened_but_not_the_ending) {
+TEST(widescreen_render, world_entrance_and_its_ending_are_widened) {
     // Issue #61 (formerly #13 and #56, kept 4:3): the lobby (levels 0 and 1)
-    // and the final boss (2) are widened; the ending's scenes (3-6) are not.
+    // and the final boss (2) are widened. Issue #5: so are the ending's white
+    // scenes (3-6), told by their empty planes from the bonus stage's load,
+    // which is WORLD ENTRANCE 3 too for a few frames, its picture in plane A.
     auto m = level_machine();
     stand_in_for_the_engine_in(*m, 7, 0);
     patches::begin_frame(*m);
     CHECK(m->wide_active);
-    for (uint8_t level = 0; level <= 6; ++level) {
+    for (uint8_t level = 0; level <= 7; ++level) {
         stand_in_for_the_engine_in(*m, 7, level);
         CHECK_EQ(patches::wide_zone(*m), level <= patches::kFinalBossLevel);
+        CHECK_EQ(patches::ending_scene(*m), level > patches::kFinalBossLevel && level <= patches::kLastEndingLevel);
     }
+    // The camera at X 0: nothing is cut, the planes being empty.
+    for (uint8_t level = 3; level <= 6; ++level) {
+        stand_in_for_the_engine_in(*m, 7, level);
+        patches::begin_frame(*m);
+        CHECK(m->wide_active);
+        CHECK_EQ(patches::margin_cut(*m, 53).left, 0);
+    }
+    // A tile in plane A (the bonus stage loading): not the ending.
+    const uint32_t nt = uint32_t(m->vdp.reg[2] & 0x38) << 10;
+    m->vdp.vram[nt + 2 * 100 + 1] = 0x23;
     stand_in_for_the_engine_in(*m, 7, 3);
+    CHECK(!patches::ending_scene(*m));
     patches::begin_frame(*m);
     CHECK(!m->wide_active);
-    // WIDE LOBBY is gone: wide_everywhere changes nothing.
-    m->wide_everywhere = true;
-    stand_in_for_the_engine_in(*m, 7, 4);
+    m->vdp.vram[nt + 2 * 100 + 1] = 0;
+    // WORLD ENTRANCE 7, a black screen, stays as it was.
+    stand_in_for_the_engine_in(*m, 7, 7);
     patches::begin_frame(*m);
     CHECK(!m->wide_active);
 }
