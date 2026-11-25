@@ -21,6 +21,13 @@ inline uint16_t wram16(const Machine& m, uint32_t a) {
     return uint16_t(m.wram[a] << 8 | m.wram[a + 1]);
 }
 
+// WORLD ENTRANCE 3-6 by number: the ending's scenes, or the bonus stage's
+// load (ending_scene tells them apart).
+bool ending_level(const Machine& m) {
+    const uint16_t level = wram16(m, kSceneLevel);
+    return wram16(m, kSceneZone) == kWorldEntrance && level > kFinalBossLevel && level <= kLastEndingLevel;
+}
+
 // Issue #36: more copies of a backdrop object's two pieces in the margins
 // (see kBackdropMaps). Runs at kPiecesDone, after the last piece is pushed.
 void extend_backdrop(Machine& m, m68k::State* c) {
@@ -69,8 +76,10 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         // setting rather than from the current margin: the margins follow the
         // window, and a window resized during a level would otherwise leave
         // that level in 4:3 until the next load.
-        // The ending's scenes in WORLD ENTRANCE are left native (wide_zone).
-        m->plane_shift = plane_shift_for(m->wide_enabled && wide_zone(*m) ? kMaxWideExtra : 0);
+        // WORLD ENTRANCE 7 (a black screen) is left native (wide_zone). The
+        // ending's scenes are told apart from the bonus stage's load by their
+        // empty planes (ending_scene), which are only drawn after this.
+        m->plane_shift = plane_shift_for(m->wide_enabled && (wide_zone(*m) || ending_level(*m)) ? kMaxWideExtra : 0);
         // Also how a scene change is told apart from a level that has merely
         // stopped (see wide_scene_active): a new scene redraws the planes.
         m->full_redraw_frame = m->frame_count;
@@ -170,7 +179,8 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
     if (pc == kCamClampBottom) {
         // The extra rows are below the screen, so only the bottom bound moves.
         const int e = std::clamp(m->wide_extra_bottom, 0, kMaxWideExtraBottom);
-        if (!e || !wide_zone(*m)) return;
+        // The ending's camera is left alone, as the lobby's X.
+        if (!e || !wide_zone(*m) || ending_level(*m)) return;
         const int bottom = int16_t(m68k::rd16(c, c->a[1] + 0xC));
         const int top = int16_t(m68k::rd16(c, c->a[1] + 0xE));
         set_low_word(c->d[1], uint32_t(std::max(bottom - e, top)));
@@ -670,8 +680,9 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt = false;
     m.lobby_alt_x0 = m.lobby_alt_x1 = 0;
     const int x = camera_x(m);
-    // Rooms narrower than the view: black outside the range the camera is
-    // held to, the part of the layout the 4:3 view can show from there. The
+    // Rooms narrower than the view: cut outside the range the camera is
+    // held to, the part of the layout the 4:3 view can show from there (since
+    // issue #5 only below the corridor, room_margins). The
     // stage select room's range is one point (2816..2816): its margins would
     // show the corridor and the outdoor entrance beside it, and as the room
     // scrolls down, blocks the engine never draws. A wider range is no room:
@@ -681,6 +692,11 @@ void lobby_margins(Machine& m, int e) {
     const bool room = r.right - r.left < 2 * e;
     m.lobby_cut_left = room ? std::clamp(e - (x - r.left), 0, e) : 0;
     m.lobby_cut_right = room ? std::clamp(x + e - r.right, 0, e) : 0;
+    // Issue #5: such a room is one 4:3 screen wide, and those margins show
+    // what is beside it as the corridor shows it (room_margins).
+    m.lobby_room_left = m.lobby_cut_left > 0;
+    m.lobby_room_right = m.lobby_cut_right > 0;
+    m.lobby_fade_left = m.lobby_fade_right = 0;
     // Which area's colours the game shows: the one whose table matches lines
     // 0 and 1 but for the few it cycles. The area by plane A's X first; the
     // palette follows it a frame later.
@@ -709,6 +725,8 @@ void lobby_margins(Machine& m, int e) {
         const int rk = by_x < kLobbyAreas - 1 ? std::clamp(x + e - kLobbyBounds[by_x], 0, e) : 0;
         m.lobby_cut_left = std::max(m.lobby_cut_left, lk);
         m.lobby_cut_right = std::max(m.lobby_cut_right, rk);
+        m.lobby_fade_left = lk;
+        m.lobby_fade_right = rk;
         return;
     }
     if (!left && !right) return;
@@ -719,6 +737,25 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt = true;
     m.lobby_alt_x0 = left ? 0 : kNativeWidth + 2 * e - right;
     m.lobby_alt_x1 = left ? left : kNativeWidth + 2 * e;
+}
+
+void room_margins(Machine& m) {
+    m.room_on = true;
+    // The screen line of world row kRoomFloorY.
+    m.room_floor_line = kRoomFloorY - camera_y(m);
+    m.room_pillar_n = 0;
+    const CameraRange r = camera_range(m);
+    if (r.left != r.right) return;
+    const int x0 = r.left - camera_x(m);
+    for (const RoomPillar& p : kRoomPillars) {
+        if (p.room_x != r.left || m.room_pillar_n == kMaxRoomPillars) continue;
+        const int i = m.room_pillar_n++;
+        m.room_pillar_x0[i] = x0 + p.x0;
+        m.room_pillar_x1[i] = x0 + p.x1;
+        m.room_pillar_mirror[i] = p.mirror == kNoMirror ? kNoMirror : x0 + p.mirror;
+        m.room_pillar_src[i] = p.row0 - camera_y(m);
+        m.room_pillar_period[i] = p.period;
+    }
 }
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
@@ -754,8 +791,21 @@ bool wide_zone(const Machine& m) {
     return wram16(m, kSceneLevel) <= kFinalBossLevel;
 }
 
+bool ending_scene(const Machine& m) {
+    if (!ending_level(m)) return false;
+    // Both planes' name tables (64 x 32 cells in WORLD ENTRANCE) hold no tile.
+    const Vdp& v = m.vdp;
+    if (v.reg[16] != kLevelPlaneSize) return false;
+    for (const uint32_t nt : {uint32_t(v.reg[2] & 0x38) << 10, uint32_t(v.reg[4] & 7) << 13})
+        for (uint32_t i = 0; i < 64 * 32; ++i) {
+            const uint32_t a = (nt + 2 * i) & 0xFFFF;
+            if ((v.vram[a] << 8 | v.vram[(a + 1) & 0xFFFF]) & 0x7FF) return false;
+        }
+    return true;
+}
+
 bool wide_scene_active(const Machine& m) {
-    if (!wide_zone(m)) return false;
+    if (!wide_zone(m) && !ending_scene(m)) return false;
     // INTRODUCTION's first encounter parks Eggman at screen X=-49 while the
     // script continues, and stages Metal Sonic outside the native view too.
     // $8A6CB8 sets C21C bit2 when that sequence starts; level initialization
@@ -792,11 +842,17 @@ MarginCut margin_cut(const Machine& m, int extra) {
     // can; where a room is narrower than the view the margins show the tiles
     // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
-    c.left = std::clamp(extra - camera_x(m), 0, extra);
+    // The ending's planes are empty: nothing in the ring to hide.
+    if (m.ending_wide) return c;
+    const int origin = std::clamp(extra - camera_x(m), 0, extra);
+    c.left = origin;
     if (in_lobby(m)) {
-        // WORLD ENTRANCE: worked out for this frame by lobby_margins.
-        c.left = std::max(c.left, std::min(m.lobby_cut_left, extra));
-        c.right = std::min(m.lobby_cut_right, extra);
+        // WORLD ENTRANCE: worked out for this frame by lobby_margins. Left of
+        // the origin, plane B's outdoor picture (see MarginCut). A room's
+        // repeated sides are black only for a fade.
+        c.left = std::min(m.room_on && m.lobby_room_left ? m.lobby_fade_left : m.lobby_cut_left, extra);
+        c.backdrop = std::max(origin, c.left);
+        c.right = std::min(m.room_on && m.lobby_room_right ? m.lobby_fade_right : m.lobby_cut_right, extra);
     }
     return c;
 }
@@ -888,8 +944,14 @@ void begin_frame(Machine& m) {
             }
         }
     }
-    if (level && in_lobby(m)) lobby_margins(m, e);
-    else m.lobby_alt = false;
+    m.ending_wide = level && ending_level(m);
+    m.room_on = false;
+    if (level && in_lobby(m)) {
+        lobby_margins(m, e);
+        if (m.lobby_room_left || m.lobby_room_right) room_margins(m);
+    } else {
+        m.lobby_alt = false;
+    }
     // Only the screen's own bounds are widened, and only those are put back.
     // A scene can narrow the rectangle itself: AMAZING ARENA's boss closes it
     // from the top and bottom into a letterbox and opens it again (issue
@@ -908,10 +970,10 @@ void begin_frame(Machine& m) {
         // bound makes the SH-2 raise an address error (it crashed at E = 53).
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
         const int ce = (e + 7) & ~7;
-        // A WORLD ENTRANCE room shows nothing in its margins: drawing its
-        // sprites there anyway only costs the SH-2 time, and the Combi
-        // Catcher's TIME UP, scaled up past the screen, then flipped a frame
-        // or more late.
+        // A WORLD ENTRANCE room shows none of the game's own drawing in its
+        // margins (kRoomFloorY): drawing its sprites
+        // there anyway only costs the SH-2 time, and the Combi Catcher's TIME
+        // UP, scaled up past the screen, then flipped a frame or more late.
         const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;
         const int cr = in_lobby(m) ? (e - m.lobby_cut_right + 7) & ~7 : ce;
         write_clip(m, ours_x ? int16_t(-cl) : now.left, ours_x ? int16_t(320 + cr) : now.right,
@@ -934,7 +996,12 @@ void begin_frame(Machine& m) {
     m.level_poly_margin = m.level_poly_on ? e : 0;
     m.level_poly_valid = false;
     // The HUD keeps to the left edge of what the margin shows of the level.
-    set_hud_shift(m, level && m.wide_hud_edges && e ? e - margin_cut(m, e).left : 0);
+    if (level && m.wide_hud_edges && e) {
+        const MarginCut cut = margin_cut(m, e);
+        set_hud_shift(m, e - std::max(cut.left, cut.backdrop));
+    } else {
+        set_hud_shift(m, 0);
+    }
 }
 
 void install(Machine& m) {

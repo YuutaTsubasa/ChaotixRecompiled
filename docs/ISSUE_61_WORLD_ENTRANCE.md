@@ -6,7 +6,8 @@ side bars: the lobby for issue #13 (ISSUE_13_LOBBY.md), the final boss for
 issue #56 (ISSUE_56_FINAL_BOSS.md); OPTIONS > VIDEO > WIDE LOBBY widened the
 lobby anyway, glitches and all. Now the lobby and the final boss are
 widescreen by default, without the glitches, and WIDE LOBBY is gone. The
-ending's scenes stay 4:3, and so does the INTRODUCTION Eggman scene (on
+ending's scenes stayed 4:3 here (since issue #5 they are widened too, see
+ISSUE_5_WIDESCREEN_FIXES.md), and so does the INTRODUCTION Eggman scene (on
 purpose: Eggman walks out to the left, and widened that looks wrong).
 
 ## Reproducing it
@@ -55,13 +56,23 @@ which scrolls with the camera, is shifted as in a level.
 The stage select room holds the camera at 2816..2816, the Combi Catcher at
 1552..1552. Their margins would show the corridor beside them and, as they
 scroll down, blocks the engine never draws. Where the camera's range is
-narrower than the widened view, the margins are black outside it, as a
-modern re-release would show a room that small (`lobby_margins`). A wider
+narrower than the widened view, the margins were black outside it, as a
+modern re-release would show a room that small (`lobby_margins`; since
+issue #5 only below the corridor's floor row, see below). A wider
 range is not a room: its ends move as the player goes on (1552 once past the
 COMBI CATCHER, with the camera at 1573), and what lies beyond them was just in
 view, so nothing is cut there. In a room the SH-2's clip stays the native one
 too: nothing is shown in its margins, and the Combi Catcher's TIME UP, scaled
 up past the screen, flipped a frame or two late when it was drawn there.
+Issue #5 looked at these rooms again, layer by layer: each is one 4:3
+screen wide, and beyond it the planes hold only the corridor or nothing.
+At the owner's choice their margins now show what is beside the room above
+the corridor's floor row, black below (the pillars beside both rooms carry
+on down), instead of all black (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
+
+The lobby's outdoor entrance, where the camera is at X 0..12, now shows
+plane B's outdoor picture left of the origin instead of black (issue #5,
+item 2).
 
 ### The palette areas
 
@@ -112,8 +123,10 @@ stay in sight a little longer, the boss's arms come in from the right.
 ### The ending's scenes
 
 Levels 3-6, widened, showed a white picture with the left margin black (left
-of the layout's origin) and the sprites staged for the 4:3 screen. They stay
-4:3.
+of the layout's origin) and the sprites staged for the 4:3 screen. They
+stayed 4:3. Issue #5 widened them: their planes are empty and the white is
+the 32X's own clear, so nothing needs cutting there, and no sprite was
+found in their margins (ISSUE_5_WIDESCREEN_FIXES.md, item 9).
 
 ### WIDE LOBBY
 
@@ -151,9 +164,12 @@ Tests: `widescreen_lobby_centre_matches_4_3`,
 `widescreen_lobby_margins_in_the_next_area_colours`,
 `widescreen_lobby_combi_catcher_centre_matches_4_3`,
 `lockstep_lobby_widescreen`, `widescreen_final_boss`,
-`lockstep_final_boss_widescreen`, `widescreen_ending_stays_4_3`, the unit tests
-`widescreen_render.world_entrance_is_widened_but_not_the_ending`,
-`widescreen_render.a_lobby_room_is_black_outside_its_range` and
+`lockstep_final_boss_widescreen`, `widescreen_ending_stays_4_3` (replaced by
+issue #5's ending tests), the unit tests
+`widescreen_render.world_entrance_is_widened_but_not_the_ending` (now
+`world_entrance_and_its_ending_are_widened`),
+`widescreen_render.a_lobby_room_is_black_outside_its_range` (now
+`a_lobby_room_shows_its_surroundings_above_the_floor`) and
 `vdp_widescreen.lobby_margins_take_the_next_area_colours`. They replace
 `widescreen_leaves_the_lobby_4_3`, `widescreen_lobby_when_asked` and
 `widescreen_final_boss_stays_4_3_with_wide_lobby`.

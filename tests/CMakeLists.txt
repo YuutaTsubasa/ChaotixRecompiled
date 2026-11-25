@@ -358,10 +358,20 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     add_test(NAME widescreen_lobby_margins_in_the_next_area_colours
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 860 --wide 53
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 858:5d17e048ee2e9f47)
-    # The Combi Catcher scrolls down into a room narrower than the view: black
-    # margins, the 4:3 centre throughout. Its TIME UP, scaled up past the
-    # screen, used to flip a frame late when the SH-2 drew it into margins
-    # that show nothing there.
+    # Issue #5: at the lobby's outdoor entrance the camera is at X 0..12, and
+    # left of the layout's origin the left margin was black. Plane A has no
+    # layout there, but plane B is the outdoor picture (sky, trees, the
+    # floor), which the floor's line scroll wraps round anyway: frame 600
+    # shows it there, without plane A (0.15.25: 3b3dd53d2b20b6c3, black).
+    add_test(NAME widescreen_lobby_entrance_left_of_the_origin
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 601 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 600:7afa144de8e25772)
+    set_tests_properties(widescreen_lobby_entrance_left_of_the_origin PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    # The Combi Catcher scrolls down into a room narrower than the view: the
+    # 4:3 centre throughout. Its TIME UP, scaled up past the screen, used to
+    # flip a frame late when the SH-2 drew it into margins that show none of
+    # its drawing (they show only the planes beside the room, below).
     add_test(NAME widescreen_lobby_combi_catcher_centre_matches_4_3
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3300 --wide 53
                 --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10
@@ -369,6 +379,39 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     set_tests_properties(widescreen_lobby_margins_in_the_next_area_colours
         widescreen_lobby_combi_catcher_centre_matches_4_3 PROPERTIES TIMEOUT 600
         FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    # Issue #5: the Combi Catcher and the stage select room are one 4:3
+    # screen wide; their margins were black (issue #61). They now show what is
+    # beside the room above the corridor's floor row (patches::kRoomFloorY),
+    # as the corridor shows it, and black below but for the pillars beside the
+    # room, which carry on down (patches::kRoomPillars): the Combi Catcher on
+    # its way down at frame 1450 (0.15.25: 5952215dc9b87c22) and at the bottom
+    # of its pit at frame 2000 (0.15.25: f0c67eeaa485eb3c), its traffic-light
+    # pillars whole, with nothing of the tiles the ring's last columns keep
+    # from elsewhere; the stage select room at its console, frame 1300
+    # (0.15.25: 09268a6c7aefb0a4), its doorway pillars and arch posts carried
+    # down. The centre checks above cover both rooms.
+    set(_combi --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10)
+    add_test(NAME widescreen_lobby_combi_catcher_beside_the_room
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1451 --wide 53 ${_combi}
+                --expect-hash 1450:770e2408ca389aa6)
+    add_test(NAME widescreen_lobby_combi_catcher_pit_black_below_the_floor
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2001 --wide 53 ${_combi}
+                --expect-hash 2000:a55441f5dda159aa)
+    add_test(NAME widescreen_lobby_stage_select_room_pillars_carry_down
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1301 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:5e08b71372244684)
+    # The pillars' rows are kept as they are drawn on the way in. Entered at a
+    # 16 px margin and widened to 53 at frame 1250, with the room scrolled
+    # down: the pillar columns the narrow view never drew are black below the
+    # floor row, not stale tiles (Codex review).
+    add_test(NAME widescreen_lobby_stage_select_room_widened_after_scrolling
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1301 --wide 16 --wide-at 1250:53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:87416a778321aa35)
+    set_tests_properties(widescreen_lobby_combi_catcher_beside_the_room
+        widescreen_lobby_combi_catcher_pit_black_below_the_floor
+        widescreen_lobby_stage_select_room_pillars_carry_down
+        widescreen_lobby_stage_select_room_widened_after_scrolling PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     add_test(NAME lockstep_lobby_widescreen
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600)
@@ -473,15 +516,31 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --peek-every 3200:8064:2)
     set_tests_properties(widescreen_off_during_amazing_arena_letterbox PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "peek 3200 8064 0210")
-    # ...but not the ending's scenes (levels 3-6): their sprites are staged
-    # for the 4:3 screen, and widened their left margin was black (left of the
-    # layout) beside a white picture. No margins at all.
-    add_test(NAME widescreen_ending_stays_4_3
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1200 --wide 53 --trace-wide
-                --level-select --stage 300:7:3:0:4:7:0)
-    set_tests_properties(widescreen_ending_stays_4_3 PROPERTIES TIMEOUT 600
-        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0003"
-        FAIL_REGULAR_EXPRESSION "margins live from")
+    # Issue #5: the ending's white scenes (levels 3-6) were kept 4:3 (issue
+    # #61): widened, their left margin was black, left of the layout's
+    # origin. Their planes are empty and the 32X clears its whole screen to
+    # white every frame, so the margins are the game's own white, with the
+    # characters in the middle as in 4:3 (frame 1200; 0.15.25:
+    # 3d628471428875a9, pillarboxed). The 4:3 picture and the 68K work RAM
+    # are the 4:3 run's on every frame, and no sprite reaches the margins.
+    add_test(NAME widescreen_ending_white_margins
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1201 --wide 53 --trace-wide
+                --level-select --stage 300:7:4:0:4:7:0 --expect-hash 1200:351713a2b672f17d)
+    set_tests_properties(widescreen_ending_white_margins PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "level select: reached scene 0018:0007:0004.*margins live from frame 40[0-9].*matches golden"
+        FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
+    foreach(_ending 3 5 6)
+        add_test(NAME widescreen_ending_${_ending}_centre_and_ram_match_4_3
+            COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3000 --wide 53 --compare-ram
+                    --min-centre-frames 2500 --stage 300:7:${_ending}:0:2:7:0)
+        set_tests_properties(widescreen_ending_${_ending}_centre_and_ram_match_4_3 PROPERTIES TIMEOUT 900
+            PASS_REGULAR_EXPRESSION "centre check: 2[5-9][0-9][0-9] widescreen frames with a 4:3 identical centre.*RAM check: work RAM identical to 4:3 on 3000 frames")
+    endforeach()
+    add_test(NAME lockstep_ending_widescreen
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep
+                --stage 300:7:4:0:2:7:0)
+    set_tests_properties(lockstep_ending_widescreen PROPERTIES TIMEOUT 900
+        PASS_REGULAR_EXPRESSION "lockstep: 2400 frames bit-identical")
 
     # MARINA MADNESS's clouds and sea are four screen-fixed 32X objects, each
     # two copies of one picture that cover only the 4:3 screen (issue #36:

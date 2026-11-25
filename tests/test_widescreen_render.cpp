@@ -259,23 +259,37 @@ TEST(widescreen_render, the_special_stage_is_found_whatever_the_game_mode) {
     CHECK(!patches::special_stage_active(*m));
 }
 
-TEST(widescreen_render, world_entrance_is_widened_but_not_the_ending) {
+TEST(widescreen_render, world_entrance_and_its_ending_are_widened) {
     // Issue #61 (formerly #13 and #56, kept 4:3): the lobby (levels 0 and 1)
-    // and the final boss (2) are widened; the ending's scenes (3-6) are not.
+    // and the final boss (2) are widened. Issue #5: so are the ending's white
+    // scenes (3-6), told by their empty planes from the bonus stage's load,
+    // which is WORLD ENTRANCE 3 too for a few frames, its picture in plane A.
     auto m = level_machine();
     stand_in_for_the_engine_in(*m, 7, 0);
     patches::begin_frame(*m);
     CHECK(m->wide_active);
-    for (uint8_t level = 0; level <= 6; ++level) {
+    for (uint8_t level = 0; level <= 7; ++level) {
         stand_in_for_the_engine_in(*m, 7, level);
         CHECK_EQ(patches::wide_zone(*m), level <= patches::kFinalBossLevel);
+        CHECK_EQ(patches::ending_scene(*m), level > patches::kFinalBossLevel && level <= patches::kLastEndingLevel);
     }
+    // The camera at X 0: nothing is cut, the planes being empty.
+    for (uint8_t level = 3; level <= 6; ++level) {
+        stand_in_for_the_engine_in(*m, 7, level);
+        patches::begin_frame(*m);
+        CHECK(m->wide_active);
+        CHECK_EQ(patches::margin_cut(*m, 53).left, 0);
+    }
+    // A tile in plane A (the bonus stage loading): not the ending.
+    const uint32_t nt = uint32_t(m->vdp.reg[2] & 0x38) << 10;
+    m->vdp.vram[nt + 2 * 100 + 1] = 0x23;
     stand_in_for_the_engine_in(*m, 7, 3);
+    CHECK(!patches::ending_scene(*m));
     patches::begin_frame(*m);
     CHECK(!m->wide_active);
-    // WIDE LOBBY is gone: wide_everywhere changes nothing.
-    m->wide_everywhere = true;
-    stand_in_for_the_engine_in(*m, 7, 4);
+    m->vdp.vram[nt + 2 * 100 + 1] = 0;
+    // WORLD ENTRANCE 7, a black screen, stays as it was.
+    stand_in_for_the_engine_in(*m, 7, 7);
     patches::begin_frame(*m);
     CHECK(!m->wide_active);
 }
@@ -354,11 +368,15 @@ TEST(widescreen_render, the_menus_carry_their_tiled_backdrop_into_the_margins) {
     CHECK(!patches::menu_backdrop_tiled(*m));
 }
 
-TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {
+TEST(widescreen_render, a_lobby_room_shows_its_surroundings_above_the_floor) {
     // Issue #61: the stage select room holds the camera at 2816..2816; its
     // margins would show the corridor beside it and, as it scrolls down,
-    // blocks the engine never draws. A wide range is no room: its ends move
-    // as the player goes on, and what lies beyond them was just in view.
+    // blocks the engine never draws. They were black; since issue #5 they
+    // show what is beside the room down to world row kRoomFloorY (what the
+    // corridor shows of it), black below, but for the pillars beside the
+    // room, which carry on down (patches::kRoomPillars). A wide range is no room: its
+    // ends move as the player goes on, and what lies beyond them was just in
+    // view.
     auto m = level_machine();
     auto put = [&](uint32_t at, int v) { m->wram[at] = uint8_t(v >> 8); m->wram[at + 1] = uint8_t(v); };
     auto clip = [&](uint32_t at) { return int16_t(m->sdram[patches::kClipRectSdram + at] << 8 | m->sdram[patches::kClipRectSdram + at + 1]); };
@@ -369,20 +387,71 @@ TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {
     patches::begin_frame(*m);
     CHECK(m->wide_active);
     const patches::MarginCut room = patches::margin_cut(*m, 53);
-    CHECK_EQ(room.left, 53);
-    CHECK_EQ(room.right, 53);
-    // Nothing is shown there, so the SH-2 does not draw there either.
+    CHECK_EQ(room.left, 0);
+    CHECK_EQ(room.right, 0);
+    CHECK(m->lobby_room_left && m->lobby_room_right);
+    CHECK(m->room_on);
+    CHECK_EQ(m->room_floor_line, patches::kRoomFloorY);
+    CHECK_EQ(m->room_pillar_n, 6);
+    CHECK_EQ(m->room_pillar_x0[0], -80);
+    CHECK_EQ(m->room_pillar_x1[5], 400);
+    CHECK_EQ(m->room_pillar_mirror[0], patches::kNoMirror);
+    CHECK_EQ(m->room_pillar_src[0], 96);
+    // Scrolled down 112 px, the floor row is 112 lines up the screen.
+    put(patches::kPlaneAStruct + 0x10, 112);
+    patches::begin_frame(*m);
+    CHECK_EQ(m->room_floor_line, patches::kRoomFloorY - 112);
+    CHECK_EQ(m->room_pillar_src[0], 96 - 112);
+    put(patches::kPlaneAStruct + 0x10, 0);
+    // The Combi Catcher: its two pillars, mirrored about the 4:3 edges.
+    put(patches::kPlaneAStruct, 1552);
+    put(patches::kPlaneAStruct + 0xA, 1552);
+    put(patches::kPlaneAStruct + 0x8, 1552);
+    patches::begin_frame(*m);
+    CHECK(m->room_on);
+    CHECK_EQ(m->room_pillar_n, 2);
+    CHECK_EQ(m->room_pillar_x0[0], -16);
+    CHECK_EQ(m->room_pillar_mirror[0], 0);
+    CHECK_EQ(m->room_pillar_mirror[1], 320);
+    // The SH-2 still draws nothing there: none of the room's own objects show.
     CHECK_EQ(clip(0), 0);
     CHECK_EQ(clip(2), 320);
     put(patches::kPlaneAStruct, 1573);
     put(patches::kPlaneAStruct + 0xA, 1552);
     put(patches::kPlaneAStruct + 0x8, 7872);
     patches::begin_frame(*m);
+    CHECK(!m->room_on);
     const patches::MarginCut corridor = patches::margin_cut(*m, 53);
     CHECK_EQ(corridor.left, 0);
     CHECK_EQ(corridor.right, 0);
     CHECK_EQ(clip(0), -56);
     CHECK_EQ(clip(2), 376);
+}
+
+TEST(widescreen_render, the_lobby_entrance_shows_plane_b_left_of_the_origin) {
+    // Issue #5: the lobby's camera is not clamped, and at its outdoor
+    // entrance it is at X 0..12. Left of X 0 there is no layout: plane A is
+    // left out there, plane B (the outdoor picture) is shown, nothing black.
+    // A level keeps its black columns there (its camera clamp keeps them
+    // out of view anyway).
+    auto m = level_machine();
+    auto put = [&](uint32_t at, int v) { m->wram[at] = uint8_t(v >> 8); m->wram[at + 1] = uint8_t(v); };
+    stand_in_for_the_engine_in(*m, 7, 0);
+    put(patches::kPlaneAStruct, 5);
+    put(patches::kPlaneAStruct + 0xA, 0);
+    put(patches::kPlaneAStruct + 0x8, 7872);
+    patches::begin_frame(*m);
+    CHECK(m->wide_active);
+    const patches::MarginCut lobby = patches::margin_cut(*m, 53);
+    CHECK_EQ(lobby.left, 0);
+    CHECK_EQ(lobby.backdrop, 48);
+    CHECK_EQ(lobby.right, 0);
+    stand_in_for_the_engine_in(*m, 0, 1);
+    put(patches::kPlaneAStruct, 5);
+    patches::begin_frame(*m);
+    const patches::MarginCut level = patches::margin_cut(*m, 53);
+    CHECK_EQ(level.left, 48);
+    CHECK_EQ(level.backdrop, 0);
 }
 
 #ifdef CHAOTIX_TEST_ROM

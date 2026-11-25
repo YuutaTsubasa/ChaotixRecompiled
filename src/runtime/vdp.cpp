@@ -487,6 +487,7 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     const int width = this->width();
     const int xs = -extra, xe = width + extra, n = xe - xs;
     const uint8_t bgidx = reg[7] & 0x3F;
+    std::memset(room_black, 0, size_t(n));
     // CRAM as colours, converted again only when it changed.
     if (!palrgb_valid_ || !same_bytes(palrgb_cram_, cram, sizeof cram)) {
         for (int i = 0; i < 64; ++i) palrgb_[i] = cram_to_rgb(cram[i]);
@@ -536,6 +537,63 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     for (int i = 0; i < plane_a_hide_n && extra > 0; ++i)
         for (int x = std::max(plane_a_hide_x0[i], xs); x < std::min(plane_a_hide_x1[i], xe); ++x)
             if (x < 0 || x >= width) a[x - xs] = 0;
+    // A room's margins below its floor row: nothing, but for the columns
+    // carried down from above (room_ext_*).
+    const bool room = (room_left || room_right) && extra > 0;
+    const int ext_n = room ? std::min(room_ext_n, kRoomExtMax) : 0;
+    if (ext_n && room_ext_key != room_ext_x0[0] + 1) {
+        std::memset(room_ext_seen, 0, sizeof room_ext_seen);
+        room_ext_key = room_ext_x0[0] + 1;
+    }
+    if (!ext_n) room_ext_key = 0;
+    // Column x's place in the kept lines, or -1.
+    auto slot = [&](int x) {
+        if (x < 0 && x >= -kRoomExtMargin) return x + kRoomExtMargin;
+        if (x >= width && x < width + kRoomExtMargin) return kRoomExtMargin + x - width;
+        return -1;
+    };
+    auto repeated = [&](int i) {
+        return room_ext_mirror[i] == kNoMirror && room_ext_period[i] > 0 && room_ext_period[i] <= kRoomExtRows;
+    };
+    if (ext_n && line >= 0 && line < height() && line < room_floor_line) {
+        for (int i = 0; i < ext_n; ++i) {
+            const int k = line - room_ext_src[i];
+            if (!repeated(i) || k < 0 || k >= room_ext_period[i]) continue;
+            for (int x = std::max(room_ext_x0[i], xs); x < std::min(room_ext_x1[i], xe); ++x) {
+                const int c = slot(x);
+                if (c < 0) continue;
+                room_ext_a[c][k] = a[x - xs];
+                room_ext_b[c][k] = b[x - xs];
+                room_ext_seen[c][k] = true;
+            }
+        }
+    }
+    if (room && line >= room_floor_line) {
+        for (int x = xs; x < xe; ++x) {
+            if (x == 0) x = width;
+            if ((x < 0 && !room_left) || (x >= width && !room_right)) continue;
+            a[x - xs] = 0, b[x - xs] = 0;
+            room_black[x - xs] = 1;
+            for (int i = 0; i < ext_n; ++i) {
+                if (x < room_ext_x0[i] || x >= room_ext_x1[i]) continue;
+                if (room_ext_mirror[i] != kNoMirror) {
+                    // The pillar's other half, on this line, in the picture.
+                    const int src = 2 * room_ext_mirror[i] - 1 - x;
+                    if (src < 0 || src >= width) continue;
+                    a[x - xs] = a[src - xs], b[x - xs] = b[src - xs];
+                    room_black[x - xs] = 0;
+                } else if (repeated(i)) {
+                    const int p = room_ext_period[i];
+                    const int k = ((line - room_ext_src[i]) % p + p) % p;
+                    const int c = slot(x);
+                    if (c < 0 || !room_ext_seen[c][k]) continue;
+                    a[x - xs] = room_ext_a[c][k];
+                    b[x - xs] = room_ext_b[c][k];
+                    room_black[x - xs] = 0;
+                }
+            }
+        }
+    }
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {
         // The margins continue the scene's rings (see radial_lut). The rings
         // are opaque, and plane B (the scene's own cells stop at the 4:3
@@ -739,6 +797,12 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
                 }
             }
         }
+    }
+
+    // Nothing of the game's objects is drawn beside a room.
+    if (room) {
+        if (room_left) std::memset(s, 0, size_t(-xs));
+        if (room_right) std::memset(s + (width - xs), 0, size_t(xe - width));
     }
 
     const bool shi = (reg[12] & 0x08) != 0;

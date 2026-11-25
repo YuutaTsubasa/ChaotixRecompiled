@@ -492,8 +492,8 @@ bool special_stage_entry(const Machine& m);
 
 // WORLD ENTRANCE, zone 7: the lobby (levels 0 and 1), the final boss (2) and
 // the ending's scenes (3-6). It was kept 4:3 (issues #13, #56); it is
-// widened since issue #61, all but the ending's scenes, which stay 4:3. What
-// went wrong, and how each is handled:
+// widened since issue #61, and the ending's scenes since issue #5
+// (ending_scene, below). What went wrong, and how each is handled:
 // - The camera is left alone there: the widescreen camera clamp moved it,
 //   and the lobby's events (rooms, palettes, the catapult) and the boss
 //   follow the camera, so the run itself changed (the catapult landed four
@@ -508,7 +508,8 @@ bool special_stage_entry(const Machine& m);
 //   B keeps the native ring in the lobby; plane A, which scrolls with the
 //   camera, is shifted as in a level.
 // - Rooms narrower than the view (the stage select room, the Combi
-//   Catcher) are black outside the range the camera is held to, and the
+//   Catcher) are cut outside the range the camera is held to (repeated since
+//   issue #5, kRoomFloorY), and the
 //   palette areas are drawn in their own colours (lobby_margins, below).
 // - The final boss's arena is drawn by the special stage's polygon code with
 //   the screen's rectangle; it is widened as the stage is (PolyScene::Boss).
@@ -519,7 +520,21 @@ bool special_stage_entry(const Machine& m);
 constexpr uint16_t kWorldEntrance = 7;
 constexpr uint16_t kLastLobbyLevel = 1;
 constexpr uint16_t kFinalBossLevel = 2;
+constexpr uint16_t kLastEndingLevel = 6;
 bool wide_zone(const Machine& m);
+// The ending's white scenes, WORLD ENTRANCE 3-6 (issue #5). They were kept
+// 4:3: widened, the left margin was black (the camera is at X 0, and
+// margin_cut blacks out what is left of a level's origin). The picture is
+// the 32X's alone: the SH-2 clears its whole screen to white every frame,
+// a clear the margins take as well (fill_clears_margins), and draws the
+// characters over it; both Mega Drive planes are empty, only the backdrop
+// colour is behind. So there is nothing in the ring to hide, and the white
+// in the margins is the game's own clear. Over 4000 frames of each scene no
+// sprite is ever drawn in the margins.
+// Told by its picture as well as its number: the bonus stage loads itself as
+// WORLD ENTRANCE 3 for about 20 frames, with its picture in the planes and
+// the level engine stopped. Those frames stay as they were.
+bool ending_scene(const Machine& m);
 bool in_lobby(const Machine& m);
 // The final boss's arena is on screen, drawn by the special stage's code
 // (its projection loaded) with the screen's rectangle, or our widened one.
@@ -554,8 +569,53 @@ constexpr int kLobbyAreas = 5;
 constexpr int16_t kLobbyBounds[kLobbyAreas - 1] = {0x180, 0x4C0, 0x900, 0x1010};
 // Colours of an area the game may be cycling when it is matched.
 constexpr int kLobbyCycled = 8;
+// Issue #5: the rooms the camera is held in at one point, the Combi Catcher
+// (1552) and the stage select room (2816), are one 4:3 screen wide. Both are
+// reached along the corridor with the camera at Y 0, and the 4:3 view shows
+// what is beside them then, down to world row kRoomFloorY: the corridor on
+// the left, the next part of the lobby on the right. That is what their
+// margins show, as it is, above that row. Below it, as the rooms scroll
+// down, the layout beside them is empty (the backdrop), and the ring's last
+// columns on the right still hold tiles of another place that the engine's
+// row fills, which reach about 368 px right of the camera, never redraw:
+// those rows are black, except where a pillar stands beside the room, which
+// carries on down (kRoomPillars, columns from the room's left edge):
+// - The Combi Catcher's two traffic-light pillars stand astride the 4:3
+//   edges, 32 px wide, mirror images of themselves about the edge: their
+//   outer half is drawn as the mirror of the inner half, which the game
+//   draws the whole way down the pit (its Eggman heads included).
+// - Beside the stage select room stand the corridor's doorways, on either
+//   side as far as the widest margin reaches: a pink and teal pillar, an
+//   arch (its posts go down to the floor, its inside is black), then the
+//   next pillar. Those columns carry on down, repeated from rows above the
+//   floor band: the pillars' 80 px pattern from world rows [96, 176), the
+//   arch's from [104, 176), below its capitals. The 8 px of the drum's dark
+//   edge before the right pillar stays black.
+// Everything else is black. No sprites and nothing of the 32X are shown
+// beside a room: the claw, the signs, the monitors and the characters are
+// the room's own. Render only (Vdp::room_*, Machine::render_output_line).
+constexpr int kRoomFloorY = 224;
+constexpr int kCombiCatcherRoomX = 1552;
+constexpr int kStageSelectRoomX = 2816;
+// Columns [x0, x1) from the room's left edge: mirrored about column `mirror`,
+// or (kNoMirror) repeated from world rows [row0, row0 + period).
+struct RoomPillar { int room_x, x0, x1, mirror, row0, period; };
+constexpr int kNoMirror = -1000;
+constexpr int kMaxRoomPillars = 6;
+constexpr RoomPillar kRoomPillars[] = {
+    {kCombiCatcherRoomX, -16, 0, 0, 0, 0},
+    {kCombiCatcherRoomX, 320, 336, 320, 0, 0},
+    {kStageSelectRoomX, -80, -72, kNoMirror, 96, 80},
+    {kStageSelectRoomX, -72, -32, kNoMirror, 104, 72},
+    {kStageSelectRoomX, -32, 0, kNoMirror, 96, 80},
+    {kStageSelectRoomX, 328, 344, kNoMirror, 96, 80},
+    {kStageSelectRoomX, 344, 384, kNoMirror, 104, 72},
+    {kStageSelectRoomX, 384, 400, kNoMirror, 96, 80},
+};
 // Fills Machine::lobby_* for this frame's picture, margins of e px.
 void lobby_margins(Machine& m, int e);
+// Fills Machine::room_* for a room one screen wide (kRoomFloorY).
+void room_margins(Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
 // mean the same scene; Machine::level_scene holds the key the level engine
@@ -573,7 +633,13 @@ CameraRange camera_range(const Machine& m);
 // Margin columns on the left that fall left of the level's origin, where no
 // layout exists. Non-zero only where a room is narrower than the widened view
 // (the camera clamp keeps the margins inside the level otherwise).
-struct MarginCut { int left = 0, right = 0; };
+// In the lobby (issue #5) the camera is not clamped, and at its outdoor
+// entrance it starts at X 0..12. Left of the origin plane A has no layout,
+// but plane B there is the outdoor picture: sky, trees and the floor the
+// characters walk on, a 512 px picture that the floor's line scroll already
+// wraps round as the player walks. Those columns (`backdrop`, after the
+// black `left` ones) show plane B and leave plane A out.
+struct MarginCut { int left = 0, right = 0, backdrop = 0; };
 MarginCut margin_cut(const Machine& m, int extra);
 
 // Host-side per-frame step (start of Machine::run_frame): applies or removes

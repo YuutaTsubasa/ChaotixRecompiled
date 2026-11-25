@@ -396,6 +396,26 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // The final boss's picture in plane A, worked out once a frame.
     if (!wide_special || scene != patches::PolyScene::Boss) vdp.plane_a_hide_n = 0;
     else if (src_line == 0) patches::boss_plane_a_margins(vdp, extra);
+    // A widened level's margins (black where nothing is there to show).
+    const patches::MarginCut level_cut =
+        extra && wide_active && !wide_special ? patches::margin_cut(*this, extra) : patches::MarginCut{};
+    // A room one screen wide (patches::kRoomFloorY).
+    const bool room = extra && wide_active && !wide_special && room_on;
+    vdp.room_left = room && lobby_room_left;
+    vdp.room_right = room && lobby_room_right;
+    vdp.room_floor_line = room_floor_line;
+    vdp.room_ext_n = room ? std::min(room_pillar_n, Vdp::kRoomExtMax) : 0;
+    for (int i = 0; i < vdp.room_ext_n; ++i) {
+        vdp.room_ext_x0[i] = room_pillar_x0[i], vdp.room_ext_x1[i] = room_pillar_x1[i];
+        vdp.room_ext_mirror[i] = room_pillar_mirror[i] == patches::kNoMirror ? Vdp::kNoMirror : room_pillar_mirror[i];
+        vdp.room_ext_src[i] = room_pillar_src[i], vdp.room_ext_period[i] = room_pillar_period[i];
+    }
+    // Left of the lobby's origin, plane B only (patches::MarginCut).
+    if (level_cut.backdrop > level_cut.left) {
+        vdp.plane_a_hide_n = 1;
+        vdp.plane_a_hide_x0[0] = -extra;
+        vdp.plane_a_hide_x1[0] = level_cut.backdrop - extra;
+    }
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;
@@ -468,6 +488,15 @@ void Machine::render_output_line(int src_line, int dst_row) {
         if (debug_layer == 1) row[x] = md[x];
         else if (debug_layer == 2 && !(show32x || ((p >> 24) == 0xFD && mdbg))) row[x] = 0xFFFF00FFu;
     }
+    if (room) {
+        // Beside a room: its planes alone, nothing of the 32X, and black below
+        // the floor row but for the pillars carried down (patches::kRoomFloorY).
+        auto beside = [&](int x) {
+            row[x] = vdp.room_black[x] ? 0xFF000000u : 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]);
+        };
+        if (vdp.room_left) for (int x = 0; x < extra; ++x) beside(x);
+        if (vdp.room_right) for (int x = n - extra; x < n; ++x) beside(x);
+    }
     if (extra) {
         // Scenes without widescreen support: black side bars. In a level,
         // black out margin columns outside the level's camera range. The
@@ -477,7 +506,7 @@ void Machine::render_output_line(int src_line, int dst_row) {
         if (wide_special && !stage) cut = patches::MarginCut{};
         else if (stage) cut = src_line < patches::kSpecialRect[2] || src_line > patches::kSpecialRect[3]
                                     ? patches::MarginCut{extra, extra} : patches::MarginCut{};
-        else if (wide_active) cut = patches::margin_cut(*this, extra);
+        else if (wide_active) cut = level_cut;
         // The title's horizon (issue #77): the game draws it wider than the
         // screen, so its margins are shown as they are.
         else if (wide_enabled && patches::title_margins(*this)) cut = patches::MarginCut{};

@@ -208,6 +208,22 @@ public:
     bool lobby_alt = false;
     int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
     int lobby_cut_left = 0, lobby_cut_right = 0;
+    // A room one 4:3 screen wide (issue #5, patches::kRoomFloorY): on the
+    // sides it is cut on (lobby_room_*), its margins show the planes beside
+    // it above screen line room_floor_line and black below, but for its
+    // pillars (room_pillar_n of them: screen columns [room_pillar_x0,
+    // room_pillar_x1), mirrored about room_pillar_mirror or carried down from
+    // screen lines [room_pillar_src, + room_pillar_period)); lobby_fade_* is
+    // black still. Render only.
+    int lobby_fade_left = 0, lobby_fade_right = 0;
+    bool lobby_room_left = false, lobby_room_right = false;
+    bool room_on = false;
+    int room_floor_line = 0, room_pillar_n = 0;
+    int room_pillar_x0[6] = {}, room_pillar_x1[6] = {}, room_pillar_mirror[6] = {};
+    int room_pillar_src[6] = {}, room_pillar_period[6] = {};
+    // The ending's white scene is widened this frame (patches::ending_scene,
+    // issue #5): its margins are not cut. Render only.
+    bool ending_wide = false;
     int special_shift = 0;             // px its polygons are drawn right of true
     // A widened level's margin for its polygons this frame (patches.h,
     // level_polygon_margins), 0: none; worked out at the start of each frame.
