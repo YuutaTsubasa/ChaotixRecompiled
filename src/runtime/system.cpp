@@ -399,12 +399,15 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // A widened level's margins (black where nothing is there to show).
     const patches::MarginCut level_cut =
         extra && wide_active && !wide_special ? patches::margin_cut(*this, extra) : patches::MarginCut{};
-    // A room one screen wide, repeated in its margins (patches.h).
-    const bool room = extra && wide_active && !wide_special && room_period > 0;
-    vdp.tile_period = room ? room_period : 0;
-    vdp.tile_unit = room ? room_unit : 0;
-    vdp.tile_left = room && lobby_room_left;
-    vdp.tile_right = room && lobby_room_right;
+    // A room one screen wide (patches::kRoomFloorY).
+    const bool room = extra && wide_active && !wide_special && room_on;
+    vdp.room_left = room && lobby_room_left;
+    vdp.room_right = room && lobby_room_right;
+    vdp.room_floor_line = room_floor_line;
+    vdp.room_ext_n = room && room_pillars ? 2 : 0;
+    vdp.room_ext_src = room_pillar_src;
+    vdp.room_ext_period = patches::kStageSelectPillarRows[1];
+    for (int i = 0; i < 2; ++i) vdp.room_ext_x0[i] = room_pillar_x0[i], vdp.room_ext_x1[i] = room_pillar_x1[i];
     // Left of the lobby's origin, plane B only (patches::MarginCut).
     if (level_cut.backdrop > level_cut.left) {
         vdp.plane_a_hide_n = 1;
@@ -484,12 +487,17 @@ void Machine::render_output_line(int src_line, int dst_row) {
         else if (debug_layer == 2 && !(show32x || ((p >> 24) == 0xFD && mdbg))) row[x] = 0xFFFF00FFu;
     }
     if (room) {
-        // The repeated room's margins are its planes alone (already repeated,
-        // without sprites): nothing the 32X draws belongs to the room's walls
-        // (patches::kRoomRepeat).
-        auto planes = [&](int x) { row[x] = 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]); };
-        if (vdp.tile_left) for (int x = 0; x < extra; ++x) planes(x);
-        if (vdp.tile_right) for (int x = n - extra; x < n; ++x) planes(x);
+        // Beside a room: its planes alone, nothing of the 32X, and black below
+        // the floor row but for the pillars carried down (patches::kRoomFloorY).
+        const bool below = src_line >= room_floor_line;
+        auto beside = [&](int x) {
+            const int sx = x - extra;
+            bool pillar = false;
+            for (int i = 0; i < vdp.room_ext_n; ++i) pillar = pillar || (sx >= vdp.room_ext_x0[i] && sx < vdp.room_ext_x1[i]);
+            row[x] = below && !pillar ? 0xFF000000u : 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]);
+        };
+        if (vdp.room_left) for (int x = 0; x < extra; ++x) beside(x);
+        if (vdp.room_right) for (int x = n - extra; x < n; ++x) beside(x);
     }
     if (extra) {
         // Scenes without widescreen support: black side bars. In a level,

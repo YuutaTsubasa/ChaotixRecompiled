@@ -58,7 +58,7 @@ The stage select room holds the camera at 2816..2816, the Combi Catcher at
 scroll down, blocks the engine never draws. Where the camera's range is
 narrower than the widened view, the margins were black outside it, as a
 modern re-release would show a room that small (`lobby_margins`; since
-issue #5 they repeat the room, see below). A wider
+issue #5 only below the corridor's floor row, see below). A wider
 range is not a room: its ends move as the player goes on (1552 once past the
 COMBI CATCHER, with the camera at 1573), and what lies beyond them was just in
 view, so nothing is cut there. In a room the SH-2's clip stays the native one
@@ -66,8 +66,9 @@ too: nothing is shown in its margins, and the Combi Catcher's TIME UP, scaled
 up past the screen, flipped a frame or two late when it was drawn there.
 Issue #5 looked at these rooms again, layer by layer: each is one 4:3
 screen wide, and beyond it the planes hold only the corridor or nothing.
-At the owner's choice their margins now continue the room's walls instead
-of black (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
+At the owner's choice their margins now show what is beside the room above
+the corridor's floor row, black below (the roulette room's doorway pillars
+carry on down), instead of all black (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
 
 The lobby's outdoor entrance, where the camera is at X 0..12, now shows
 plane B's outdoor picture left of the origin instead of black (issue #5,
@@ -168,7 +169,7 @@ issue #5's ending tests), the unit tests
 `widescreen_render.world_entrance_is_widened_but_not_the_ending` (now
 `world_entrance_and_its_ending_are_widened`),
 `widescreen_render.a_lobby_room_is_black_outside_its_range` (now
-`a_lobby_room_repeats_outside_its_range`) and
+`a_lobby_room_shows_its_surroundings_above_the_floor`) and
 `vdp_widescreen.lobby_margins_take_the_next_area_colours`. They replace
 `widescreen_leaves_the_lobby_4_3`, `widescreen_lobby_when_asked` and
 `widescreen_final_boss_stays_4_3_with_wide_lobby`.

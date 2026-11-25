@@ -681,8 +681,8 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt_x0 = m.lobby_alt_x1 = 0;
     const int x = camera_x(m);
     // Rooms narrower than the view: cut outside the range the camera is
-    // held to, the part of the layout the 4:3 view can show from there (and
-    // repeated, room_repeat). The
+    // held to, the part of the layout the 4:3 view can show from there (since
+    // issue #5 only below the corridor, room_margins). The
     // stage select room's range is one point (2816..2816): its margins would
     // show the corridor and the outdoor entrance beside it, and as the room
     // scrolls down, blocks the engine never draws. A wider range is no room:
@@ -692,8 +692,8 @@ void lobby_margins(Machine& m, int e) {
     const bool room = r.right - r.left < 2 * e;
     m.lobby_cut_left = room ? std::clamp(e - (x - r.left), 0, e) : 0;
     m.lobby_cut_right = room ? std::clamp(x + e - r.right, 0, e) : 0;
-    // Issue #5: such a room is one 4:3 screen wide, wall to wall, and those
-    // margins repeat it instead (room_period), where its planes repeat.
+    // Issue #5: such a room is one 4:3 screen wide, and those margins show
+    // what is beside it as the corridor shows it (room_margins).
     m.lobby_room_left = m.lobby_cut_left > 0;
     m.lobby_room_right = m.lobby_cut_right > 0;
     m.lobby_fade_left = m.lobby_fade_right = 0;
@@ -739,11 +739,20 @@ void lobby_margins(Machine& m, int e) {
     m.lobby_alt_x1 = left ? left : kNativeWidth + 2 * e;
 }
 
-void room_repeat(Machine& m) {
-    m.room_period = kRoomRepeat;
-    // The stage select room: only its wall panel repeats.
+void room_margins(Machine& m) {
+    m.room_on = true;
+    // The screen line of world row kRoomFloorY.
+    m.room_floor_line = kRoomFloorY - camera_y(m);
+    m.room_pillars = false;
     const CameraRange r = camera_range(m);
-    m.room_unit = r.left == kStageSelectRoomX && r.right == kStageSelectRoomX ? kStageSelectWall : 0;
+    if (r.left != kStageSelectRoomX || r.right != kStageSelectRoomX) return;
+    m.room_pillars = true;
+    const int x0 = kStageSelectRoomX - camera_x(m);
+    for (int side = 0; side < 2; ++side) {
+        m.room_pillar_x0[side] = x0 + kStageSelectPillar[side][0];
+        m.room_pillar_x1[side] = x0 + kStageSelectPillar[side][1];
+    }
+    m.room_pillar_src = kStageSelectPillarRows[0] - camera_y(m);
 }
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }
@@ -838,10 +847,9 @@ MarginCut margin_cut(const Machine& m, int extra) {
         // WORLD ENTRANCE: worked out for this frame by lobby_margins. Left of
         // the origin, plane B's outdoor picture (see MarginCut). A room's
         // repeated sides are black only for a fade.
-        const bool tiled = m.room_period > 0;
-        c.left = std::min(tiled && m.lobby_room_left ? m.lobby_fade_left : m.lobby_cut_left, extra);
+        c.left = std::min(m.room_on && m.lobby_room_left ? m.lobby_fade_left : m.lobby_cut_left, extra);
         c.backdrop = std::max(origin, c.left);
-        c.right = std::min(tiled && m.lobby_room_right ? m.lobby_fade_right : m.lobby_cut_right, extra);
+        c.right = std::min(m.room_on && m.lobby_room_right ? m.lobby_fade_right : m.lobby_cut_right, extra);
     }
     return c;
 }
@@ -934,11 +942,10 @@ void begin_frame(Machine& m) {
         }
     }
     m.ending_wide = level && ending_level(m);
-    m.room_period = 0;
-    m.room_unit = 0;
+    m.room_on = false;
     if (level && in_lobby(m)) {
         lobby_margins(m, e);
-        if (m.lobby_room_left || m.lobby_room_right) room_repeat(m);
+        if (m.lobby_room_left || m.lobby_room_right) room_margins(m);
     } else {
         m.lobby_alt = false;
     }
@@ -961,7 +968,7 @@ void begin_frame(Machine& m) {
         // Draw a multiple of 8 columns; the shadow holds up to kMaxWideExtra.
         const int ce = (e + 7) & ~7;
         // A WORLD ENTRANCE room shows none of the game's own drawing in its
-        // margins (they repeat the room, kRoomRepeat): drawing its sprites
+        // margins (kRoomFloorY): drawing its sprites
         // there anyway only costs the SH-2 time, and the Combi Catcher's TIME
         // UP, scaled up past the screen, then flipped a frame or more late.
         const int cl = in_lobby(m) ? (e - m.lobby_cut_left + 7) & ~7 : ce;

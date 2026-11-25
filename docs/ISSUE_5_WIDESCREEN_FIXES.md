@@ -5,7 +5,7 @@ them were reproduced on 0.15.24 with `chaotix_headless --wide 53` (16:9).
 0.15.25 fixed four that are plain bugs in a widened scene (1, 5, 6, 8).
 Three were left for the owner, who then asked for all three to be widescreen:
 the black strip at the lobby's outdoor entrance (2), the Combi Catcher and
-roulette room in 4:3 (4, the margins now repeat the room) and the white
+roulette room in 4:3 (4, the margins now show what is beside the room) and the white
 ending in 4:3 (9); all three are done. Not reproduced, and not touched: the
 Combi Catcher's sky (3) and the launcher (7).
 
@@ -78,78 +78,75 @@ shows the same picture in its own colours.
 
 ![rooms](images/issue-5-rooms.png)
 
-Top: the Combi Catcher, frame 2000 of `--stage 300:7:0:0:2:7:0 --press
-600:right:200 --press 1100:left:35 --press 1300:down:10 --wide 53`. Bottom:
-the stage select (roulette) room, frame 1300 of `--stage 300:7:0:0:2:7:0
---press 600:right:2600 --wide 53`.
+Left 0.15.25, right this change. Top two rows show the Combi Catcher, frames
+1450 (going down) and 2000 (the bottom of its pit), from `--stage
+300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press
+1300:down:10 --wide 53`. The bottom row shows the stage select (roulette)
+room at its console, frame 1300 of `--stage 300:7:0:0:2:7:0 --press
+600:right:2600 --wide 53`.
 
-**Cause.** Both rooms hold the camera at one point (1552, 2816), and
-issue #61 blacked out the margins of any room narrower than the widened
-view.
+**Cause.** Both rooms hold the camera at one point (1552, 2816). Issue
+#61 blacked out the whole of both margins for any room narrower than the
+widened view.
 
 **What the game has there.** Both rooms are exactly one 4:3 screen wide,
-wall to wall. Layer by layer:
+and both are reached along the corridor with the camera at Y 0. On the way
+in and out, the 4:3 view shows what is beside them down to world row 224:
 
-- **The Combi Catcher.** Plane A is the room: its striped pillars stand
-  astride both 4:3 edges, with the pit's purple columns between them.
-  Left of the left pillar plane A is empty; right of the right one it
-  holds pieces of the lobby further right, streamed only in part. Plane B
-  is the corridor's 512 px picture: beside the room's top it shows the
-  corridor, and below the corridor's floor it has nothing (black), all the
-  way down the pit.
-- **The roulette room.** Plane B is the room's own picture (a drum of domes
-  and machinery behind the roulette), and it ends at the 4:3 edges. Plane A
-  beyond the console is the corridor's walls, with blank ring columns
-  between them. The console's six screens are 32X pictures. The room has no
-  period of its own (it is mirror-symmetric), except its wall panels and
-  the floor band.
+- **The Combi Catcher.** On the left is the corridor (its purple
+  background columns, rail and floor). On the right is the next part of the
+  lobby (a diamond-panel wall over a pink and teal floor band).
+- **The roulette room.** A pink and teal pillar of the corridor's doorways
+  stands at each side. On the right there is 8 px of the drum's dark
+  edge before it.
 
-So the planes beyond the rooms hold only the corridor or nothing.
+Below world row 224, as the rooms scroll down, the layout beside them is
+empty (the backdrop), except for the ring's last columns on the right.
+The engine's row fills reach only about 368 px right of the camera, so at
+E = 53 the last 5 columns of the right margin are never redrawn as the
+camera goes down. They still hold tiles of another place: the pink, teal
+and purple fragments that showed below the floor at the Combi Catcher's
+lower right.
 
-**Fix (the owner's choice).** The margins continue the room's own walls
-(`patches::kRoomRepeat`), from its planes only (`Vdp::tile_period`,
-`Vdp::tile_unit`):
+**Fix (the owner's choice).**
 
-- **The Combi Catcher** is repeated whole, as if another one stood beside
-  it: margin column x shows the room's column x + 320 (left) or x - 320
-  (right). Its pillars stand astride the 4:3 edges, so a whole pillar forms
-  at each seam, and the pit's purple columns and the floor go on beyond.
-- **The stage select room** is not: its drum, monitors, star machine and
-  console are one of a kind, and repeated whole they came out cut in half
-  at the margins' outer edges. What repeats in that room is its wall: a
-  64 px metal panel (the pipe "7", the triangle) centred on each 4:3 edge,
-  half of it inside the picture on either side, under the zig-zag floor
-  band (16 px). Margin column x shows the same place in that panel
-  (`kStageSelectWall`): panel after panel, the band and the dark edge of
-  the drum above them going on outward.
-- **No sprites and no 32X** are drawn in the margins. The claw, the
-  capsules, the signs, the monitors and the characters belong to this room
-  only, and the walls the margins continue are all Mega Drive plane tiles.
+- **Above world row 224** (`patches::kRoomFloorY`) the margins show the
+  planes as they are: what the corridor shows beside the room, fully drawn.
+- **Below that row** they are black, the stale columns included.
+- **The roulette room's pillars.** The doorway pillars carry on straight
+  down to the bottom of the screen: screen columns [-32, 0) and [328, 344)
+  from the room's left edge (`kStageSelectPillar`). Their 80 px pattern is
+  repeated from world rows 96-175, above the floor band. Beyond them, and
+  over the 8 px of the drum's dark edge on the right, it is black.
+  - Those rows are kept as the pillars are drawn on the way in
+    (`Vdp::room_ext_*`). Once the room has scrolled down, the plane's
+    256 px ring holds other rows there.
+  - A room entered from a save state already scrolled down has black there
+    until the camera comes back up.
+- **No sprites and no 32X** are drawn beside a room. The claw, the
+  capsules, the signs, the monitors and the characters are the room's own.
 
-The margins are black only while the lobby fades (as before), and the
-SH-2's clip stays native in the rooms. Render only: the machine state
+The margins are black while the lobby fades, as before, and the SH-2's
+clip stays native in the rooms. This is render only: the machine state
 matches 0.15.25's, and the 4:3 centre matches a 4:3 run on every widened
 frame.
 
 **Verification.**
 
-- `widescreen_lobby_combi_catcher_repeats_the_room` (frame 2000) and
-  `widescreen_lobby_stage_select_room_repeats_the_room` (frame 1300). Both
-  hashes differ on 0.15.25.
+- Golden-frame tests (all three hashes differ on 0.15.25):
+  - `widescreen_lobby_combi_catcher_beside_the_room` (frame 1450)
+  - `widescreen_lobby_combi_catcher_pit_black_below_the_floor` (frame 2000)
+  - `widescreen_lobby_stage_select_room_pillars_carry_down` (frame 1300)
 - The existing centre checks, with 2740 and 1643 widened frames identical
   to 4:3.
-- The unit test `widescreen_render.a_lobby_room_repeats_outside_its_range`
+- The unit test
+  `widescreen_render.a_lobby_room_shows_its_surroundings_above_the_floor`
   (formerly `..._is_black_outside_its_range`).
 
-**Left as it is.**
-
-- The room is not repeated in the two frames before the Combi Catcher's
-  camera locks: while the camera walks in, the margins still show the
-  lobby as it is. Around frames 1317-1320 that includes the
-  corridor-streaming transient described in item 3 of the reproduction
-  notes (a dark block at the bottom right for about four frames).
-- The Combi Catcher's floor capsules are sprites, so they are not
-  repeated.
+**Left as it is.** Around frames 1317-1320, before the Combi Catcher's
+camera locks, the margins still have the corridor-streaming transient
+described in item 3 of the reproduction notes (a dark block at the bottom
+right for about four frames).
 
 ## 5. AMAZING ARENA: the clocks have no hands in the margins
 
@@ -305,4 +302,4 @@ off-screen there would show in the margins earlier than in 4:3.
 Full `ctest` and the 33-run lockstep sweep (all special stages, levels,
 bonus stage, hub, random input) on Windows (MinGW), with the ROM.
 
-Items 2, 4 and 9: the same, 165/165 and 33/33 bit-identical, 0 warnings.
+Items 2, 4 and 9: the same, 166/166 and 33/33 bit-identical, 0 warnings.

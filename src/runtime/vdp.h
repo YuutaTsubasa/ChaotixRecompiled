@@ -55,15 +55,24 @@ public:
     // (runtime/patches.h, boss_plane_a_margins). plane_a_hide_n 0: none.
     int plane_a_hide_n = 0;
     int plane_a_hide_x0[2] = {}, plane_a_hide_x1[2] = {};
-    // Host-only: a WORLD ENTRANCE room one 4:3 screen wide (issue #5). The
-    // margins on the tiled sides show the room's planes again, tile_period px
-    // further in (the room repeated, wall to wall), and no sprites: the
-    // planes beyond the room hold only the corridor or nothing
-    // (runtime/patches.h, kRoomRepeat). tile_period 0: none. With tile_unit,
-    // only the tile_unit px straddling each 4:3 edge repeat, every tile_unit
-    // px (the stage select room's wall panel).
-    int tile_period = 0, tile_unit = 0;
-    bool tile_left = false, tile_right = false;
+    // Host-only: a WORLD ENTRANCE room one 4:3 screen wide (issue #5,
+    // runtime/patches.h, kRoomFloorY). On the sides room_left / room_right
+    // no sprites are drawn in the margin; from line room_floor_line down its
+    // planes are left out (black, Machine::render_output_line) but for
+    // columns [room_ext_x0[i], room_ext_x1[i]) (room_ext_n of them, at most
+    // kRoomExtWidth wide), drawn as line room_ext_src + (line - room_ext_src)
+    // mod room_ext_period showed them. Those lines are kept as they are drawn
+    // on screen above the floor row (the room is always entered with the
+    // camera at the top): further up, the plane's 256 px ring holds other
+    // rows by the time the room has scrolled down. A line not yet seen is
+    // black.
+    static constexpr int kRoomExtWidth = 32, kRoomExtRows = 80;
+    bool room_left = false, room_right = false;
+    int room_floor_line = 0, room_ext_n = 0, room_ext_src = 0, room_ext_period = 0;
+    int room_ext_x0[2] = {}, room_ext_x1[2] = {};
+    uint8_t room_ext_a[2][kRoomExtRows][kRoomExtWidth] = {}, room_ext_b[2][kRoomExtRows][kRoomExtWidth] = {};
+    bool room_ext_seen[kRoomExtRows] = {};
+    int room_ext_key = 0;  // room_ext_x0[0] the lines were kept for, + 1
     // Host-only: the widescreen margins the picture shows game content in
     // (columns beyond each side, rows below the active area); 0 where they
     // are black bars. Text replaced by sprite (sprite_text.h) treats a

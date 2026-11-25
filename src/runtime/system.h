@@ -208,15 +208,18 @@ public:
     bool lobby_alt = false;
     int lobby_alt_x0 = 0, lobby_alt_x1 = 0;
     int lobby_cut_left = 0, lobby_cut_right = 0;
-    // A room one 4:3 screen wide (issue #5, patches::kRoomRepeat): its
-    // margins repeat the room every room_period px on the sides it is cut
-    // on, instead of black, or only a wall unit of room_unit px straddling
-    // each 4:3 edge (Vdp::tile_unit); lobby_fade_* is black still. Render
-    // only.
+    // A room one 4:3 screen wide (issue #5, patches::kRoomFloorY): on the
+    // sides it is cut on (lobby_room_*), its margins show the planes beside
+    // it above screen line room_floor_line and black below, but for the
+    // stage select room's pillars (room_pillars: screen columns
+    // [room_pillar_x0, room_pillar_x1) per side, carried down from screen
+    // line room_pillar_src, 80 px a period); lobby_fade_* is black still.
+    // Render only.
     int lobby_fade_left = 0, lobby_fade_right = 0;
     bool lobby_room_left = false, lobby_room_right = false;
-    int room_period = 0;
-    int room_unit = 0;
+    bool room_on = false, room_pillars = false;
+    int room_floor_line = 0, room_pillar_src = 0;
+    int room_pillar_x0[2] = {}, room_pillar_x1[2] = {};
     // The ending's white scene is widened this frame (patches::ending_scene,
     // issue #5): its margins are not cut. Render only.
     bool ending_wide = false;

@@ -509,7 +509,7 @@ bool special_stage_entry(const Machine& m);
 //   camera, is shifted as in a level.
 // - Rooms narrower than the view (the stage select room, the Combi
 //   Catcher) are cut outside the range the camera is held to (repeated since
-//   issue #5, kRoomRepeat), and the
+//   issue #5, kRoomFloorY), and the
 //   palette areas are drawn in their own colours (lobby_margins, below).
 // - The final boss's arena is drawn by the special stage's polygon code with
 //   the screen's rectangle; it is widened as the stage is (PolyScene::Boss).
@@ -570,31 +570,29 @@ constexpr int16_t kLobbyBounds[kLobbyAreas - 1] = {0x180, 0x4C0, 0x900, 0x1010};
 // Colours of an area the game may be cycling when it is matched.
 constexpr int kLobbyCycled = 8;
 // Issue #5: the rooms the camera is held in at one point, the Combi Catcher
-// (1552) and the stage select room (2816), are one 4:3 screen wide, wall to
-// wall: the Combi Catcher's striped pillars stand astride both edges, the
-// stage select room's drum and console panels end there. Beyond them the
-// planes hold the corridor (streamed in part) or nothing, the pit below the
-// corridor's floor black. Their margins show the room again instead, as if
-// the next one stood beside it: the room's planes kRoomRepeat px further in
-// (the pillars, the pit's purple columns, the drum, the console's side
-// panels continue across the seam), without sprites, which belong to this
-// room only, and nothing of the 32X (the claw, the signs, the characters,
-// the stage select room's monitors).
-// The stage select room is not repeated whole: its drum, monitors, star
-// machine and console are one of a kind, and repeated they were cut in half
-// at the margins' outer edges. What does repeat there is its wall: a 64 px
-// metal panel (the pipe "7" and the triangle) centred on each 4:3 edge, half
-// of it inside the picture on either side, with the zig-zag floor band
-// (16 px) above it. The margins continue that panel every kStageSelectWall
-// px (Vdp::tile_unit), so the wall goes on outward. Render only
-// (Vdp::tile_period, Machine::render_output_line).
-constexpr int kRoomRepeat = 320;  // the native screen's width
+// (1552) and the stage select room (2816), are one 4:3 screen wide. Both are
+// reached along the corridor with the camera at Y 0, and the 4:3 view shows
+// what is beside them then, down to world row kRoomFloorY: the corridor on
+// the left, the next part of the lobby on the right. That is what their
+// margins show, as it is, above that row. Below it, as the rooms scroll
+// down, the layout beside them is empty (the backdrop), and the ring's last
+// columns on the right still hold tiles of another place that the engine's
+// row fills, which reach about 368 px right of the camera, never redraw:
+// those rows are black. The stage select room's edges are a pink and teal
+// pillar of the corridor's doorways on each side (kStageSelectPillar,
+// columns from the room's left edge); those carry on down below the row,
+// their 80 px pattern repeated from the rows above the floor band, and the
+// rest is black. No sprites and nothing of the 32X are shown beside a room:
+// the claw, the signs, the monitors and the characters are the room's own.
+// Render only (Vdp::room_*, Machine::render_output_line).
+constexpr int kRoomFloorY = 224;
 constexpr int kStageSelectRoomX = 2816;
-constexpr int kStageSelectWall = 64;
+constexpr int kStageSelectPillar[2][2] = {{-32, 0}, {328, 344}};  // left, right: [x0, x1) from the room's left edge
+constexpr int kStageSelectPillarRows[2] = {96, 80};  // world rows [96, 176): one period of the pattern
 // Fills Machine::lobby_* for this frame's picture, margins of e px.
 void lobby_margins(Machine& m, int e);
-// Fills Machine::room_* for a room one screen wide (kRoomRepeat).
-void room_repeat(Machine& m);
+// Fills Machine::room_* for a room one screen wide (kRoomFloorY).
+void room_margins(Machine& m);
 
 // Which scene is on screen now, packed from the three words above. Equal keys
 // mean the same scene; Machine::level_scene holds the key the level engine

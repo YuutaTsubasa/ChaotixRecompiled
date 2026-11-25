@@ -371,7 +371,7 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     # The Combi Catcher scrolls down into a room narrower than the view: the
     # 4:3 centre throughout. Its TIME UP, scaled up past the screen, used to
     # flip a frame late when the SH-2 drew it into margins that show none of
-    # its drawing (they repeat the room, below).
+    # its drawing (they show only the planes beside the room, below).
     add_test(NAME widescreen_lobby_combi_catcher_centre_matches_4_3
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 3300 --wide 53
                 --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10
@@ -380,21 +380,27 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
         widescreen_lobby_combi_catcher_centre_matches_4_3 PROPERTIES TIMEOUT 600
         FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     # Issue #5: the Combi Catcher and the stage select room are one 4:3
-    # screen wide; their margins were black (issue #61) and now repeat the
-    # room's walls (patches::kRoomRepeat): the Combi Catcher's pillars and pit
-    # at frame 2000 (0.15.25: f0c67eeaa485eb3c), the stage select room's
-    # metal wall panel, every 64 px, at frame 1300 (0.15.25:
-    # 09268a6c7aefb0a4): no monitors, star machine or console. The centre
-    # checks above cover both rooms.
-    add_test(NAME widescreen_lobby_combi_catcher_repeats_the_room
-        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2001 --wide 53
-                --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10
-                --expect-hash 2000:27c03eade5e172e1)
-    add_test(NAME widescreen_lobby_stage_select_room_repeats_the_room
+    # screen wide; their margins were black (issue #61). They now show what is
+    # beside the room above the corridor's floor row (patches::kRoomFloorY),
+    # as the corridor shows it, and black below: the Combi Catcher on its way
+    # down at frame 1450 (0.15.25: 5952215dc9b87c22) and at the bottom of its
+    # pit at frame 2000 (0.15.25: f0c67eeaa485eb3c), with nothing of the
+    # tiles the ring's last columns keep from elsewhere; the stage select room
+    # at its console, frame 1300 (0.15.25: 09268a6c7aefb0a4), its doorway
+    # pillars carried down. The centre checks above cover both rooms.
+    set(_combi --stage 300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press 1300:down:10)
+    add_test(NAME widescreen_lobby_combi_catcher_beside_the_room
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1451 --wide 53 ${_combi}
+                --expect-hash 1450:97cab726953ae892)
+    add_test(NAME widescreen_lobby_combi_catcher_pit_black_below_the_floor
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2001 --wide 53 ${_combi}
+                --expect-hash 2000:89db1e35a1f933ad)
+    add_test(NAME widescreen_lobby_stage_select_room_pillars_carry_down
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1301 --wide 53
-                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:3d4e640cc727efd4)
-    set_tests_properties(widescreen_lobby_combi_catcher_repeats_the_room
-        widescreen_lobby_stage_select_room_repeats_the_room PROPERTIES TIMEOUT 600
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:3e801846d014ce5c)
+    set_tests_properties(widescreen_lobby_combi_catcher_beside_the_room
+        widescreen_lobby_combi_catcher_pit_black_below_the_floor
+        widescreen_lobby_stage_select_room_pillars_carry_down PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     add_test(NAME lockstep_lobby_widescreen
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep

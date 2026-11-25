@@ -536,22 +536,40 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     for (int i = 0; i < plane_a_hide_n && extra > 0; ++i)
         for (int x = std::max(plane_a_hide_x0[i], xs); x < std::min(plane_a_hide_x1[i], xe); ++x)
             if (x < 0 || x >= width) a[x - xs] = 0;
-    // A room repeated into the margins (tile_period): from inside the room.
-    const bool tiled = tile_period >= extra && tile_period <= width && extra > 0 && tile_unit >= 0 &&
-                       tile_unit <= tile_period;
-    if (tiled) {
-        // The column a margin column repeats: tile_period px further in, or
-        // with tile_unit, the same place in the unit straddling the 4:3 edge
-        // (c in [-unit/2, unit/2) from the seam, c < 0 being the far side's).
-        auto source = [&](int x) {
-            if (!tile_unit) return x < 0 ? x + tile_period : x - tile_period;
-            const int h = tile_unit / 2;
-            const int from_seam = x < 0 ? x : x - width;
-            const int c = ((from_seam + h) % tile_unit + tile_unit) % tile_unit - h;
-            return c < 0 ? tile_period + c : c;
-        };
-        for (int x = xs; x < 0 && tile_left; ++x) a[x - xs] = a[source(x) - xs], b[x - xs] = b[source(x) - xs];
-        for (int x = width; x < xe && tile_right; ++x) a[x - xs] = a[source(x) - xs], b[x - xs] = b[source(x) - xs];
+    // A room's margins below its floor row: nothing, but for the columns
+    // carried down from above (room_ext_*).
+    const bool room = (room_left || room_right) && extra > 0;
+    const int ext_n = room && room_ext_period > 0 && room_ext_period <= kRoomExtRows ? room_ext_n : 0;
+    if (ext_n && room_ext_key != room_ext_x0[0] + 1) {
+        std::memset(room_ext_seen, 0, sizeof room_ext_seen);
+        room_ext_key = room_ext_x0[0] + 1;
+    }
+    if (!ext_n) room_ext_key = 0;
+    if (ext_n) {
+        const int k = line - room_ext_src;
+        if (line >= 0 && line < height() && line < room_floor_line && k >= 0 && k < room_ext_period) {
+            for (int i = 0; i < ext_n; ++i)
+                for (int x = room_ext_x0[i]; x < room_ext_x1[i] && x - room_ext_x0[i] < kRoomExtWidth; ++x)
+                    if (x >= xs && x < xe) {
+                        room_ext_a[i][k][x - room_ext_x0[i]] = a[x - xs];
+                        room_ext_b[i][k][x - room_ext_x0[i]] = b[x - xs];
+                    }
+            room_ext_seen[k] = true;
+        }
+    }
+    if (room && line >= room_floor_line) {
+        const int k = ext_n ? ((line - room_ext_src) % room_ext_period + room_ext_period) % room_ext_period : 0;
+        for (int x = xs; x < xe; ++x) {
+            if (x == 0) x = width;
+            if ((x < 0 && !room_left) || (x >= width && !room_right)) continue;
+            a[x - xs] = 0, b[x - xs] = 0;
+            if (!ext_n || !room_ext_seen[k]) continue;
+            for (int i = 0; i < ext_n; ++i)
+                if (x >= room_ext_x0[i] && x < room_ext_x1[i] && x - room_ext_x0[i] < kRoomExtWidth) {
+                    a[x - xs] = room_ext_a[i][k][x - room_ext_x0[i]];
+                    b[x - xs] = room_ext_b[i][k][x - room_ext_x0[i]];
+                }
+        }
     }
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {
         // The margins continue the scene's rings (see radial_lut). The rings
@@ -758,10 +776,10 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
         }
     }
 
-    // Nothing beside the room is drawn in its repeated margins.
-    if (tiled) {
-        if (tile_left) std::memset(s, 0, size_t(-xs));
-        if (tile_right) std::memset(s + (width - xs), 0, size_t(xe - width));
+    // Nothing of the game's objects is drawn beside a room.
+    if (room) {
+        if (room_left) std::memset(s, 0, size_t(-xs));
+        if (room_right) std::memset(s + (width - xs), 0, size_t(xe - width));
     }
 
     const bool shi = (reg[12] & 0x08) != 0;
