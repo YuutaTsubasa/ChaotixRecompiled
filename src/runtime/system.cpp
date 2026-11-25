@@ -396,6 +396,15 @@ void Machine::render_output_line(int src_line, int dst_row) {
     // The final boss's picture in plane A, worked out once a frame.
     if (!wide_special || scene != patches::PolyScene::Boss) vdp.plane_a_hide_n = 0;
     else if (src_line == 0) patches::boss_plane_a_margins(vdp, extra);
+    // A widened level's margins (black where nothing is there to show).
+    const patches::MarginCut level_cut =
+        extra && wide_active && !wide_special ? patches::margin_cut(*this, extra) : patches::MarginCut{};
+    // Left of the lobby's origin, plane B only (patches::MarginCut).
+    if (level_cut.backdrop > level_cut.left) {
+        vdp.plane_a_hide_n = 1;
+        vdp.plane_a_hide_x0[0] = -extra;
+        vdp.plane_a_hide_x1[0] = level_cut.backdrop - extra;
+    }
     vdp.shown_extra = wide_active ? extra : 0;
     vdp.shown_extra_bottom =
         wide_active && !wide_special ? std::clamp(wide_extra_bottom, 0, patches::kMaxWideExtraBottom) : 0;
@@ -477,7 +486,7 @@ void Machine::render_output_line(int src_line, int dst_row) {
         if (wide_special && !stage) cut = patches::MarginCut{};
         else if (stage) cut = src_line < patches::kSpecialRect[2] || src_line > patches::kSpecialRect[3]
                                     ? patches::MarginCut{extra, extra} : patches::MarginCut{};
-        else if (wide_active) cut = patches::margin_cut(*this, extra);
+        else if (wide_active) cut = level_cut;
         // The title's horizon (issue #77): the game draws it wider than the
         // screen, so its margins are shown as they are.
         else if (wide_enabled && patches::title_margins(*this)) cut = patches::MarginCut{};

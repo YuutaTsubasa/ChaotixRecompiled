@@ -573,7 +573,13 @@ CameraRange camera_range(const Machine& m);
 // Margin columns on the left that fall left of the level's origin, where no
 // layout exists. Non-zero only where a room is narrower than the widened view
 // (the camera clamp keeps the margins inside the level otherwise).
-struct MarginCut { int left = 0, right = 0; };
+// In the lobby (issue #5) the camera is not clamped, and at its outdoor
+// entrance it starts at X 0..12. Left of the origin plane A has no layout,
+// but plane B there is the outdoor picture: sky, trees and the floor the
+// characters walk on, a 512 px picture that the floor's line scroll already
+// wraps round as the player walks. Those columns (`backdrop`, after the
+// black `left` ones) show plane B and leave plane A out.
+struct MarginCut { int left = 0, right = 0, backdrop = 0; };
 MarginCut margin_cut(const Machine& m, int extra);
 
 // Host-side per-frame step (start of Machine::run_frame): applies or removes

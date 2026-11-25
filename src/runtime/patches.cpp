@@ -792,10 +792,13 @@ MarginCut margin_cut(const Machine& m, int extra) {
     // can; where a room is narrower than the view the margins show the tiles
     // the engine streamed anyway, which continue the room's scenery.
     MarginCut c;
-    c.left = std::clamp(extra - camera_x(m), 0, extra);
+    const int origin = std::clamp(extra - camera_x(m), 0, extra);
+    c.left = origin;
     if (in_lobby(m)) {
-        // WORLD ENTRANCE: worked out for this frame by lobby_margins.
-        c.left = std::max(c.left, std::min(m.lobby_cut_left, extra));
+        // WORLD ENTRANCE: worked out for this frame by lobby_margins. Left of
+        // the origin, plane B's outdoor picture (see MarginCut).
+        c.left = std::min(m.lobby_cut_left, extra);
+        c.backdrop = std::max(origin, c.left);
         c.right = std::min(m.lobby_cut_right, extra);
     }
     return c;
@@ -934,7 +937,12 @@ void begin_frame(Machine& m) {
     m.level_poly_margin = m.level_poly_on ? e : 0;
     m.level_poly_valid = false;
     // The HUD keeps to the left edge of what the margin shows of the level.
-    set_hud_shift(m, level && m.wide_hud_edges && e ? e - margin_cut(m, e).left : 0);
+    if (level && m.wide_hud_edges && e) {
+        const MarginCut cut = margin_cut(m, e);
+        set_hud_shift(m, e - std::max(cut.left, cut.backdrop));
+    } else {
+        set_hud_shift(m, 0);
+    }
 }
 
 void install(Machine& m) {

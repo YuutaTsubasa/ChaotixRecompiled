@@ -385,6 +385,32 @@ TEST(widescreen_render, a_lobby_room_is_black_outside_its_range) {
     CHECK_EQ(clip(2), 376);
 }
 
+TEST(widescreen_render, the_lobby_entrance_shows_plane_b_left_of_the_origin) {
+    // Issue #5: the lobby's camera is not clamped, and at its outdoor
+    // entrance it is at X 0..12. Left of X 0 there is no layout: plane A is
+    // left out there, plane B (the outdoor picture) is shown, nothing black.
+    // A level keeps its black columns there (its camera clamp keeps them
+    // out of view anyway).
+    auto m = level_machine();
+    auto put = [&](uint32_t at, int v) { m->wram[at] = uint8_t(v >> 8); m->wram[at + 1] = uint8_t(v); };
+    stand_in_for_the_engine_in(*m, 7, 0);
+    put(patches::kPlaneAStruct, 5);
+    put(patches::kPlaneAStruct + 0xA, 0);
+    put(patches::kPlaneAStruct + 0x8, 7872);
+    patches::begin_frame(*m);
+    CHECK(m->wide_active);
+    const patches::MarginCut lobby = patches::margin_cut(*m, 53);
+    CHECK_EQ(lobby.left, 0);
+    CHECK_EQ(lobby.backdrop, 48);
+    CHECK_EQ(lobby.right, 0);
+    stand_in_for_the_engine_in(*m, 0, 1);
+    put(patches::kPlaneAStruct, 5);
+    patches::begin_frame(*m);
+    const patches::MarginCut level = patches::margin_cut(*m, 53);
+    CHECK_EQ(level.left, 48);
+    CHECK_EQ(level.backdrop, 0);
+}
+
 #ifdef CHAOTIX_TEST_ROM
 TEST(widescreen_render, intro_eggman_exit_is_masked_and_training_reopens_with_local_rom) {
     auto m = std::make_unique<Machine>();

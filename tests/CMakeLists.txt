@@ -358,6 +358,16 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     add_test(NAME widescreen_lobby_margins_in_the_next_area_colours
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 860 --wide 53
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 858:5d17e048ee2e9f47)
+    # Issue #5: at the lobby's outdoor entrance the camera is at X 0..12, and
+    # left of the layout's origin the left margin was black. Plane A has no
+    # layout there, but plane B is the outdoor picture (sky, trees, the
+    # floor), which the floor's line scroll wraps round anyway: frame 600
+    # shows it there, without plane A (0.15.25: 3b3dd53d2b20b6c3, black).
+    add_test(NAME widescreen_lobby_entrance_left_of_the_origin
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 601 --wide 53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 600:7afa144de8e25772)
+    set_tests_properties(widescreen_lobby_entrance_left_of_the_origin PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     # The Combi Catcher scrolls down into a room narrower than the view: black
     # margins, the 4:3 centre throughout. Its TIME UP, scaled up past the
     # screen, used to flip a frame late when the SH-2 drew it into margins

@@ -38,6 +38,41 @@ differs). `special_stage_objects_centre_and_ram_match_4_3`: over 2400
 frames the stage's picture matches a 4:3 run (polygon edges as before) and
 the 68K work RAM is identical on every frame (`--compare-ram`, new).
 
+## 2. The lobby's entrance: a black strip on the left
+
+![lobby entrance](images/issue-5-lobby-entrance.png)
+
+(Frame 600 of `--stage 300:7:0:0:2:7:0 --press 600:right:2600 --wide 53`.)
+
+**Cause.** In WORLD ENTRANCE the camera is not clamped (issue #61: the
+lobby's events follow it, so the run must be the 4:3 one), and at the
+outdoor entrance it is at X 0..12. `margin_cut` blacked out the margin
+columns left of the layout's origin, since the plane ring holds no layout
+there: the part of the left margin left of world X 0 was black.
+
+**What the game has there.** Plane A, the towers, signs and pillars, has no
+layout left of X 0 (streamed there, it is whatever the ring last held:
+pieces of the lobby further right). Plane B is not the layout: in the lobby
+it is one 512 px picture per part, and the outdoor part's picture is the
+sky, the trees, the rail and the floor the characters walk on. Its rows are
+line-scrolled, the floor's with the camera, so the game itself wraps that
+picture round its 512 px as the player walks: the columns left of X 0 are
+the same picture, drawn the same way.
+
+**Fix.** Left of the origin the lobby's margin shows plane B and leaves
+plane A out (`MarginCut::backdrop`, drawn with `Vdp::plane_a_hide_*` like the
+final boss's plane A). Render only: the machine state is identical to
+0.15.25's on every frame checked (`--state-hash-every`). A level keeps its
+black columns there (its camera clamp keeps them out of view in any case);
+the lobby's own black columns (a room, a fade) stay black.
+
+**Verification.** `widescreen_lobby_entrance_left_of_the_origin` (frame
+600; 0.15.25's hash differs), the unit test
+`widescreen_render.the_lobby_entrance_shows_plane_b_left_of_the_origin`,
+and the lobby's existing centre, palette and lockstep tests. The return to
+the lobby after a level (`finished_run.txt`, frames 4850-5600, at NIGHT)
+shows the same picture in its own colours.
+
 ## 5. AMAZING ARENA: the clocks have no hands in the margins
 
 ![AMAZING ARENA clock](images/issue-5-arena-clock.png)
