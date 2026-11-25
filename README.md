@@ -776,6 +776,9 @@ people below. Thank you all: every report here led to a fix or a feature.
   ([#30](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/30)).
 - **[DanKorell](https://github.com/DanKorell)**: the lines in the menu text
   ([#5](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/5)).
+- **[Shaddytheguy](https://github.com/Shaddytheguy)**: widescreen problems in
+  the special stage, AMAZING ARENA's clocks, the title cards and the final
+  boss ([#5](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/5)).
 - **[Heartic12](https://github.com/Heartic12)**: the special stage lag on a
   slow PC ([#31](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/31)).
 - **[blueeeLove](https://github.com/blueeeLove)**: the Sonic CD touch layout
