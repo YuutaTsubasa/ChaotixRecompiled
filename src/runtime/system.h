@@ -255,7 +255,10 @@ public:
     // form's own bookkeeping and is in save states. `chaos_pal` is output
     // only: the palette render_line32x shows while a form is on.
     bool chaos_forms = false;
-    bool chaos_jump_prev = false;
+    // Bit 0: the jump button was held the frame before. Bits 4-7: frames
+    // left in which the transformation's sound is pointed at its rising copy
+    // (chaos_forms.cpp). One byte, as the bool it was (format 3).
+    uint8_t chaos_jump_prev = 0;
     uint8_t chaos_drain = 0;
     uint16_t chaos_last_tick = 0;
     uint16_t chaos_pal[256] = {};

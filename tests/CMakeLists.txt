@@ -446,6 +446,15 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
                 --level-select --stage 300:0:1:0:2:7:0 --sound 960:46 --peek-z80-every 962:1F10:6)
     set_tests_properties(chaos_forms_giant_ring_sound_unchanged PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "peek-z80 962 1F10 800601FBE600")
+    # Nor in a form (Codex review): a giant ring sound asked for at 1100,
+    # well after the transformation, reads the ROM's track.
+    add_test(NAME chaos_forms_giant_ring_sound_unchanged_in_a_form
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1110 --chaos
+                --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings
+                --poke 800:E009:3C --press 900:c:6 --press 912:c:6
+                --sound 1100:46 --peek-z80-every 1102:1F10:6 --peek-every 1102:ADFA:2)
+    set_tests_properties(chaos_forms_giant_ring_sound_unchanged_in_a_form PROPERTIES TIMEOUT 600
+        PASS_REGULAR_EXPRESSION "peek-z80 1102 1F10 800601FBE600.peek 1102 ADFA 7[0-9A-F]+")
     add_test(NAME chaos_forms_off_no_transformation_sound
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1080 --sound-log
                 --level-select --stage 300:0:1:0:2:7:0 --cheat chaosrings

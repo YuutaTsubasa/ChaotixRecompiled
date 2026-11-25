@@ -93,8 +93,11 @@ constexpr uint8_t kRiseStep = 0x01, kRiseFade = 0x02;
 // playing, +3 the little-endian pointer into the bank).
 constexpr uint32_t kSfxTracks = 0x1EB0, kSfxTrackSize = 0x30;
 constexpr int kSfxTrackCount = 3;
-// Frames after a transformation in which its sound is pointed at the copy.
-constexpr uint16_t kRiseFrames = 8;
+// Machine::chaos_jump_prev: bit 0 the jump button held the frame before,
+// bits 4-7 the frames after a transformation in which its sound is pointed at
+// the copy (counted down; the driver sets the tracks up in the frame of the
+// request, and FM5 reaches its jump two frames later).
+constexpr uint8_t kJumpHeld = 0x01, kRiseShift = 4, kRiseFrames = 4;
 
 uint32_t bank_offset(uint16_t z80) { return kSoundBank + (uint32_t(z80) - 0x8000u); }
 
@@ -356,8 +359,12 @@ bool quiet_request(const Machine& m, uint8_t id, uint32_t ret) {
 
 void begin_frame(Machine& m) {
     const bool jump = (m.input.pad[0] & PAD_C) != 0;
-    const bool pressed = jump && !m.chaos_jump_prev;
-    m.chaos_jump_prev = jump;
+    const bool pressed = jump && !(m.chaos_jump_prev & kJumpHeld);
+    const uint8_t rise_left = uint8_t(m.chaos_jump_prev >> kRiseShift);
+    m.chaos_jump_prev = uint8_t((jump ? kJumpHeld : 0) | (rise_left ? (rise_left - 1) << kRiseShift : 0));
+    // The frames after a transformation: its sound is the rising one (only
+    // the tracks that read the giant ring sound's FM6 track are moved).
+    if (rise_left) rise(m);
     if (m.chaos_drain & kJumpTaken) {
         // Held since the transformation: to the game it must not look like a
         // new press (Knuckles' glide, Charmy's flight) when only the first
@@ -410,10 +417,6 @@ void begin_frame(Machine& m) {
             release(m, ps, qs);
             return;
         }
-        // Just transformed (the game has counted the timer down from kHold a
-        // few times): its sound is the rising one.
-        const uint16_t t = rd16(m, ps + kStatInvincible);
-        if (t <= kHold && t > kHold - kRiseFrames && !m.chaos_sound) rise(m);
         hold(m, ps);
         if (qs) hold(m, qs);
         return;
@@ -430,8 +433,9 @@ void begin_frame(Machine& m) {
     hold(m, ps);
     if (qs) hold(m, qs);
     m.input.pad[0] &= uint16_t(~PAD_C);  // the press was the transformation's
-    // A sound, so that the transformation is heard (issue #146).
+    // A sound, so that the transformation is heard (issue #146), rising.
     patches::request_sound(m, m.chaos_sound ? m.chaos_sound : kTransformSound);
+    if (!m.chaos_sound) m.chaos_jump_prev = uint8_t(m.chaos_jump_prev | kRiseFrames << kRiseShift);
 }
 
 const uint16_t* display(Machine& m, const uint16_t* pal) {
