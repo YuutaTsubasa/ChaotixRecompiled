@@ -122,7 +122,9 @@ lower right.
     (`Vdp::room_ext_*`). Once the room has scrolled down, the plane's
     256 px ring holds other rows there.
   - A room entered from a save state already scrolled down has black there
-    until the camera comes back up.
+    until the camera comes back up. So do the pillar columns a narrower view
+    never drew, if the window is widened once the room has scrolled down
+    (each pixel is kept on its own).
 - **No sprites and no 32X** are drawn beside a room. The claw, the
   capsules, the signs, the monitors and the characters are the room's own.
 
@@ -137,6 +139,8 @@ frame.
   - `widescreen_lobby_combi_catcher_beside_the_room` (frame 1450)
   - `widescreen_lobby_combi_catcher_pit_black_below_the_floor` (frame 2000)
   - `widescreen_lobby_stage_select_room_pillars_carry_down` (frame 1300)
+  - `widescreen_lobby_stage_select_room_widened_after_scrolling` (16 px
+    margins widened to 53 after the room has scrolled down)
 - The existing centre checks, with 2740 and 1643 widened frames identical
   to 4:3.
 - The unit test
@@ -302,4 +306,4 @@ off-screen there would show in the margins earlier than in 4:3.
 Full `ctest` and the 33-run lockstep sweep (all special stages, levels,
 bonus stage, hub, random input) on Windows (MinGW), with the ROM.
 
-Items 2, 4 and 9: the same, 166/166 and 33/33 bit-identical, 0 warnings.
+Items 2, 4 and 9: the same, 167/167 and 33/33 bit-identical, 0 warnings.

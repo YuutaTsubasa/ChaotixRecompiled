@@ -398,9 +398,17 @@ if(CHAOTIX_ROM AND EXISTS "${CHAOTIX_ROM}")
     add_test(NAME widescreen_lobby_stage_select_room_pillars_carry_down
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1301 --wide 53
                 --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:3e801846d014ce5c)
+    # The pillars' rows are kept as they are drawn on the way in. Entered at a
+    # 16 px margin and widened to 53 at frame 1250, with the room scrolled
+    # down: the pillar columns the narrow view never drew are black below the
+    # floor row, not stale tiles (Codex review).
+    add_test(NAME widescreen_lobby_stage_select_room_widened_after_scrolling
+        COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 1301 --wide 16 --wide-at 1250:53
+                --stage 300:7:0:0:2:7:0 --press 600:right:2600 --expect-hash 1300:4675dc6ff4111975)
     set_tests_properties(widescreen_lobby_combi_catcher_beside_the_room
         widescreen_lobby_combi_catcher_pit_black_below_the_floor
-        widescreen_lobby_stage_select_room_pillars_carry_down PROPERTIES TIMEOUT 600
+        widescreen_lobby_stage_select_room_pillars_carry_down
+        widescreen_lobby_stage_select_room_widened_after_scrolling PROPERTIES TIMEOUT 600
         PASS_REGULAR_EXPRESSION "matches golden" FAIL_REGULAR_EXPRESSION "DOES NOT MATCH")
     add_test(NAME lockstep_lobby_widescreen
         COMMAND chaotix_headless --rom "${CHAOTIX_ROM}" --frames 2400 --wide 53 --lockstep

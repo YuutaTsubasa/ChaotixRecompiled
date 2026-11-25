@@ -489,12 +489,8 @@ void Machine::render_output_line(int src_line, int dst_row) {
     if (room) {
         // Beside a room: its planes alone, nothing of the 32X, and black below
         // the floor row but for the pillars carried down (patches::kRoomFloorY).
-        const bool below = src_line >= room_floor_line;
         auto beside = [&](int x) {
-            const int sx = x - extra;
-            bool pillar = false;
-            for (int i = 0; i < vdp.room_ext_n; ++i) pillar = pillar || (sx >= vdp.room_ext_x0[i] && sx < vdp.room_ext_x1[i]);
-            row[x] = below && !pillar ? 0xFF000000u : 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]);
+            row[x] = vdp.room_black[x] ? 0xFF000000u : 0xFF000000u | (indexed ? cram_rgb[top[x] & 0x3F] : md[x]);
         };
         if (vdp.room_left) for (int x = 0; x < extra; ++x) beside(x);
         if (vdp.room_right) for (int x = n - extra; x < n; ++x) beside(x);

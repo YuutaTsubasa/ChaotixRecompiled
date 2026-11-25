@@ -487,6 +487,7 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     const int width = this->width();
     const int xs = -extra, xe = width + extra, n = xe - xs;
     const uint8_t bgidx = reg[7] & 0x3F;
+    std::memset(room_black, 0, size_t(n));
     // CRAM as colours, converted again only when it changed.
     if (!palrgb_valid_ || !same_bytes(palrgb_cram_, cram, sizeof cram)) {
         for (int i = 0; i < 64; ++i) palrgb_[i] = cram_to_rgb(cram[i]);
@@ -553,8 +554,8 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
                     if (x >= xs && x < xe) {
                         room_ext_a[i][k][x - room_ext_x0[i]] = a[x - xs];
                         room_ext_b[i][k][x - room_ext_x0[i]] = b[x - xs];
+                        room_ext_seen[i][k][x - room_ext_x0[i]] = true;
                     }
-            room_ext_seen[k] = true;
         }
     }
     if (room && line >= room_floor_line) {
@@ -563,11 +564,13 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
             if (x == 0) x = width;
             if ((x < 0 && !room_left) || (x >= width && !room_right)) continue;
             a[x - xs] = 0, b[x - xs] = 0;
-            if (!ext_n || !room_ext_seen[k]) continue;
+            room_black[x - xs] = 1;
             for (int i = 0; i < ext_n; ++i)
-                if (x >= room_ext_x0[i] && x < room_ext_x1[i] && x - room_ext_x0[i] < kRoomExtWidth) {
+                if (x >= room_ext_x0[i] && x < room_ext_x1[i] && x - room_ext_x0[i] < kRoomExtWidth &&
+                    room_ext_seen[i][k][x - room_ext_x0[i]]) {
                     a[x - xs] = room_ext_a[i][k][x - room_ext_x0[i]];
                     b[x - xs] = room_ext_b[i][k][x - room_ext_x0[i]];
+                    room_black[x - xs] = 0;
                 }
         }
     }

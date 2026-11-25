@@ -64,15 +64,18 @@ public:
     // mod room_ext_period showed them. Those lines are kept as they are drawn
     // on screen above the floor row (the room is always entered with the
     // camera at the top): further up, the plane's 256 px ring holds other
-    // rows by the time the room has scrolled down. A line not yet seen is
-    // black.
+    // rows by the time the room has scrolled down. A pixel not yet seen (its
+    // line, or its column with a narrower view) is black.
     static constexpr int kRoomExtWidth = 32, kRoomExtRows = 80;
     bool room_left = false, room_right = false;
     int room_floor_line = 0, room_ext_n = 0, room_ext_src = 0, room_ext_period = 0;
     int room_ext_x0[2] = {}, room_ext_x1[2] = {};
     uint8_t room_ext_a[2][kRoomExtRows][kRoomExtWidth] = {}, room_ext_b[2][kRoomExtRows][kRoomExtWidth] = {};
-    bool room_ext_seen[kRoomExtRows] = {};
+    bool room_ext_seen[2][kRoomExtRows][kRoomExtWidth] = {};
     int room_ext_key = 0;  // room_ext_x0[0] the lines were kept for, + 1
+    // Out, for the line just rendered (index x + extra): 1 where a room's
+    // margin below its floor row is black, 0 elsewhere.
+    uint8_t room_black[kMaxWidth] = {};
     // Host-only: the widescreen margins the picture shows game content in
     // (columns beyond each side, rows below the active area); 0 where they
     // are black bars. Text replaced by sprite (sprite_text.h) treats a
