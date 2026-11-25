@@ -1,19 +1,20 @@
-# Issue #5: four widescreen fixes (special stage, arena clock, title cards, final boss)
+# Issue #5: widescreen fixes (special stage, lobby entrance, arena clock, title cards, final boss, ending)
 
 A list of widescreen problems was reported on issue #5 (2026-11-24). All of
 them were reproduced on 0.15.24 with `chaotix_headless --wide 53` (16:9).
-This change fixes four that are plain bugs in a widened scene. The others
-wait for a decision or more information and are not touched here: the black
-space at the lobby's outdoor entrance (2), the Combi Catcher's sky (3, not
-reproduced), the Combi Catcher and roulette room in 4:3 (4, on purpose since
-issue #61), the launcher (7, not reproduced) and the white ending in 4:3 (9,
-on purpose since issue #61).
+0.15.25 fixed four that are plain bugs in a widened scene (1, 5, 6, 8).
+Three were left for the owner, who then asked for all three to be widescreen:
+the black strip at the lobby's outdoor entrance (2, done), the Combi Catcher
+and roulette room in 4:3 (4, left as it is: the game has nothing to show
+there, see below) and the white ending in 4:3 (9, done). Not reproduced, and
+not touched: the Combi Catcher's sky (3) and the launcher (7).
 
 In every case the game runs exactly as before: the 4:3 picture, the 68K work
 RAM and the timing are unchanged, and the interpreter and the recompiled code
 agree frame for frame. Only what the margins show changes.
 
-Screenshots: left or top 0.15.24, right or bottom this change.
+Screenshots: left or top before (0.15.24 for 1, 5, 6, 8; 0.15.25 for 2
+and 9), right or bottom after.
 
 ## 1. Special stage: rings, spheres and stars stop at the 4:3 picture
 
@@ -72,6 +73,39 @@ the lobby's own black columns (a room, a fade) stay black.
 and the lobby's existing centre, palette and lockstep tests. The return to
 the lobby after a level (`finished_run.txt`, frames 4850-5600, at NIGHT)
 shows the same picture in its own colours.
+
+## 4. The Combi Catcher and the roulette room stay 4:3 (not changed)
+
+![rooms](images/issue-5-rooms.png)
+
+Left: as the game is shown (black margins). Right: the same frames with the
+margins not cut, i.e. what the planes and the 32X actually hold there (a
+debug render, not shipped). Top: the Combi Catcher, frame 2000 of `--stage
+300:7:0:0:2:7:0 --press 600:right:200 --press 1100:left:35 --press
+1300:down:10 --wide 53`; bottom: the stage select (roulette) room, frame
+1300 of `--stage 300:7:0:0:2:7:0 --press 600:right:2600 --wide 53`.
+
+Both rooms are exactly one 4:3 screen wide: the camera is held to one
+point (1552, 2816), and each room's art ends at the 4:3 edges. Looked at
+layer by layer:
+
+- **The Combi Catcher.** Plane A is the room: its two striped pillars are
+  its walls, at the 4:3 edges, and the pit below. Left of the left pillar
+  plane A is empty; right of the right one it holds pieces of the lobby
+  further right, streamed in part. Plane B is the corridor's 512 px picture:
+  beside the room's top it shows the corridor, and below the corridor's
+  floor it has nothing (black), all down the pit.
+- **The roulette room.** Plane B is the room's picture (the domes and the
+  machinery behind the roulette); it ends at the 4:3 edges, with nothing
+  beyond. Plane A, outside the room's console, is the corridor's walls
+  (pink and teal columns) with blank ring columns between.
+
+So the margins could show either the corridor beside a room the player is
+closed inside, cut off where the ring was not streamed, or black. There is
+no more of either room to show, and making some (repeating or mirroring its
+art) is what issue #5's rule forbids. Issue #61's black margins are kept;
+the owner can decide whether that is acceptable or whether something else
+should go there.
 
 ## 5. AMAZING ARENA: the clocks have no hands in the margins
 
