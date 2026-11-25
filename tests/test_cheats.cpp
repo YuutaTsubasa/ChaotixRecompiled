@@ -137,3 +137,52 @@ TEST(cheats, chaos_forms_end_at_once_when_turned_off) {
     CHECK_EQ(int(r16(0xB000 + 0x34)), 0);
     CHECK_EQ(int(r16(0xB040 + 0x32)), 0);
 }
+
+TEST(cheats, chaos_forms_quiet_monitors_only_in_a_form) {
+    // Issue #146: a monitor taken in a form changes no music; out of one, or
+    // with the mod off, the game's requests are left as they are.
+    auto m = std::make_unique<Machine>();
+    auto w16 = [&](uint32_t a, uint16_t v) { m->wram[a] = uint8_t(v >> 8); m->wram[a + 1] = uint8_t(v); };
+    w16(0xDFDE, 0x18);
+    w16(0xDFF2, 0);
+    w16(0xE034, 0xAD48);
+    w16(0xE036, 0xAE08);
+    w16(0xAD48 + 0x3A, 0xB000);
+    w16(0xAE08 + 0x3A, 0xB040);
+    w16(0xB000 + 0x32, 0x04B0);  // a monitor's invincibility, no form
+    m->chaos_forms = true;
+    CHECK(!chaos_forms::quiet_monitors(*m));
+    CHECK(!chaos_forms::quiet_request(*m, chaos_forms::kInvincibleMusic, chaos_forms::kInvincibleMonitorReturn));
+    w16(0xB000 + 0x32, 0x7000);  // a form
+    CHECK(chaos_forms::quiet_monitors(*m));
+    CHECK(chaos_forms::quiet_request(*m, chaos_forms::kInvincibleMusic, chaos_forms::kInvincibleMonitorReturn));
+    // Not the monitor's call, or not its music: left alone.
+    CHECK(!chaos_forms::quiet_request(*m, chaos_forms::kInvincibleMusic, 0x890DFC));
+    CHECK(!chaos_forms::quiet_request(*m, 0x2E, chaos_forms::kInvincibleMonitorReturn));
+    m->chaos_forms = false;
+    CHECK(!chaos_forms::quiet_monitors(*m));
+    CHECK(!chaos_forms::quiet_request(*m, chaos_forms::kInvincibleMusic, chaos_forms::kInvincibleMonitorReturn));
+}
+
+TEST(cheats, request_sound_takes_the_first_free_slot) {
+    // As $8F6E76 queues a sound effect: the first free of the driver's three
+    // slots, none when they are all taken; music and commands are not taken.
+    auto m = std::make_unique<Machine>();
+    const uint32_t q = patches::kZ80SoundQueue;
+    m->zram[q] = 0x2E;
+    m->zram[q + 1] = m->zram[q + 2] = 0;
+    patches::request_sound(*m, 0x46);
+    CHECK_EQ(int(m->zram[q]), 0x2E);
+    CHECK_EQ(int(m->zram[q + 1]), 0x46);
+    CHECK_EQ(int(m->zram[q + 2]), 0);
+    patches::request_sound(*m, 0x12);  // music: not this way
+    patches::request_sound(*m, 0xF1);
+    CHECK_EQ(int(m->zram[q + 2]), 0);
+    patches::request_sound(*m, 0x54);
+    patches::request_sound(*m, 0x65);  // full: dropped
+    CHECK_EQ(int(m->zram[q + 2]), 0x54);
+    m->log_sounds = true;
+    m->zram[q] = 0;
+    patches::request_sound(*m, 0x46);
+    CHECK_EQ(int(m->sound_log.size()), 1);
+}

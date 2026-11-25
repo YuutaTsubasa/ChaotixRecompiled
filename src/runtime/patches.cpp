@@ -1,5 +1,6 @@
 // Runtime game patches (see patches.h).
 #include "runtime/patches.h"
+#include "runtime/chaos_forms.h"
 #include "runtime/lobby.h"
 #include "runtime/sprite_record.h"
 #include "runtime/system.h"
@@ -58,6 +59,20 @@ void extend_backdrop(Machine& m, m68k::State* c) {
     c->a[5] = a5;
 }
 
+} // namespace
+
+void request_sound(Machine& m, uint8_t id) {
+    if (id < kFirstSoundEffect || id >= 0x80) return;
+    if (m.log_sounds) m.sound_log.push_back(id);
+    for (uint32_t i = 0; i < 3; ++i)
+        if (!m.zram[kZ80SoundQueue + i]) {
+            m.zram[kZ80SoundQueue + i] = id;
+            return;
+        }
+}
+
+namespace {
+
 void m68k_hook(m68k::State* c, uint32_t pc) {
     Machine* m = static_cast<Machine*>(c->hook_user);
     switch (pc) {
@@ -81,10 +96,19 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         m->level_scene = scene_key(*m);
         return;
     case kSoundRequest: {
+        // Issue #146: an invincibility monitor taken in a Chaos Form asks
+        // for no music (runtime/chaos_forms.h). The id becomes kQuietSound,
+        // which the routine puts in a free slot as a sound effect and
+        // kSoundDone takes out again before the Z80 sees it.
+        if (chaos_forms::quiet_request(*m, uint8_t(c->d[0]), m68k::rd32(c, c->a[7] + 4))) {
+            set_low_byte(c->d[0], chaos_forms::kQuietSound);
+            return;
+        }
         // Music the host replaces with a file of its own: the driver is told
         // to stop its music instead, so its sound effects still play. The
         // request itself goes to the host either way (audio/music_mods.h).
         const uint8_t id = uint8_t(c->d[0]);
+        if (m->log_sounds) m->sound_log.push_back(id);
         if (id != 0 && (id < kFirstSoundEffect || id == kSoundLowerMusic || id == kSoundStopMusic)) {
             // Only the newest matter; a machine nobody drains stays small.
             if (m->music_events.size() >= 64) m->music_events.erase(m->music_events.begin());
@@ -93,6 +117,21 @@ void m68k_hook(m68k::State* c, uint32_t pc) {
         }
         return;
     }
+    case kSoundDone:
+        // The bus is still held: the quiet request's slot is freed again.
+        if (uint8_t(c->d[0]) == chaos_forms::kQuietSound && chaos_forms::quiet_request(*m, uint8_t(c->d[0]), m68k::rd32(c, c->a[7])))
+            for (uint32_t i = 0; i < 3; ++i)
+                if (m->zram[kZ80SoundQueue + i] == chaos_forms::kQuietSound) m->zram[kZ80SoundQueue + i] = 0;
+        return;
+    case kShoesTempo:
+        // A speed shoes monitor in a Chaos Form: the music's speed is kept
+        // in d0, which this routine does not use and its caller ($890170)
+        // restores, and put back once the monitor has set it.
+        if (chaos_forms::quiet_monitors(*m)) set_low_byte(c->d[0], m->zram[kZ80MusicTempo]);
+        return;
+    case kShoesTempoDone:
+        if (chaos_forms::quiet_monitors(*m)) m->zram[kZ80MusicTempo] = uint8_t(c->d[0]);
+        return;
     case kPiecesDone:
         extend_backdrop(*m, c);
         return;

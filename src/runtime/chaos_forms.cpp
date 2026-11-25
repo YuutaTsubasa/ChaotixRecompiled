@@ -1,5 +1,6 @@
 // Chaos Forms. See chaos_forms.h.
 #include "runtime/chaos_forms.h"
+#include "runtime/patches.h"
 #include "runtime/system.h"
 #include <algorithm>
 #include <cmath>
@@ -42,8 +43,9 @@ constexpr uint32_t kZ80Paused = 0x1C10;
 // ring (0-59); its top bit says the jump button the transformation took is
 // still held, so it is kept from the game until it is let go. Bit 6 says a
 // monitor's invincibility or speed shoes were running when the form took them
-// over (or a monitor was taken during it), so their music is playing: the
-// form then ends through the game's own end of the timers (kMonitorMusic).
+// over, so their music is playing: the form then ends through the game's own
+// end of the timers (kMonitorMusic). A monitor taken during a form adds to
+// the form's timers (above kMark) and plays no music (quiet_monitors).
 constexpr uint8_t kJumpTaken = 0x80, kMonitorMusic = 0x40, kDrainMask = 0x3F;
 constexpr uint8_t kDrainFlags = kJumpTaken | kMonitorMusic;
 
@@ -230,6 +232,15 @@ bool active(const Machine& m, int who) {
     return st && rd16(m, st + kStatInvincible) >= kMark;
 }
 
+bool quiet_monitors(const Machine& m) {
+    return m.chaos_forms && in_level(m) && (active(m, 0) || active(m, 1));
+}
+
+bool quiet_request(const Machine& m, uint8_t id, uint32_t ret) {
+    if (id != kInvincibleMusic && id != kQuietSound) return false;
+    return (ret & 0xFFFFFF) == kInvincibleMonitorReturn && quiet_monitors(m);
+}
+
 void begin_frame(Machine& m) {
     const bool jump = (m.input.pad[0] & PAD_C) != 0;
     const bool pressed = jump && !m.chaos_jump_prev;
@@ -299,6 +310,8 @@ void begin_frame(Machine& m) {
     hold(m, ps);
     if (qs) hold(m, qs);
     m.input.pad[0] &= uint16_t(~PAD_C);  // the press was the transformation's
+    // A sound, so that the transformation is heard (issue #146).
+    patches::request_sound(m, m.chaos_sound ? m.chaos_sound : kTransformSound);
 }
 
 const uint16_t* display(Machine& m, const uint16_t* pal) {

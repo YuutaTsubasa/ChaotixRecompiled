@@ -259,6 +259,9 @@ public:
     uint8_t chaos_drain = 0;
     uint16_t chaos_last_tick = 0;
     uint16_t chaos_pal[256] = {};
+    // The sound effect a transformation asks for, 0 for the mod's own
+    // (chaos_forms::kTransformSound); a test setting, not in save states.
+    uint8_t chaos_sound = 0;
     // FOLLOW's note of where the player stood before the game put one of the
     // two back on the tether's circle; used and dropped by the next
     // instruction's hook, within the same routine, so never in a save state.
@@ -269,6 +272,11 @@ public:
     // since the host last drained them (patches.h, kSoundRequest).
     std::array<bool, 0x2A> music_replaced{};
     std::vector<uint8_t> music_events;
+    // Every sound the driver is asked for (the game's through kSoundRequest,
+    // the host's through patches::request_sound), kept only when log_sounds
+    // is on (chaotix_headless --sound-log), for the host to drain.
+    bool log_sounds = false;
+    std::vector<uint8_t> sound_log;
     // PWM samples replaced by files (audio/sample_mods.h): which samples the
     // host plays itself (the 32X is given the silent one instead), and the
     // notes the 68K has passed on since the host last took them, with when.
