@@ -742,7 +742,8 @@ people below. Thank you all: every report here led to a fix or a feature.
   [#35](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/35)).
 - **[mechasalesman](https://github.com/mechasalesman)**: widescreen in the
   lobby, cheats, AMAZING ARENA's boss freezing in widescreen, and the
-  Chaos Forms built-in mod, which they wrote
+  Chaos Forms built-in mod, which they wrote, and the monitors' music
+  during a form
   ([#13](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/13),
   [#20](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/20),
   [#146](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/146),
@@ -781,8 +782,10 @@ people below. Thank you all: every report here led to a fix or a feature.
 - **[DanKorell](https://github.com/DanKorell)**: the lines in the menu text
   ([#5](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/5)).
 - **[Shaddytheguy](https://github.com/Shaddytheguy)**: widescreen problems in
-  the special stage, AMAZING ARENA's clocks, the title cards and the final
-  boss ([#5](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/5)).
+  the special stage, AMAZING ARENA's clocks, the title cards, the final
+  boss, the lobby's entrance, the Combi Catcher and stage select rooms and
+  the ending's white scenes
+  ([#5](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/5)).
 - **[Heartic12](https://github.com/Heartic12)**: the special stage lag on a
   slow PC ([#31](https://github.com/YuutaTsubasa/ChaotixRecompiled/issues/31)).
 - **[blueeeLove](https://github.com/blueeeLove)**: the Sonic CD touch layout
