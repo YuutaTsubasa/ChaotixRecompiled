@@ -404,10 +404,12 @@ void Machine::render_output_line(int src_line, int dst_row) {
     vdp.room_left = room && lobby_room_left;
     vdp.room_right = room && lobby_room_right;
     vdp.room_floor_line = room_floor_line;
-    vdp.room_ext_n = room && room_pillars ? 2 : 0;
-    vdp.room_ext_src = room_pillar_src;
-    vdp.room_ext_period = patches::kStageSelectPillarRows[1];
-    for (int i = 0; i < 2; ++i) vdp.room_ext_x0[i] = room_pillar_x0[i], vdp.room_ext_x1[i] = room_pillar_x1[i];
+    vdp.room_ext_n = room ? std::min(room_pillar_n, Vdp::kRoomExtMax) : 0;
+    for (int i = 0; i < vdp.room_ext_n; ++i) {
+        vdp.room_ext_x0[i] = room_pillar_x0[i], vdp.room_ext_x1[i] = room_pillar_x1[i];
+        vdp.room_ext_mirror[i] = room_pillar_mirror[i] == patches::kNoMirror ? Vdp::kNoMirror : room_pillar_mirror[i];
+        vdp.room_ext_src[i] = room_pillar_src[i], vdp.room_ext_period[i] = room_pillar_period[i];
+    }
     // Left of the lobby's origin, plane B only (patches::MarginCut).
     if (level_cut.backdrop > level_cut.left) {
         vdp.plane_a_hide_n = 1;

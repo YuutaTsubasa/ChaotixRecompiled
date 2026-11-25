@@ -578,17 +578,40 @@ constexpr int kLobbyCycled = 8;
 // down, the layout beside them is empty (the backdrop), and the ring's last
 // columns on the right still hold tiles of another place that the engine's
 // row fills, which reach about 368 px right of the camera, never redraw:
-// those rows are black. The stage select room's edges are a pink and teal
-// pillar of the corridor's doorways on each side (kStageSelectPillar,
-// columns from the room's left edge); those carry on down below the row,
-// their 80 px pattern repeated from the rows above the floor band, and the
-// rest is black. No sprites and nothing of the 32X are shown beside a room:
-// the claw, the signs, the monitors and the characters are the room's own.
-// Render only (Vdp::room_*, Machine::render_output_line).
+// those rows are black, except where a pillar stands beside the room, which
+// carries on down (kRoomPillars, columns from the room's left edge):
+// - The Combi Catcher's two traffic-light pillars stand astride the 4:3
+//   edges, 32 px wide, mirror images of themselves about the edge: their
+//   outer half is drawn as the mirror of the inner half, which the game
+//   draws the whole way down the pit (its Eggman heads included).
+// - Beside the stage select room stand the corridor's doorways, on either
+//   side as far as the widest margin reaches: a pink and teal pillar, an
+//   arch (its posts go down to the floor, its inside is black), then the
+//   next pillar. Those columns carry on down, repeated from rows above the
+//   floor band: the pillars' 80 px pattern from world rows [96, 176), the
+//   arch's from [104, 176), below its capitals. The 8 px of the drum's dark
+//   edge before the right pillar stays black.
+// Everything else is black. No sprites and nothing of the 32X are shown
+// beside a room: the claw, the signs, the monitors and the characters are
+// the room's own. Render only (Vdp::room_*, Machine::render_output_line).
 constexpr int kRoomFloorY = 224;
+constexpr int kCombiCatcherRoomX = 1552;
 constexpr int kStageSelectRoomX = 2816;
-constexpr int kStageSelectPillar[2][2] = {{-32, 0}, {328, 344}};  // left, right: [x0, x1) from the room's left edge
-constexpr int kStageSelectPillarRows[2] = {96, 80};  // world rows [96, 176): one period of the pattern
+// Columns [x0, x1) from the room's left edge: mirrored about column `mirror`,
+// or (kNoMirror) repeated from world rows [row0, row0 + period).
+struct RoomPillar { int room_x, x0, x1, mirror, row0, period; };
+constexpr int kNoMirror = -1000;
+constexpr int kMaxRoomPillars = 6;
+constexpr RoomPillar kRoomPillars[] = {
+    {kCombiCatcherRoomX, -16, 0, 0, 0, 0},
+    {kCombiCatcherRoomX, 320, 336, 320, 0, 0},
+    {kStageSelectRoomX, -80, -72, kNoMirror, 96, 80},
+    {kStageSelectRoomX, -72, -32, kNoMirror, 104, 72},
+    {kStageSelectRoomX, -32, 0, kNoMirror, 96, 80},
+    {kStageSelectRoomX, 328, 344, kNoMirror, 96, 80},
+    {kStageSelectRoomX, 344, 384, kNoMirror, 104, 72},
+    {kStageSelectRoomX, 384, 400, kNoMirror, 96, 80},
+};
 // Fills Machine::lobby_* for this frame's picture, margins of e px.
 void lobby_margins(Machine& m, int e);
 // Fills Machine::room_* for a room one screen wide (kRoomFloorY).

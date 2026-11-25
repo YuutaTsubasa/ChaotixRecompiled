@@ -112,19 +112,34 @@ lower right.
 
 - **Above world row 224** (`patches::kRoomFloorY`) the margins show the
   planes as they are: what the corridor shows beside the room, fully drawn.
-- **Below that row** they are black, the stale columns included.
-- **The roulette room's pillars.** The doorway pillars carry on straight
-  down to the bottom of the screen: screen columns [-32, 0) and [328, 344)
-  from the room's left edge (`kStageSelectPillar`). Their 80 px pattern is
-  repeated from world rows 96-175, above the floor band. Beyond them, and
-  over the 8 px of the drum's dark edge on the right, it is black.
-  - Those rows are kept as the pillars are drawn on the way in
+- **Below that row** they are black, the stale columns included, except for
+  the pillars beside the room, which carry on straight down to the bottom
+  of the screen (`patches::kRoomPillars`, columns from the room's left
+  edge):
+  - **The Combi Catcher's traffic-light pillars**, 32 px wide, stand
+    astride the 4:3 edges at [-16, 16) and [304, 336). Each is its own
+    mirror image about the edge (99.4% of the pixels above the floor row
+    match). So their outer half is drawn as the mirror of the inner half,
+    which the game draws the whole way down the pit, Eggman heads included.
+  - **Beside the roulette room** are the corridor's doorways, the same on
+    either side, out to the widest margin (80 px). On the left they are a
+    pink and teal pillar [-32, 0), an arch [-72, -32) whose purple posts go
+    down to the floor and whose inside is black, then the edge of the next
+    pillar [-80, -72); on the right they are [328, 344), [344, 384) and
+    [384, 400). The thin pillar at the far right edge at 53 px margins is
+    the arch's post. All of them carry on down, repeated from rows above the
+    floor band: the pillars' 80 px pattern from world rows 96-175, the
+    arch's from rows 104-175, below its capitals. The 8 px of the drum's
+    dark edge before the right pillar, [320, 328), stays black.
+  - The repeated rows are kept as they are drawn on the way in
     (`Vdp::room_ext_*`). Once the room has scrolled down, the plane's
-    256 px ring holds other rows there.
-  - A room entered from a save state already scrolled down has black there
-    until the camera comes back up. So do the pillar columns a narrower view
-    never drew, if the window is widened once the room has scrolled down
-    (each pixel is kept on its own).
+    256 px ring holds other rows there. A room entered from a save state
+    already scrolled down has black there until the camera comes back up.
+    So do the columns a narrower view never drew, if the window is widened
+    once the room has scrolled down (each pixel is kept on its own).
+  - The next part of the lobby on the Combi Catcher's right has a purple
+    pipe, but it stands on that part's floor band, above row 224, so
+    nothing of it continues below.
 - **No sprites and no 32X** are drawn beside a room. The claw, the
   capsules, the signs, the monitors and the characters are the room's own.
 
@@ -139,6 +154,8 @@ frame.
   - `widescreen_lobby_combi_catcher_beside_the_room` (frame 1450)
   - `widescreen_lobby_combi_catcher_pit_black_below_the_floor` (frame 2000)
   - `widescreen_lobby_stage_select_room_pillars_carry_down` (frame 1300)
+  - `widescreen_lobby_combi_catcher_pit_black_below_the_floor` and
+    `..._beside_the_room` also check the Combi Catcher's pillars
   - `widescreen_lobby_stage_select_room_widened_after_scrolling` (16 px
     margins widened to 53 after the room has scrolled down)
 - The existing centre checks, with 2740 and 1643 widened frames identical

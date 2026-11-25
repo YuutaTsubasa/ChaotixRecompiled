@@ -743,16 +743,19 @@ void room_margins(Machine& m) {
     m.room_on = true;
     // The screen line of world row kRoomFloorY.
     m.room_floor_line = kRoomFloorY - camera_y(m);
-    m.room_pillars = false;
+    m.room_pillar_n = 0;
     const CameraRange r = camera_range(m);
-    if (r.left != kStageSelectRoomX || r.right != kStageSelectRoomX) return;
-    m.room_pillars = true;
-    const int x0 = kStageSelectRoomX - camera_x(m);
-    for (int side = 0; side < 2; ++side) {
-        m.room_pillar_x0[side] = x0 + kStageSelectPillar[side][0];
-        m.room_pillar_x1[side] = x0 + kStageSelectPillar[side][1];
+    if (r.left != r.right) return;
+    const int x0 = r.left - camera_x(m);
+    for (const RoomPillar& p : kRoomPillars) {
+        if (p.room_x != r.left || m.room_pillar_n == kMaxRoomPillars) continue;
+        const int i = m.room_pillar_n++;
+        m.room_pillar_x0[i] = x0 + p.x0;
+        m.room_pillar_x1[i] = x0 + p.x1;
+        m.room_pillar_mirror[i] = p.mirror == kNoMirror ? kNoMirror : x0 + p.mirror;
+        m.room_pillar_src[i] = p.row0 - camera_y(m);
+        m.room_pillar_period[i] = p.period;
     }
-    m.room_pillar_src = kStageSelectPillarRows[0] - camera_y(m);
 }
 
 bool title_margins(const Machine& m) { return wram16(m, kGameMode) == title_hold::kModeTitle; }

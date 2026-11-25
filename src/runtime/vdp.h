@@ -59,19 +59,23 @@ public:
     // runtime/patches.h, kRoomFloorY). On the sides room_left / room_right
     // no sprites are drawn in the margin; from line room_floor_line down its
     // planes are left out (black, Machine::render_output_line) but for
-    // columns [room_ext_x0[i], room_ext_x1[i]) (room_ext_n of them, at most
-    // kRoomExtWidth wide), drawn as line room_ext_src + (line - room_ext_src)
-    // mod room_ext_period showed them. Those lines are kept as they are drawn
-    // on screen above the floor row (the room is always entered with the
-    // camera at the top): further up, the plane's 256 px ring holds other
-    // rows by the time the room has scrolled down. A pixel not yet seen (its
-    // line, or its column with a narrower view) is black.
-    static constexpr int kRoomExtWidth = 32, kRoomExtRows = 80;
+    // columns [room_ext_x0[i], room_ext_x1[i]) (room_ext_n ranges, all in the
+    // margins, within kRoomExtMargin of the picture): mirrored from this
+    // line's columns about column room_ext_mirror[i], or, with kNoMirror,
+    // drawn as line room_ext_src[i] + (line - room_ext_src[i]) mod
+    // room_ext_period[i] showed them. Those lines are kept, pixel by pixel,
+    // as they are drawn on screen above the floor row (the room is always
+    // entered with the camera at the top): further up, the plane's 256 px
+    // ring holds other rows by the time the room has scrolled down. A pixel
+    // never seen is black.
+    static constexpr int kRoomExtMax = 6, kRoomExtMargin = 80, kRoomExtRows = 80, kNoMirror = -1000;
     bool room_left = false, room_right = false;
-    int room_floor_line = 0, room_ext_n = 0, room_ext_src = 0, room_ext_period = 0;
-    int room_ext_x0[2] = {}, room_ext_x1[2] = {};
-    uint8_t room_ext_a[2][kRoomExtRows][kRoomExtWidth] = {}, room_ext_b[2][kRoomExtRows][kRoomExtWidth] = {};
-    bool room_ext_seen[2][kRoomExtRows][kRoomExtWidth] = {};
+    int room_floor_line = 0, room_ext_n = 0;
+    int room_ext_x0[kRoomExtMax] = {}, room_ext_x1[kRoomExtMax] = {}, room_ext_mirror[kRoomExtMax] = {};
+    int room_ext_src[kRoomExtMax] = {}, room_ext_period[kRoomExtMax] = {};
+    // Kept per margin column: left [-80, 0) at 0-79, right [width, width + 80) at 80-159.
+    uint8_t room_ext_a[2 * kRoomExtMargin][kRoomExtRows] = {}, room_ext_b[2 * kRoomExtMargin][kRoomExtRows] = {};
+    bool room_ext_seen[2 * kRoomExtMargin][kRoomExtRows] = {};
     int room_ext_key = 0;  // room_ext_x0[0] the lines were kept for, + 1
     // Out, for the line just rendered (index x + extra): 1 where a room's
     // margin below its floor row is black, 0 elsewhere.

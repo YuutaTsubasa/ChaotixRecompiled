@@ -540,38 +540,58 @@ bool Vdp::render_line_indexed(int line, uint8_t* top, uint32_t* out_rgb, uint8_t
     // A room's margins below its floor row: nothing, but for the columns
     // carried down from above (room_ext_*).
     const bool room = (room_left || room_right) && extra > 0;
-    const int ext_n = room && room_ext_period > 0 && room_ext_period <= kRoomExtRows ? room_ext_n : 0;
+    const int ext_n = room ? std::min(room_ext_n, kRoomExtMax) : 0;
     if (ext_n && room_ext_key != room_ext_x0[0] + 1) {
         std::memset(room_ext_seen, 0, sizeof room_ext_seen);
         room_ext_key = room_ext_x0[0] + 1;
     }
     if (!ext_n) room_ext_key = 0;
-    if (ext_n) {
-        const int k = line - room_ext_src;
-        if (line >= 0 && line < height() && line < room_floor_line && k >= 0 && k < room_ext_period) {
-            for (int i = 0; i < ext_n; ++i)
-                for (int x = room_ext_x0[i]; x < room_ext_x1[i] && x - room_ext_x0[i] < kRoomExtWidth; ++x)
-                    if (x >= xs && x < xe) {
-                        room_ext_a[i][k][x - room_ext_x0[i]] = a[x - xs];
-                        room_ext_b[i][k][x - room_ext_x0[i]] = b[x - xs];
-                        room_ext_seen[i][k][x - room_ext_x0[i]] = true;
-                    }
+    // Column x's place in the kept lines, or -1.
+    auto slot = [&](int x) {
+        if (x < 0 && x >= -kRoomExtMargin) return x + kRoomExtMargin;
+        if (x >= width && x < width + kRoomExtMargin) return kRoomExtMargin + x - width;
+        return -1;
+    };
+    auto repeated = [&](int i) {
+        return room_ext_mirror[i] == kNoMirror && room_ext_period[i] > 0 && room_ext_period[i] <= kRoomExtRows;
+    };
+    if (ext_n && line >= 0 && line < height() && line < room_floor_line) {
+        for (int i = 0; i < ext_n; ++i) {
+            const int k = line - room_ext_src[i];
+            if (!repeated(i) || k < 0 || k >= room_ext_period[i]) continue;
+            for (int x = std::max(room_ext_x0[i], xs); x < std::min(room_ext_x1[i], xe); ++x) {
+                const int c = slot(x);
+                if (c < 0) continue;
+                room_ext_a[c][k] = a[x - xs];
+                room_ext_b[c][k] = b[x - xs];
+                room_ext_seen[c][k] = true;
+            }
         }
     }
     if (room && line >= room_floor_line) {
-        const int k = ext_n ? ((line - room_ext_src) % room_ext_period + room_ext_period) % room_ext_period : 0;
         for (int x = xs; x < xe; ++x) {
             if (x == 0) x = width;
             if ((x < 0 && !room_left) || (x >= width && !room_right)) continue;
             a[x - xs] = 0, b[x - xs] = 0;
             room_black[x - xs] = 1;
-            for (int i = 0; i < ext_n; ++i)
-                if (x >= room_ext_x0[i] && x < room_ext_x1[i] && x - room_ext_x0[i] < kRoomExtWidth &&
-                    room_ext_seen[i][k][x - room_ext_x0[i]]) {
-                    a[x - xs] = room_ext_a[i][k][x - room_ext_x0[i]];
-                    b[x - xs] = room_ext_b[i][k][x - room_ext_x0[i]];
+            for (int i = 0; i < ext_n; ++i) {
+                if (x < room_ext_x0[i] || x >= room_ext_x1[i]) continue;
+                if (room_ext_mirror[i] != kNoMirror) {
+                    // The pillar's other half, on this line, in the picture.
+                    const int src = 2 * room_ext_mirror[i] - 1 - x;
+                    if (src < 0 || src >= width) continue;
+                    a[x - xs] = a[src - xs], b[x - xs] = b[src - xs];
+                    room_black[x - xs] = 0;
+                } else if (repeated(i)) {
+                    const int p = room_ext_period[i];
+                    const int k = ((line - room_ext_src[i]) % p + p) % p;
+                    const int c = slot(x);
+                    if (c < 0 || !room_ext_seen[c][k]) continue;
+                    a[x - xs] = room_ext_a[c][k];
+                    b[x - xs] = room_ext_b[c][k];
                     room_black[x - xs] = 0;
                 }
+            }
         }
     }
     if (radial_len > 0 && extra > 0 && line >= 0 && line < height()) {

@@ -373,8 +373,8 @@ TEST(widescreen_render, a_lobby_room_shows_its_surroundings_above_the_floor) {
     // margins would show the corridor beside it and, as it scrolls down,
     // blocks the engine never draws. They were black; since issue #5 they
     // show what is beside the room down to world row kRoomFloorY (what the
-    // corridor shows of it), black below, but for the stage select room's
-    // two doorway pillars, which carry on down. A wide range is no room: its
+    // corridor shows of it), black below, but for the pillars beside the
+    // room, which carry on down (patches::kRoomPillars). A wide range is no room: its
     // ends move as the player goes on, and what lies beyond them was just in
     // view.
     auto m = level_machine();
@@ -390,21 +390,29 @@ TEST(widescreen_render, a_lobby_room_shows_its_surroundings_above_the_floor) {
     CHECK_EQ(room.left, 0);
     CHECK_EQ(room.right, 0);
     CHECK(m->lobby_room_left && m->lobby_room_right);
-    CHECK(m->room_on && m->room_pillars);
+    CHECK(m->room_on);
     CHECK_EQ(m->room_floor_line, patches::kRoomFloorY);
-    CHECK_EQ(m->room_pillar_x0[0], patches::kStageSelectPillar[0][0]);
-    CHECK_EQ(m->room_pillar_x1[1], patches::kStageSelectPillar[1][1]);
+    CHECK_EQ(m->room_pillar_n, 6);
+    CHECK_EQ(m->room_pillar_x0[0], -80);
+    CHECK_EQ(m->room_pillar_x1[5], 400);
+    CHECK_EQ(m->room_pillar_mirror[0], patches::kNoMirror);
+    CHECK_EQ(m->room_pillar_src[0], 96);
     // Scrolled down 112 px, the floor row is 112 lines up the screen.
     put(patches::kPlaneAStruct + 0x10, 112);
     patches::begin_frame(*m);
     CHECK_EQ(m->room_floor_line, patches::kRoomFloorY - 112);
+    CHECK_EQ(m->room_pillar_src[0], 96 - 112);
     put(patches::kPlaneAStruct + 0x10, 0);
-    // The Combi Catcher: no pillars.
+    // The Combi Catcher: its two pillars, mirrored about the 4:3 edges.
     put(patches::kPlaneAStruct, 1552);
     put(patches::kPlaneAStruct + 0xA, 1552);
     put(patches::kPlaneAStruct + 0x8, 1552);
     patches::begin_frame(*m);
-    CHECK(m->room_on && !m->room_pillars);
+    CHECK(m->room_on);
+    CHECK_EQ(m->room_pillar_n, 2);
+    CHECK_EQ(m->room_pillar_x0[0], -16);
+    CHECK_EQ(m->room_pillar_mirror[0], 0);
+    CHECK_EQ(m->room_pillar_mirror[1], 320);
     // The SH-2 still draws nothing there: none of the room's own objects show.
     CHECK_EQ(clip(0), 0);
     CHECK_EQ(clip(2), 320);

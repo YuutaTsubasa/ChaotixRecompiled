@@ -67,8 +67,8 @@ up past the screen, flipped a frame or two late when it was drawn there.
 Issue #5 looked at these rooms again, layer by layer: each is one 4:3
 screen wide, and beyond it the planes hold only the corridor or nothing.
 At the owner's choice their margins now show what is beside the room above
-the corridor's floor row, black below (the roulette room's doorway pillars
-carry on down), instead of all black (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
+the corridor's floor row, black below (the pillars beside both rooms carry
+on down), instead of all black (ISSUE_5_WIDESCREEN_FIXES.md, item 4).
 
 The lobby's outdoor entrance, where the camera is at X 0..12, now shows
 plane B's outdoor picture left of the origin instead of black (issue #5,
